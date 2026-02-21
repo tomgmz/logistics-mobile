@@ -1,5 +1,6 @@
 {
   "expo": {
+    "scheme": "logistics-mobile",
     "name": "logistics-mobile",
     "slug": "logistics-mobile",
     "version": "1.0.0",
@@ -24,7 +25,12 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
-    }
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font"
+    ]
   }
 }
