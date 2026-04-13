@@ -31,6 +31,7 @@ export default {
     android: {
       package: 'ph.logistics8338.mobile',
       versionCode: 1,
+      "ndkVersion": "26.1.10909125",
       adaptiveIcon: {
         foregroundImage: './assets/adaptive-icon.png',
         backgroundColor: '#ffffff',
@@ -54,7 +55,7 @@ export default {
         "@rnmapbox/maps",
         {
           "RNMapboxMapsImpl": "mapbox",
-          "RNMapboxMapsVersion": "11.0.0",
+          "RNMapboxMapsVersion": "11.7.0",
         }
       ]
     ],
