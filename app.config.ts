@@ -31,7 +31,8 @@ export default {
     android: {
       package: 'ph.logistics8338.mobile',
       versionCode: 1,
-      "ndkVersion": "26.1.10909125",
+      targetSdkVersion: 34,
+      "ndkVersion": "27.1.12297006",
       adaptiveIcon: {
         foregroundImage: './assets/adaptive-icon.png',
         backgroundColor: '#ffffff',
@@ -55,7 +56,9 @@ export default {
         "@rnmapbox/maps",
         {
           "RNMapboxMapsImpl": "mapbox",
-          "RNMapboxMapsVersion": "11.7.0",
+          "RNMapboxMapsVersion": "11.3.0",
+          "RNMapboxMapsDownloadToken": process.env.RNMAPBOX_MAPS_DOWNLOAD_TOKEN,
+          "RNMapboxMapsLibs": "com.mapbox.maps:android:11.3.0;com.mapbox.mapboxsdk:mapbox-sdk-turf:6.11.0;androidx.asynclayoutinflater:asynclayoutinflater:1.0.0"
         }
       ]
     ],
