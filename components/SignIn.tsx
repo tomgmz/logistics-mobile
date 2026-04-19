@@ -21,8 +21,8 @@ import {
   getAuthStatus,
   requestOtp,
   verifyOtp,
-} from '../../lib/api/auth.api'
-import { useAuthStore } from '../../lib/store/auth.store'
+} from '../lib/api/auth.api'
+import { useAuthStore } from '../lib/store/auth.store'
 
 const C = {
   bg:          '#080808',

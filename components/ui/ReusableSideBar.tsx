@@ -9,7 +9,7 @@ import {
 import { MotiView, AnimatePresence } from 'moti'
 import { useRouter, usePathname } from 'expo-router'
 import { Settings, LogOut } from 'lucide-react-native'
-import { useAuthStore } from '../../../lib/store/auth.store'
+import { useAuthStore } from '../../lib/store/auth.store'
 import ReusableModal from './ReusableModal'
 import { Easing } from 'react-native-reanimated'
 

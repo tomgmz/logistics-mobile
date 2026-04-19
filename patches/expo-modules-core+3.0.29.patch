@@ -1,0 +1,11 @@
+diff --git a/node_modules/expo-modules-core/android/CMakeLists.txt b/node_modules/expo-modules-core/android/CMakeLists.txt
+index 5d309ef..0181666 100644
+--- a/node_modules/expo-modules-core/android/CMakeLists.txt
++++ b/node_modules/expo-modules-core/android/CMakeLists.txt
+@@ -135,3 +135,6 @@ target_link_libraries(
+   ${PACKAGE_NAME}
+   ReactAndroid::reactnative
+ )
++
++find_library(EXPO_MODULES_CORE_CPP_SHARED c++_shared)
++target_link_libraries(${PACKAGE_NAME} ${EXPO_MODULES_CORE_CPP_SHARED})

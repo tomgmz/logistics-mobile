@@ -1,0 +1,35 @@
+diff --git a/node_modules/react-native-screens/android/CMakeLists.txt b/node_modules/react-native-screens/android/CMakeLists.txt
+index 86ec079..489df12 100644
+--- a/node_modules/react-native-screens/android/CMakeLists.txt
++++ b/node_modules/react-native-screens/android/CMakeLists.txt
+@@ -38,6 +38,8 @@ target_compile_definitions(
+ 
+ find_package(ReactAndroid REQUIRED CONFIG)
+ 
++find_library(RNSCREENS_CPP_SHARED c++_shared)
++
+ if(${RNS_NEW_ARCH_ENABLED})
+     find_package(fbjni REQUIRED CONFIG)
+     
+@@ -47,6 +49,7 @@ if(${RNS_NEW_ARCH_ENABLED})
+             ReactAndroid::jsi
+             fbjni::fbjni
+             android
++            ${RNSCREENS_CPP_SHARED}
+         )
+     else()
+         target_link_libraries(
+@@ -70,11 +73,13 @@ if(${RNS_NEW_ARCH_ENABLED})
+                 ReactAndroid::react_render_observers_events
+                 fbjni::fbjni
+                 android
++                ${RNSCREENS_CPP_SHARED}
+         )
+     endif()
+ else()
+     target_link_libraries(rnscreens
+         ReactAndroid::jsi
+         android
++        ${RNSCREENS_CPP_SHARED}
+     )
+ endif()

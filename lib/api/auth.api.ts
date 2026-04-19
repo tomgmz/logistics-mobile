@@ -76,7 +76,7 @@ export const TokenStore = {
 // ─── Axios instance ───────────────────────────────────────────────────────────
 
 const api: AxiosInstance = axios.create({
-  baseURL: getApiUrl(),
+  baseURL: '',
   headers: { 'Content-Type': 'application/json' },
   timeout: 15_000,
   // no withCredentials — mobile uses Bearer tokens, not cookies
@@ -138,6 +138,7 @@ async function doRefresh(): Promise<string> {
 // ─── Request interceptor — attach token, proactive refresh ───────────────────
 
 api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
+  config.baseURL = getApiUrl()
   const url = config.url ?? ''
   const isExcluded =
     url.includes('/auth/refresh')     ||
