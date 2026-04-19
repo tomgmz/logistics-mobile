@@ -9,7 +9,7 @@ import {
 import { MotiView } from 'moti'
 import { Bell, MessageCircle, Menu } from 'lucide-react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { useAuthStore } from '../../../lib/store/auth.store'
+import { useAuthStore } from '../../lib/store/auth.store'
 
 const COLORS = {
   bg:      '#1a1a1a',

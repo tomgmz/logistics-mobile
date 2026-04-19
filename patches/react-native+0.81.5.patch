@@ -1,0 +1,36 @@
+diff --git a/node_modules/react-native/ReactAndroid/cmake-utils/ReactNative-application.cmake b/node_modules/react-native/ReactAndroid/cmake-utils/ReactNative-application.cmake
+index baa0fef..512ca45 100644
+--- a/node_modules/react-native/ReactAndroid/cmake-utils/ReactNative-application.cmake
++++ b/node_modules/react-native/ReactAndroid/cmake-utils/ReactNative-application.cmake
+@@ -78,10 +78,13 @@ add_library(reactnative ALIAS ReactAndroid::reactnative)
+ find_package(fbjni REQUIRED CONFIG)
+ add_library(fbjni ALIAS fbjni::fbjni)
+ 
++find_library(APP_MODULES_CPP_SHARED c++_shared)
++
+ target_link_libraries(${CMAKE_PROJECT_NAME}
+         fbjni                               # via 3rd party prefab
+         jsi                                 # prefab ready
+         reactnative                         # prefab ready
++        ${APP_MODULES_CPP_SHARED}
+ )
+ 
+ # We use an interface target to propagate flags to all the generated targets
+@@ -94,7 +97,7 @@ if(EXISTS ${PROJECT_BUILD_DIR}/generated/autolinking/src/main/jni/Android-autoli
+         include(${PROJECT_BUILD_DIR}/generated/autolinking/src/main/jni/Android-autolinking.cmake)
+         target_link_libraries(${CMAKE_PROJECT_NAME} ${AUTOLINKED_LIBRARIES})
+         foreach(autolinked_library ${AUTOLINKED_LIBRARIES})
+-            target_link_libraries(${autolinked_library} common_flags)
++            target_link_libraries(${autolinked_library} common_flags ${APP_MODULES_CPP_SHARED})
+         endforeach()
+ endif()
+ 
+@@ -103,7 +106,7 @@ if(EXISTS ${PROJECT_BUILD_DIR}/generated/source/codegen/jni/CMakeLists.txt)
+         add_subdirectory(${PROJECT_BUILD_DIR}/generated/source/codegen/jni/ codegen_app_build)
+         get_property(APP_CODEGEN_TARGET DIRECTORY ${PROJECT_BUILD_DIR}/generated/source/codegen/jni/ PROPERTY BUILDSYSTEM_TARGETS)
+         target_link_libraries(${CMAKE_PROJECT_NAME} ${APP_CODEGEN_TARGET})
+-        target_link_libraries(${APP_CODEGEN_TARGET} common_flags)
++        target_link_libraries(${APP_CODEGEN_TARGET} common_flags ${APP_MODULES_CPP_SHARED})
+ 
+         # We need to pass the generated header and module provider to the OnLoad.cpp file so
+         # local app modules can properly be linked.

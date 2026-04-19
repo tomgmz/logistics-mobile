@@ -1,4 +1,9 @@
-import 'dotenv/config'
+import path from 'node:path'
+import { config as loadEnv } from 'dotenv'
+
+// Load parent-folder `.env` (e.g. monorepo `mobile/.env`) then project `.env` overrides.
+loadEnv({ path: path.resolve(__dirname, '..', '.env') })
+loadEnv({ path: path.resolve(__dirname, '.env') })
 
 export default {
   expo: {
@@ -56,9 +61,12 @@ export default {
         "@rnmapbox/maps",
         {
           "RNMapboxMapsImpl": "mapbox",
-          "RNMapboxMapsVersion": "11.3.0",
-          "RNMapboxMapsDownloadToken": process.env.RNMAPBOX_MAPS_DOWNLOAD_TOKEN,
-          "RNMapboxMapsLibs": "com.mapbox.maps:android:11.3.0;com.mapbox.mapboxsdk:mapbox-sdk-turf:6.11.0;androidx.asynclayoutinflater:asynclayoutinflater:1.0.0"
+          // Must be high enough that `com.mapbox.maps:android-ndk27:<ver>` exists when targetSdk >= 35 (Expo SDK 54 uses 36).
+          "RNMapboxMapsVersion": "11.18.2",
+          "RNMapboxMapsDownloadToken":
+            process.env.RNMAPBOX_MAPS_DOWNLOAD_TOKEN ?? process.env.MAPBOX_DOWNLOADS_TOKEN,
+          "RNMapboxMapsLibs":
+            "com.mapbox.maps:android:11.18.2;com.mapbox.mapboxsdk:mapbox-sdk-turf:6.11.0;androidx.asynclayoutinflater:asynclayoutinflater:1.0.0",
         }
       ]
     ],

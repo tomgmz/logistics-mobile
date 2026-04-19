@@ -6,8 +6,8 @@ import { Home, Package, Truck, BarChart2, Users } from 'lucide-react-native'
 
 import ReusableHeader from './ReusableHeader'
 import ReusableSidebar, { NavItem } from './ReusableSideBar'
-import { useAuthStore } from '../../../lib/store/auth.store'
-import { logout } from '../../../lib/api/auth.api'
+import { useAuthStore } from '../../lib/store/auth.store'
+import { logout } from '../../lib/api/auth.api'
 
 const ICON_COLOR = 'rgba(255,255,255,0.40)'
 const ICON_SIZE  = 17

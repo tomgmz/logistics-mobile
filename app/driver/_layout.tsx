@@ -1,4 +1,4 @@
-import ReusableDashboardShell, { DEFAULT_NAV_ITEMS } from '../components/ui/ReusableDashboardShell'
+import ReusableDashboardShell, { DEFAULT_NAV_ITEMS } from '../../components/ui/ReusableDashboardShell'
 import { Slot } from 'expo-router'
 import { MapPin, ClipboardList } from 'lucide-react-native'
 

@@ -1,16 +1,6 @@
 /**
- * NavigationScreen — Mapbox GL + offline tile packs
- *
- * Install deps:
- *   npx expo install @rnmapbox/maps
- *   npx expo install @react-native-async-storage/async-storage
- *   npx expo install @react-native-community/netinfo
- *
- * Add to app.json plugins:
- *   ["@rnmapbox/maps", { "RNMapboxMapsImpl": "mapbox", "RNMapboxMapsVersion": "11.0.0" }]
- *
- * Env var required:
- *   EXPO_PUBLIC_MAPBOX_TOKEN=pk.ey...
+ * Mapbox implementation for driver navigation (loaded dynamically from
+ * NavigationScreen.tsx so @rnmapbox/maps is not evaluated during route discovery).
  */
 
 import React, {
@@ -58,7 +48,7 @@ import {
   WifiOff,
 } from 'lucide-react-native'
 
-import api from '../../../lib/api/auth.api'
+import api from '../../lib/api/auth.api'
 
 // ─── Mapbox init ──────────────────────────────────────────────────────────────
 // Called once at module level — safe to call multiple times (idempotent)
@@ -395,7 +385,7 @@ interface NavigationScreenProps {
 
 const ROUTE_REFRESH_MS = 60_000
 
-export default function NavigationScreen({ bookingId }: NavigationScreenProps) {
+export default function NavigationScreenMapInner({ bookingId }: NavigationScreenProps) {
   const insets   = useSafeAreaInsets()
   const router   = useRouter()
   const cameraRef = useRef<MapboxGL.Camera>(null)
