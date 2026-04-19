@@ -1,15 +1,3 @@
-/**
- * auth.api.ts
- * React Native auth client for the Express/TypeScript backend.
- *
- * Install:
- *   npx expo install expo-secure-store
- *   npm install axios jwt-decode
- *
- * .env:
- *   EXPO_PUBLIC_API_URL=http://192.168.x.x:4000/api
- */
-
 import axios, {
   AxiosInstance,
   AxiosError,
@@ -19,26 +7,17 @@ import * as SecureStore from 'expo-secure-store'
 import { Platform } from 'react-native'
 import { jwtDecode } from 'jwt-decode'
 
-// ─── Environment guard (lazy — does NOT throw at module load time) ────────────
-//
-// Previously this was a top-level throw which crashed the entire app before
-// anything could render, causing a white screen.
-// Now it only throws when an actual API call is made.
-
 function getApiUrl(): string {
   const url = process.env.EXPO_PUBLIC_API_URL
   if (!url) throw new Error('EXPO_PUBLIC_API_URL is not set in your environment.')
   return url
 }
 
-// ─── Storage keys ─────────────────────────────────────────────────────────────
 
 const KEYS = {
   ACCESS_TOKEN:  'access_token',
   REFRESH_TOKEN: 'refresh_token',
 } as const
-
-// ─── Web fallback for SecureStore (expo web compatibility) ────────────────────
 
 const webStorage = {
   getItemAsync: (key: string) => Promise.resolve(localStorage.getItem(key)),
@@ -73,28 +52,23 @@ export const TokenStore = {
   },
 }
 
-// ─── Axios instance ───────────────────────────────────────────────────────────
 
 const api: AxiosInstance = axios.create({
   baseURL: getApiUrl(),
   headers: { 'Content-Type': 'application/json' },
   timeout: 15_000,
-  // no withCredentials — mobile uses Bearer tokens, not cookies
 })
-
-// ─── Token refresh helpers ────────────────────────────────────────────────────
 
 interface JwtPayload {
   exp: number
 }
 
-/** Returns true if the token expires within the next 10 seconds. */
 function isTokenExpiredOrExpiringSoon(token: string): boolean {
   try {
     const { exp } = jwtDecode<JwtPayload>(token)
     return exp * 1000 < Date.now() + 10_000
   } catch {
-    return true // treat undecodable tokens as expired
+    return true
   }
 }
 
@@ -116,7 +90,6 @@ export function setSessionExpiredHandler(fn: () => void) {
   _onSessionExpired = fn
 }
 
-// ─── Internal refresh call (bypasses interceptors) ───────────────────────────
 
 async function doRefresh(): Promise<string> {
   const refreshToken = await TokenStore.getRefresh()
@@ -135,8 +108,6 @@ async function doRefresh(): Promise<string> {
   return newToken
 }
 
-// ─── Request interceptor — attach token, proactive refresh ───────────────────
-
 api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
   const url = config.url ?? ''
   const isExcluded =
@@ -150,7 +121,6 @@ api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
 
   let token = await TokenStore.getAccess()
 
-  // Proactively refresh if token is expired or about to expire
   if (token && isTokenExpiredOrExpiringSoon(token)) {
     if (!isRefreshing) {
       isRefreshing = true
@@ -178,8 +148,6 @@ api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
 
   return config
 })
-
-// ─── Response interceptor — reactive 401 handling ────────────────────────────
 
 api.interceptors.response.use(
   res => res,
@@ -229,13 +197,10 @@ api.interceptors.response.use(
   }
 )
 
-// ─── Device info ──────────────────────────────────────────────────────────────
 
 function getDeviceInfo(): string {
   return `React Native — ${Platform.OS} ${Platform.Version}`
 }
-
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface AuthStatusResponse {
   locked:        boolean
@@ -251,6 +216,28 @@ export interface AuthUser {
   last_name:  string | null
   role:       string
   status:     string
+
+  drivers?: {
+    driver_id:        string
+    license_number:   string
+    license_expiry:   string
+    status:           string
+    is_vendor_driver: boolean
+  } | null
+
+  assistant_drivers?: {
+    assistant_driver_id: string
+    license_number:      string | null
+    license_expiry:      string | null
+    status:              string
+  } | null
+
+  clients?: {
+    client_id:       string
+    company_name:    string | null
+    billing_address: string | null
+    payment_terms:   number | null
+  } | null
 }
 
 export interface AuthResponse {
@@ -260,8 +247,6 @@ export interface AuthResponse {
   refreshExpiresAt: string
   user:             AuthUser
 }
-
-// ─── Auth API functions ───────────────────────────────────────────────────────
 
 export async function getAuthStatus(email: string): Promise<AuthStatusResponse> {
   const { data } = await api.post<{ status: string; data: AuthStatusResponse }>(
@@ -308,7 +293,6 @@ export async function logout(): Promise<void> {
   try {
     await api.post('/auth/logout')
   } finally {
-    // Always clear local tokens even if the server request fails
     await TokenStore.clearAll()
   }
 }

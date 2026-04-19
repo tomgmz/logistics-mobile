@@ -7,23 +7,17 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "env": {
-        "RNMAPBOX_MAPS_DOWNLOAD_TOKEN": "$RNMAPBOX_MAPS_DOWNLOAD_TOKEN"
-      }
+      "channel": "development"
     },
     "preview": {
       "distribution": "internal",
       "android": { "buildType": "apk" },
-      "ios": { "simulator": false },
-      "env": {
-        "RNMAPBOX_MAPS_DOWNLOAD_TOKEN": "$RNMAPBOX_MAPS_DOWNLOAD_TOKEN"
-      }
+      "channel": "preview",   
+      "ios": { "simulator": false }
     },
     "production": {
       "autoIncrement": false,
-      "env": {
-        "RNMAPBOX_MAPS_DOWNLOAD_TOKEN": "$RNMAPBOX_MAPS_DOWNLOAD_TOKEN"
-      }
+      "channel": "production"
     }
   },
   "submit": {

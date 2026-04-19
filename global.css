@@ -1,3 +1,45 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  :root {
+    background-color: #0a0a0a;
+    color: #ffffff;
+  }
+}
+
+@layer components {
+  .card-dark {
+    @apply bg-surface-card rounded-2xl border border-surface-border p-4;
+  }
+
+  .surface-raised {
+    @apply bg-surface-raised rounded-xl p-3;
+  }
+
+  .pill {
+    @apply flex-row items-center gap-1.5 px-2.5 py-1 rounded-full;
+  }
+
+  .filter-tab {
+    @apply bg-surface-elevated px-3 py-1.5 rounded-full;
+  }
+
+  .filter-tab-active {
+    @apply bg-white px-3 py-1.5 rounded-full;
+  }
+
+  .label-mono {
+    @apply font-mono font-black tracking-widest text-2xs uppercase;
+  }
+}
+
+@layer utilities {
+  .text-primary   { @apply text-ink-primary;   }
+  .text-secondary { @apply text-ink-secondary; }
+  .text-muted     { @apply text-ink-muted;     }
+  .text-faint     { @apply text-ink-faint;     }
+
+  .border-dark { @apply border border-surface-border; }
+}

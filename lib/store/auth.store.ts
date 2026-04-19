@@ -16,11 +16,14 @@ const secureStorage: StateStorage = Platform.OS === 'web'
       removeItem: (key)        => SecureStore.deleteItemAsync(key),
     }
 
-
 interface AuthStore {
   user:           AuthUser | null
+  accessToken:    string | null
+  refreshToken:   string | null
   hasHydrated:    boolean
+
   setUser:        (user: AuthUser) => void
+  setTokens:      (access: string, refresh: string) => void
   clearUser:      () => void
   setHasHydrated: (val: boolean) => void
 }
@@ -29,18 +32,28 @@ export const useAuthStore = create<AuthStore>()(
   persist(
     (set) => ({
       user:           null,
+      accessToken:    null,
+      refreshToken:   null,
       hasHydrated:    false,
-      setUser:        (user) => set({ user }),
-      clearUser:      () => set({ user: null }),
+
+      setUser: (user) => set({ user }),
+
+      setTokens: (accessToken, refreshToken) =>
+        set({ accessToken, refreshToken }),
+
+      clearUser: () =>
+        set({
+          user: null,
+          accessToken: null,
+          refreshToken: null,
+        }),
+
       setHasHydrated: (val) => set({ hasHydrated: val }),
     }),
     {
       name: 'auth-user',
-
-      // Plug in the SecureStore adapter
       storage: createJSONStorage(() => secureStorage),
 
-      // Only persist the fields we actually need — strips runtime-only state
       partialize: (state) =>
         state.user
           ? {
@@ -52,17 +65,37 @@ export const useAuthStore = create<AuthStore>()(
                 last_name:  state.user.last_name,
                 role:       state.user.role,
                 status:     state.user.status,
+                drivers:           state.user.drivers           ?? null,
+                assistant_drivers: state.user.assistant_drivers ?? null,
+                clients:           state.user.clients           ?? null,
               },
+              accessToken:  state.accessToken,
+              refreshToken: state.refreshToken,
             }
-          : { user: null },
+          : {
+              user: null,
+              accessToken: null,
+              refreshToken: null,
+            },
 
-      // Mark hydration complete so screens can gate on it
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true)
       },
     }
   )
 )
+
+export function useUserId(): string | null {
+  return useAuthStore((s) => s.user?.user_id ?? null)
+}
+
+export function useDriverId(){
+  return useAuthStore((s) => s.user?.drivers?.driver_id ?? null)
+}
+
+export function useUserRole(): string | null {
+  return useAuthStore((s) => s.user?.role ?? null)
+}
 
 export function useAuthHydrated(): boolean {
   return useAuthStore((s) => s.hasHydrated)

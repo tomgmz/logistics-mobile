@@ -9,12 +9,11 @@
     "web": "expo start --web"
   },
   "dependencies": {
-    "@expo/metro-config": "~54.0.14",
     "@expo/vector-icons": "^15.1.1",
     "@gorhom/bottom-sheet": "^5.2.9",
-    "@react-native-async-storage/async-storage": "2.2.0",
-    "@react-native-community/netinfo": "11.4.1",
-    "@rnmapbox/maps": "^10.3.0",
+    "@maplibre/maplibre-react-native": "^10.4.2",
+    "@react-native-async-storage/async-storage": "^2.2.0",
+    "@react-native-community/netinfo": "^11.4.1",
     "axios": "^1.15.0",
     "expo": "^54.0.33",
     "expo-constants": "~18.0.13",
@@ -25,6 +24,7 @@
     "expo-router": "~6.0.23",
     "expo-secure-store": "~15.0.8",
     "expo-status-bar": "~3.0.9",
+    "expo-updates": "~29.0.16",
     "framer-motion": "^12.38.0",
     "jwt-decode": "^4.0.0",
     "lucide-react-native": "^1.8.0",
@@ -44,6 +44,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@types/node": "^25.6.0",
     "@types/react": "~19.1.0",
     "babel-preset-expo": "~54.0.10",
     "prettier-plugin-tailwindcss": "^0.5.11",

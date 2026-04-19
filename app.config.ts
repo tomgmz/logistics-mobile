@@ -10,12 +10,12 @@ export default {
       policy: 'appVersion',
     },
     orientation: 'portrait',
-    icon: './assets/icon.png',
+    icon: './assets/app-logo.png',
     userInterfaceStyle: 'light',
     splash: {
-      image: './assets/splash-icon.png',
+      image: './assets/Final_Logo.png', 
       resizeMode: 'contain',
-      backgroundColor: '#ffffff',
+      backgroundColor: '#000000',
     },
     ios: {
       supportsTablet: true,
@@ -24,18 +24,17 @@ export default {
       config: {
         googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
       },
-      "infoPlist": {
-      "ITSAppUsesNonExemptEncryption": false
-    }
+      infoPlist: {
+        ITSAppUsesNonExemptEncryption: false,
+      },
     },
     android: {
       package: 'ph.logistics8338.mobile',
       versionCode: 1,
       targetSdkVersion: 34,
-      "ndkVersion": "27.1.12297006",
       adaptiveIcon: {
-        foregroundImage: './assets/adaptive-icon.png',
-        backgroundColor: '#ffffff',
+        foregroundImage: './assets/app-logo.png',
+        backgroundColor: '#000000',
       },
       predictiveBackGestureEnabled: false,
       config: {
@@ -52,15 +51,7 @@ export default {
       'expo-router',
       'expo-font',
       'expo-secure-store',
-      [
-        "@rnmapbox/maps",
-        {
-          "RNMapboxMapsImpl": "mapbox",
-          "RNMapboxMapsVersion": "11.3.0",
-          "RNMapboxMapsDownloadToken": process.env.RNMAPBOX_MAPS_DOWNLOAD_TOKEN,
-          "RNMapboxMapsLibs": "com.mapbox.maps:android:11.3.0;com.mapbox.mapboxsdk:mapbox-sdk-turf:6.11.0;androidx.asynclayoutinflater:asynclayoutinflater:1.0.0"
-        }
-      ]
+      ['@maplibre/maplibre-react-native'],
     ],
     extra: {
       eas: {

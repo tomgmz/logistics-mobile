@@ -9,7 +9,7 @@ import {
 import { MotiView, AnimatePresence } from 'moti'
 import { useRouter, usePathname } from 'expo-router'
 import { Settings, LogOut } from 'lucide-react-native'
-import { useAuthStore } from '../../../lib/store/auth.store'
+import { useAuthStore, useUserId, useUserRole } from '../../../lib/store/auth.store'
 import ReusableModal from './ReusableModal'
 import { Easing } from 'react-native-reanimated'
 
@@ -49,9 +49,12 @@ export default function ReusableSidebar({
   setSidebarOpen,
   onLogout,
 }: ReusableSidebarProps) {
-  const pathname = usePathname()
-  const router   = useRouter()
-  const user     = useAuthStore((s) => s.user)
+  const pathname  = usePathname()
+  const router    = useRouter()
+  const user      = useAuthStore((s) => s.user)
+  const userId    = useUserId()
+  const roleLabel = (useUserRole() ?? '').replace(/_/g, ' ')
+
   const [logoutModal, setLogoutModal] = useState(false)
 
   const close = () => setSidebarOpen(false)
@@ -65,8 +68,6 @@ export default function ReusableSidebar({
     user?.first_name?.[0]?.toUpperCase() ??
     user?.username?.[0]?.toUpperCase()   ??
     '?'
-
-  const roleLabel = user?.role?.replace(/_/g, ' ') ?? ''
 
   return (
     <>
@@ -84,7 +85,6 @@ export default function ReusableSidebar({
               <Pressable style={StyleSheet.absoluteFill} onPress={close} />
             </MotiView>
 
-            {/* ── Drawer ── */}
             <MotiView
               key="drawer"
               from={{ translateX: -SIDEBAR_WIDTH }}
