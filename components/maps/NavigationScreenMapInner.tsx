@@ -179,7 +179,7 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
 
       <MapboxGL.MapView
         style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
