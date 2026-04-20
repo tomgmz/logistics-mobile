@@ -921,148 +921,210 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
         )}
       </MapboxGL.MapView>
 
-      {/* ── Instruction banner (with embedded offline strip) ── */}
+{/* ── Floating turn-by-turn card ── */}
+<AnimatePresence>
+  {currentInstruction && (
+    <MotiView
+      from={{ opacity: 0, translateY: -80, scale: 0.95 }}
+      animate={{ opacity: 1, translateY: 0, scale: 1 }}
+      exit={{ opacity: 0, translateY: -80, scale: 0.95 }}
+      transition={{ type: 'spring', damping: 20, stiffness: 220 }}
+      style={{
+        position:   'absolute',
+        top:        insets.top + 10,
+        left:       12,
+        right:      12,
+        zIndex:     20,
+      }}
+    >
+      {/* Offline strip — above card */}
       <AnimatePresence>
-        {currentInstruction && (
+        {showOfflineBadge && (
           <MotiView
-            from={{ opacity: 0, translateY: -120 }}
-            animate={{ opacity: 1, translateY: 0 }}
-            exit={{ opacity: 0, translateY: -120 }}
-            transition={{ type: 'spring', damping: 18, stiffness: 200 }}
-            className="absolute top-0 left-0 right-0 z-20"
+            from={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 28 }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ type: 'timing', duration: 220 }}
             style={{
-              paddingTop:        insets.top + 12,
-              paddingBottom:     18,
-              backgroundColor:   C.bannerBg,
-              borderBottomWidth: 1,
-              borderBottomColor: C.bannerBorder,
-              shadowColor:       '#000',
-              shadowOffset:      { width: 0, height: 6 },
-              shadowOpacity:     0.55,
-              shadowRadius:      10,
-              elevation:         14,
+              flexDirection:   'row',
+              alignItems:      'center',
+              justifyContent:  'center',
+              gap:             5,
+              marginBottom:    6,
+              borderRadius:    10,
+              overflow:        'hidden',
+              backgroundColor: C.offlineBg,
+              borderWidth:     1,
+              borderColor:     C.offlineBorder,
             }}
           >
-            {/* Offline strip inside banner */}
-            <AnimatePresence>
-              {showOfflineBadge && (
-                <MotiView
-                  from={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 30 }}
-                  exit={{ opacity: 0, height: 0 }}
-                  transition={{ type: 'timing', duration: 250 }}
-                  className="flex-row items-center justify-center gap-1.5 mx-4 mb-2 rounded-lg overflow-hidden"
-                  style={{
-                    backgroundColor: C.offlineBg,
-                    borderWidth:     1,
-                    borderColor:     C.offlineBorder,
-                  }}
-                >
-                  <WifiOff size={11} color={C.orange} />
-                  <Text className="text-[11px] font-semibold" style={{ color: C.orange }}>
-                    {isOffline
-                      ? usingCache ? 'Offline — cached route' : 'No internet'
-                      : 'Cached route · reconnecting…'}
-                  </Text>
-                </MotiView>
-              )}
-            </AnimatePresence>
-
-            <View className="flex-row items-center justify-between px-4">
-              <View className="flex-1 flex-row items-center gap-3 mr-3">
-                <TouchableOpacity
-                  className="w-9 h-9 rounded-full items-center justify-center shrink-0"
-                  style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
-                  onPress={() => router.back()}
-                >
-                  <ArrowLeft size={18} color={C.white} />
-                </TouchableOpacity>
-
-                <View className="flex-1">
-                  <Text
-                    className="text-[30px] font-black tracking-tight leading-[34px]"
-                    style={{ color: C.cyan }}
-                    numberOfLines={1}
-                  >
-                    {currentInstruction.distance || '—'}
-                  </Text>
-                  <Text
-                    className="text-[15px] font-semibold leading-5 mt-0.5 opacity-90"
-                    style={{ color: C.white }}
-                    numberOfLines={2}
-                  >
-                    {currentInstruction.instruction || 'Continue on current road'}
-                  </Text>
-                </View>
-              </View>
-
-              <View className="items-center gap-1.5 shrink-0">
-                <View
-                  className="w-[68px] h-[68px] rounded-2xl items-center justify-center"
-                  style={{
-                    backgroundColor: 'rgba(0,229,255,0.1)',
-                    borderWidth:     1.5,
-                    borderColor:     'rgba(0,229,255,0.35)',
-                  }}
-                >
-                  <ManeuverIcon maneuver={currentInstruction.maneuver} />
-                </View>
-
-                <View className="flex-row items-center gap-1">
-                  <TouchableOpacity
-                    onPress={() => setCurrentStep((p) => Math.max(0, p - 1))}
-                    disabled={currentStep === 0}
-                    className="p-0.5"
-                    style={{ opacity: currentStep === 0 ? 0.25 : 1 }}
-                  >
-                    <ChevronUp size={13} color={C.cyan} />
-                  </TouchableOpacity>
-                  <Text
-                    className="text-[10px] font-semibold text-center min-w-[28px]"
-                    style={{ color: C.dimWhite }}
-                  >
-                    {currentStep + 1}/{routeData?.steps.length ?? 1}
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => setCurrentStep((p) => Math.min((routeData?.steps.length ?? 1) - 1, p + 1))}
-                    disabled={currentStep === (routeData?.steps.length ?? 1) - 1}
-                    className="p-0.5"
-                    style={{ opacity: currentStep === (routeData?.steps.length ?? 1) - 1 ? 0.25 : 1 }}
-                  >
-                    <ChevronDown size={13} color={C.cyan} />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-          </MotiView>
-        )}
-      </AnimatePresence>
-
-      {/* Standalone offline banner — when no instruction banner is visible */}
-      <AnimatePresence>
-        {showOfflineBadge && !currentInstruction && (
-          <MotiView
-            from={{ opacity: 0, translateY: -30 }}
-            animate={{ opacity: 1, translateY: 0 }}
-            exit={{ opacity: 0, translateY: -30 }}
-            transition={{ type: 'spring', damping: 20, stiffness: 220 }}
-            className="absolute left-0 right-0 z-20 flex-row items-center justify-center gap-2 py-2"
-            style={{
-              top:               insets.top,
-              backgroundColor:   C.offlineBg,
-              borderBottomWidth: 1,
-              borderColor:       C.offlineBorder,
-            }}
-          >
-            <WifiOff size={13} color={C.orange} />
-            <Text className="text-xs font-semibold" style={{ color: C.orange }}>
+            <WifiOff size={10} color={C.orange} />
+            <Text style={{ fontSize: 11, fontWeight: '600', color: C.orange }}>
               {isOffline
-                ? usingCache ? 'Offline — showing cached route' : 'No internet connection'
+                ? usingCache ? 'Offline — cached route' : 'No internet'
                 : 'Cached route · reconnecting…'}
             </Text>
           </MotiView>
         )}
       </AnimatePresence>
+
+      {/* Card */}
+      <View
+        style={{
+          flexDirection:   'row',
+          alignItems:      'center',
+          gap:             12,
+          paddingVertical: 14,
+          paddingLeft:     14,
+          paddingRight:    12,
+          borderRadius:    20,
+          backgroundColor: C.bannerBg,
+          borderWidth:     1,
+          borderColor:     C.bannerBorder,
+          shadowColor:     '#000',
+          shadowOffset:    { width: 0, height: 8 },
+          shadowOpacity:   0.55,
+          shadowRadius:    16,
+          elevation:       18,
+        }}
+      >
+        {/* Back button */}
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={{
+            width:           36,
+            height:          36,
+            borderRadius:    18,
+            alignItems:      'center',
+            justifyContent:  'center',
+            backgroundColor: 'rgba(255,255,255,0.07)',
+            flexShrink:      0,
+          }}
+        >
+          <ArrowLeft size={17} color={C.white} />
+        </TouchableOpacity>
+
+        {/* Distance + instruction */}
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text
+            style={{
+              fontSize:      28,
+              fontWeight:    '900',
+              letterSpacing: -0.5,
+              lineHeight:    30,
+              color:         C.cyan,
+            }}
+            numberOfLines={1}
+          >
+            {currentInstruction.distance || '—'}
+          </Text>
+          <Text
+            style={{
+              fontSize:    14,
+              fontWeight:  '600',
+              lineHeight:  19,
+              marginTop:   2,
+              color:       C.white,
+              opacity:     0.88,
+            }}
+            numberOfLines={2}
+          >
+            {currentInstruction.instruction || 'Continue on current road'}
+          </Text>
+        </View>
+
+        {/* Maneuver box + step stepper */}
+        <View style={{ alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          <View
+            style={{
+              width:           62,
+              height:          62,
+              borderRadius:    16,
+              alignItems:      'center',
+              justifyContent:  'center',
+              backgroundColor: 'rgba(0,229,255,0.10)',
+              borderWidth:     1.5,
+              borderColor:     'rgba(0,229,255,0.30)',
+            }}
+          >
+            <ManeuverIcon maneuver={currentInstruction.maneuver} />
+          </View>
+
+          {/* Step stepper */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+            <TouchableOpacity
+              onPress={() => setCurrentStep((p) => Math.max(0, p - 1))}
+              disabled={currentStep === 0}
+              style={{ padding: 2, opacity: currentStep === 0 ? 0.2 : 1 }}
+            >
+              <ChevronUp size={12} color={C.cyan} />
+            </TouchableOpacity>
+            <Text
+              style={{
+                fontSize:   10,
+                fontWeight: '600',
+                color:      C.dimWhite,
+                minWidth:   28,
+                textAlign:  'center',
+              }}
+            >
+              {currentStep + 1}/{routeData?.steps.length ?? 1}
+            </Text>
+            <TouchableOpacity
+              onPress={() =>
+                setCurrentStep((p) =>
+                  Math.min((routeData?.steps.length ?? 1) - 1, p + 1),
+                )
+              }
+              disabled={currentStep === (routeData?.steps.length ?? 1) - 1}
+              style={{
+                padding: 2,
+                opacity: currentStep === (routeData?.steps.length ?? 1) - 1 ? 0.2 : 1,
+              }}
+            >
+              <ChevronDown size={12} color={C.cyan} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </MotiView>
+  )}
+</AnimatePresence>
+
+{/* Standalone offline banner — only when no instruction card is showing */}
+<AnimatePresence>
+  {showOfflineBadge && !currentInstruction && (
+    <MotiView
+      from={{ opacity: 0, translateY: -30 }}
+      animate={{ opacity: 1, translateY: 0 }}
+      exit={{ opacity: 0, translateY: -30 }}
+      transition={{ type: 'spring', damping: 20, stiffness: 220 }}
+      style={{
+        position:        'absolute',
+        top:             insets.top + 10,
+        left:            12,
+        right:           12,
+        zIndex:          20,
+        flexDirection:   'row',
+        alignItems:      'center',
+        justifyContent:  'center',
+        gap:             6,
+        paddingVertical: 8,
+        borderRadius:    12,
+        backgroundColor: C.offlineBg,
+        borderWidth:     1,
+        borderColor:     C.offlineBorder,
+      }}
+    >
+      <WifiOff size={13} color={C.orange} />
+      <Text style={{ fontSize: 12, fontWeight: '600', color: C.orange }}>
+        {isOffline
+          ? usingCache ? 'Offline — showing cached route' : 'No internet connection'
+          : 'Cached route · reconnecting…'}
+      </Text>
+    </MotiView>
+  )}
+</AnimatePresence>
 
       {/* ── Recenter ── */}
       {!trackingMode && (

@@ -19,6 +19,7 @@ import { router } from 'expo-router'
 
 import {
   getAuthStatus,
+  getMe,
   requestOtp,
   verifyOtp,
 } from '../lib/api/auth.api'
@@ -132,6 +133,7 @@ type Step = 'email' | 'otp'
 export default function SignInScreen() {
   const insets  = useSafeAreaInsets()
   const setUser = useAuthStore((s) => s.setUser)
+  const setTokens = useAuthStore((s) => s.setTokens)
 
   const [step,        setStep]        = useState<Step>('email')
   const [email,       setEmail]       = useState('')
@@ -194,9 +196,11 @@ export default function SignInScreen() {
       const auth = await verifyOtp(email, code)
 
       setUser(auth.user)
+      setTokens(auth.accessToken, auth.refreshToken)
+      const me = await getMe()
+      setUser(me)
 
-      // Navigate based on role
-      const role = auth.user.role
+      const role = me.role
       if (role === 'admin') {
         router.replace('/admin')
       } else if (role === 'assistant_driver') {
@@ -382,7 +386,13 @@ export default function SignInScreen() {
                   autoComplete="one-time-code"
                 />
 
-                <Pressable onPress={() => otpRef.current?.focus()} style={styles.otpRow}>
+                <Pressable
+                  onPress={() => {
+                    otpRef.current?.blur()
+                    setTimeout(() => otpRef.current?.focus(), 50)
+                  }}
+                  style={styles.otpRow}
+                >
                   {[...Array(6)].map((_, i) => (
                     <OtpBox
                       key={i}
