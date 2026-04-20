@@ -42,6 +42,23 @@ const C = {
   success:     '#3af626',
 }
 
+/**
+ * Mobile-allowed roles and their Expo Router paths.
+ * super_admin: web + mobile  →  /superadmin
+ * driver:      mobile only   →  /driver
+ *
+ * All other roles are blocked server-side and should never reach here,
+ * but we redirect to '/' as a safe fallback.
+ */
+const MOBILE_ROLE_ROUTES: Record<string, string> = {
+  super_admin: '/superadmin',
+  driver:      '/driver',
+}
+
+function getMobileRoute(role: string): string {
+  return MOBILE_ROLE_ROUTES[role] ?? '/'
+}
+
 function OtpBox({
   value,
   focused,
@@ -71,7 +88,7 @@ function OtpBox({
     <View
       style={[
         styles.otpBox,
-        focused && styles.otpBoxFocused,
+        focused  && styles.otpBoxFocused,
         hasError && styles.otpBoxError,
         value && !focused && styles.otpBoxFilled,
       ]}
@@ -85,13 +102,7 @@ function OtpBox({
   )
 }
 
-function ResendTimer({
-  onResend,
-  email,
-}: {
-  onResend: () => void
-  email:    string
-}) {
+function ResendTimer({ onResend, email }: { onResend: () => void; email: string }) {
   const [seconds,   setSeconds]   = useState(30)
   const [resending, setResending] = useState(false)
 
@@ -131,8 +142,8 @@ function ResendTimer({
 type Step = 'email' | 'otp'
 
 export default function SignInScreen() {
-  const insets  = useSafeAreaInsets()
-  const setUser = useAuthStore((s) => s.setUser)
+  const insets    = useSafeAreaInsets()
+  const setUser   = useAuthStore((s) => s.setUser)
   const setTokens = useAuthStore((s) => s.setTokens)
 
   const [step,        setStep]        = useState<Step>('email')
@@ -146,9 +157,7 @@ export default function SignInScreen() {
   const otpRef   = useRef<TextInput>(null)
 
   useEffect(() => {
-    if (step === 'otp') {
-      setTimeout(() => otpRef.current?.focus(), 400)
-    }
+    if (step === 'otp') setTimeout(() => otpRef.current?.focus(), 400)
   }, [step])
 
   const handleEmailSubmit = useCallback(async () => {
@@ -195,22 +204,15 @@ export default function SignInScreen() {
     try {
       const auth = await verifyOtp(email, code)
 
-      setUser(auth.user)
+      // Persist tokens + minimal user immediately so the store is warm
       setTokens(auth.accessToken, auth.refreshToken)
+      setUser(auth.user)
+
+      // Fetch full user profile (includes driver_id etc.)
       const me = await getMe()
       setUser(me)
 
-      const role = me.role
-      if (role === 'admin') {
-        router.replace('/admin')
-      } else if (role === 'assistant_driver') {
-        router.replace('/assistant-driver')
-      } else if (role === 'driver') {
-        router.replace('/driver')
-      } else {
-        router.replace('/(tabs)/')
-      }
-
+      router.replace(getMobileRoute(me.role) as any)
     } catch (err: any) {
       const msg: string = err?.response?.data?.message ?? 'Invalid code. Try again.'
       setError(msg)
@@ -219,7 +221,7 @@ export default function SignInScreen() {
     } finally {
       setLoading(false)
     }
-  }, [email, setUser])
+  }, [email, setUser, setTokens])
 
   const handleOtpChange = (text: string) => {
     const digits = text.replace(/\D/g, '').slice(0, 6)
@@ -244,7 +246,7 @@ export default function SignInScreen() {
     >
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
         {[...Array(8)].map((_, i) => (
-          <View key={i} style={[styles.gridLine, { top: `${(i + 1) * 12}%` }]} />
+          <View key={i} style={[styles.gridLine, { top: `${(i + 1) * 12}%` as any }]} />
         ))}
       </View>
 
@@ -444,7 +446,6 @@ export default function SignInScreen() {
           </AnimatePresence>
         </MotiView>
 
-        {/* Footer */}
         <MotiView
           from={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -471,14 +472,12 @@ const styles = StyleSheet.create({
     justifyContent:    'center',
     paddingHorizontal: 24,
   },
-
   gridLine: {
     position:        'absolute',
     left: 0, right:  0,
     height:          1,
     backgroundColor: 'rgba(255,255,255,0.025)',
   },
-
   cornerAccentTL: {
     position:        'absolute',
     top: 0, left:    0,
@@ -497,7 +496,6 @@ const styles = StyleSheet.create({
     borderRightWidth:   1,
     borderColor:        'rgba(77,249,237,0.15)',
   },
-
   brandWrap: {
     alignItems:   'center',
     marginBottom: 36,
@@ -533,7 +531,6 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     textTransform: 'uppercase',
   },
-
   card: {
     backgroundColor: C.surface,
     borderRadius:    20,
@@ -550,7 +547,6 @@ const styles = StyleSheet.create({
     marginBottom:     24,
     opacity:          0.7,
   },
-
   backRow: {
     flexDirection: 'row',
     alignItems:    'center',
@@ -573,7 +569,6 @@ const styles = StyleSheet.create({
     fontSize:   13,
     lineHeight: 20,
   },
-
   label: {
     color:         C.textMuted,
     fontSize:      11,
@@ -601,12 +596,11 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   input: {
-    flex:          1,
-    color:         C.text,
-    fontSize:      15,
+    flex:            1,
+    color:           C.text,
+    fontSize:        15,
     paddingVertical: 0,
   },
-
   errorRow: {
     flexDirection: 'row',
     alignItems:    'center',
@@ -619,16 +613,15 @@ const styles = StyleSheet.create({
     fontSize: 12,
     flex:     1,
   },
-
   btn: {
-    flexDirection:  'row',
-    alignItems:     'center',
-    justifyContent: 'center',
-    gap:            8,
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'center',
+    gap:             8,
     backgroundColor: C.cyan,
-    borderRadius:   12,
-    height:         52,
-    marginTop:      20,
+    borderRadius:    12,
+    height:          52,
+    marginTop:       20,
   },
   btnDisabled: {
     opacity: 0.6,
@@ -639,7 +632,6 @@ const styles = StyleSheet.create({
     fontWeight:    '800',
     letterSpacing: 0.3,
   },
-
   hiddenInput: {
     position: 'absolute',
     opacity:  0,
@@ -684,7 +676,6 @@ const styles = StyleSheet.create({
     backgroundColor: C.cyan,
     borderRadius:    1,
   },
-
   verifyingRow: {
     flexDirection:  'row',
     alignItems:     'center',
@@ -696,7 +687,6 @@ const styles = StyleSheet.create({
     color:    C.cyan,
     fontSize: 13,
   },
-
   resendRow: {
     alignItems: 'center',
     marginTop:  20,
@@ -705,7 +695,6 @@ const styles = StyleSheet.create({
     color:    C.textMuted,
     fontSize: 13,
   },
-
   footer: {
     flexDirection:  'row',
     alignItems:     'center',

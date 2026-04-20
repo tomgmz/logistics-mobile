@@ -31,27 +31,18 @@ interface AuthStore {
 export const useAuthStore = create<AuthStore>()(
   persist(
     (set) => ({
-      user:           null,
-      accessToken:    null,
-      refreshToken:   null,
-      hasHydrated:    false,
+      user:         null,
+      accessToken:  null,
+      refreshToken: null,
+      hasHydrated:  false,
 
-      setUser: (user) => set({ user }),
-
-      setTokens: (accessToken, refreshToken) =>
-        set({ accessToken, refreshToken }),
-
-      clearUser: () =>
-        set({
-          user: null,
-          accessToken: null,
-          refreshToken: null,
-        }),
-
+      setUser:   (user) => set({ user }),
+      setTokens: (accessToken, refreshToken) => set({ accessToken, refreshToken }),
+      clearUser: () => set({ user: null, accessToken: null, refreshToken: null }),
       setHasHydrated: (val) => set({ hasHydrated: val }),
     }),
     {
-      name: 'auth-user',
+      name:    'auth-user',
       storage: createJSONStorage(() => secureStorage),
 
       partialize: (state) =>
@@ -65,18 +56,13 @@ export const useAuthStore = create<AuthStore>()(
                 last_name:  state.user.last_name,
                 role:       state.user.role,
                 status:     state.user.status,
-                drivers:           state.user.drivers           ?? null,
-                assistant_drivers: state.user.assistant_drivers ?? null,
-                clients:           state.user.clients           ?? null,
+                drivers: state.user.drivers ?? null,
+                clients: state.user.clients ?? null,
               },
               accessToken:  state.accessToken,
               refreshToken: state.refreshToken,
             }
-          : {
-              user: null,
-              accessToken: null,
-              refreshToken: null,
-            },
+          : { user: null, accessToken: null, refreshToken: null },
 
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true)
@@ -89,7 +75,7 @@ export function useUserId(): string | null {
   return useAuthStore((s) => s.user?.user_id ?? null)
 }
 
-export function useDriverId(){
+export function useDriverId(): string | null {
   return useAuthStore((s) => s.user?.drivers?.driver_id ?? null)
 }
 

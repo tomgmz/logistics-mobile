@@ -1,5 +1,5 @@
 import { useLocalSearchParams } from 'expo-router'
-import NavigationScreen from '../../../../components/ui/NavigationScreen'
+import NavigationScreen from '../../../../components/maps/NavigationScreen'
 
 export default function Page() {
   const { bookingId } = useLocalSearchParams<{ bookingId: string }>()

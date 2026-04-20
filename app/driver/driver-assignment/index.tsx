@@ -11,9 +11,10 @@ import {
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import api from '../../../lib/api/auth.api'
 import { useDriverId, useAuthHydrated } from '../../../lib/store/auth.store'
-import { Package, Search, Truck, TriangleAlert } from 'lucide-react-native'
+import { Package, Search, Truck, TriangleAlert, WifiOff } from 'lucide-react-native'
 
 interface BookingDestination {
   destination_id: string
@@ -76,6 +77,11 @@ interface BookingWithRelations {
   truck_assignments: TruckAssignment[]
 }
 
+interface CachePayload {
+  bookings: BookingWithRelations[]
+  savedAt: string
+}
+
 type StatusKey = 'pending' | 'assigned' | 'in_transit' | 'completed' | 'cancelled'
 
 const STATUS_CONFIG: Record<StatusKey, {
@@ -89,6 +95,39 @@ const STATUS_CONFIG: Record<StatusKey, {
   in_transit: { label: 'En Route',  badgeCn: 'bg-emerald-950', textCn: 'text-emerald-400', dotCn: 'bg-emerald-400' },
   completed:  { label: 'Delivered', badgeCn: 'bg-zinc-800',    textCn: 'text-zinc-400',    dotCn: 'bg-zinc-500'    },
   cancelled:  { label: 'Cancelled', badgeCn: 'bg-red-950',     textCn: 'text-red-400',     dotCn: 'bg-red-500'     },
+}
+
+function cacheKey(driverId: string) {
+  return `bookings_driver_${driverId}`
+}
+
+async function readCache(driverId: string): Promise<CachePayload | null> {
+  try {
+    const raw = await AsyncStorage.getItem(cacheKey(driverId))
+    if (!raw) return null
+    return JSON.parse(raw) as CachePayload
+  } catch {
+    return null
+  }
+}
+
+async function writeCache(driverId: string, bookings: BookingWithRelations[]) {
+  try {
+    const payload: CachePayload = { bookings, savedAt: new Date().toISOString() }
+    await AsyncStorage.setItem(cacheKey(driverId), JSON.stringify(payload))
+  } catch {
+    // storage write failures are non-fatal
+  }
+}
+
+function formatCacheAge(savedAt: string): string {
+  const diffMs  = Date.now() - new Date(savedAt).getTime()
+  const diffMin = Math.floor(diffMs / 60_000)
+  if (diffMin < 1)  return 'just now'
+  if (diffMin < 60) return `${diffMin}m ago`
+  const diffH = Math.floor(diffMin / 60)
+  if (diffH < 24)   return `${diffH}h ago`
+  return `${Math.floor(diffH / 24)}d ago`
 }
 
 function formatDate(dateStr: string): string {
@@ -323,6 +362,37 @@ function EmptyState({ filter }: { filter: FilterKey }) {
   )
 }
 
+interface OfflineBannerProps {
+  savedAt: string
+  onRetry: () => void
+}
+
+function OfflineBanner({ savedAt, onRetry }: OfflineBannerProps) {
+  const fadeAnim = useRef(new Animated.Value(0)).current
+
+  useEffect(() => {
+    Animated.timing(fadeAnim, {
+      toValue: 1, duration: 280, useNativeDriver: true,
+    }).start()
+  }, [])
+
+  return (
+    <Animated.View style={{ opacity: fadeAnim }}>
+      <View className="flex-row items-center justify-between mx-4 mb-3 px-3 py-2.5 rounded-xl bg-amber-950 border border-amber-900/60">
+        <View className="flex-row items-center gap-2">
+          <WifiOff size={14} color="#fbbf24" />
+          <Text className="text-xs font-semibold text-amber-400">
+            Offline — cached {formatCacheAge(savedAt)}
+          </Text>
+        </View>
+        <TouchableOpacity onPress={onRetry} activeOpacity={0.7}>
+          <Text className="text-xs font-bold text-amber-300">Retry</Text>
+        </TouchableOpacity>
+      </View>
+    </Animated.View>
+  )
+}
+
 export default function DriverBookingList() {
   const router      = useRouter()
   const insets      = useSafeAreaInsets()
@@ -334,16 +404,35 @@ export default function DriverBookingList() {
   const [refreshing,   setRefreshing]   = useState(false)
   const [error,        setError]        = useState<string | null>(null)
   const [activeFilter, setActiveFilter] = useState<FilterKey>('All')
+  const [offlineMeta,  setOfflineMeta]  = useState<{ savedAt: string } | null>(null)
 
-  const fetchBookings = useCallback(async () => {
+  const loadCacheThenFetch = useCallback(async (isRefresh = false) => {
     if (!hasHydrated || !driverId) return
+
+    if (!isRefresh) {
+      const cached = await readCache(driverId)
+      if (cached) {
+        setBookings(cached.bookings)
+        setLoading(false)
+      }
+    }
+
     try {
-      setLoading(true)
-      setError(null)
       const { data } = await api.get(`/booking/driver/${driverId}`)
-      setBookings(data.data ?? [])
+      const fresh: BookingWithRelations[] = data.data ?? []
+      setBookings(fresh)
+      setOfflineMeta(null)
+      setError(null)
+      await writeCache(driverId, fresh)
     } catch (err: any) {
-      setError(err.message ?? 'Failed to load bookings')
+      const cached = await readCache(driverId)
+      if (cached) {
+        setBookings(cached.bookings)
+        setOfflineMeta({ savedAt: cached.savedAt })
+        setError(null)
+      } else {
+        setError(err.message ?? 'Failed to load bookings')
+      }
     } finally {
       setLoading(false)
       setRefreshing(false)
@@ -351,24 +440,25 @@ export default function DriverBookingList() {
   }, [driverId, hasHydrated])
 
   useEffect(() => {
-    if (!hasHydrated) return          // still rehydrating — wait
+    if (!hasHydrated) return
     if (!driverId) {
-      setLoading(false)               // ← was missing!
+      setLoading(false)
       setError('Not logged in as a driver')
       return
     }
-    fetchBookings()
+    loadCacheThenFetch()
   }, [hasHydrated, driverId])
 
   const onRefresh = useCallback(() => {
     setRefreshing(true)
-    fetchBookings()
-  }, [fetchBookings])
+    loadCacheThenFetch(true)
+  }, [loadCacheThenFetch])
 
   const displayed = filterBookings(bookings, activeFilter)
   const countFor  = (f: FilterKey) => filterBookings(bookings, f).length
 
-  console.log('[BookingList] hydrated:', hasHydrated, '| driverId:', driverId)
+  console.log('[BookingList] hydrated:', hasHydrated, '| driverId:', driverId, '| offline:', !!offlineMeta)
+
   return (
     <View className="flex-1 bg-surface-bg">
 
@@ -430,7 +520,7 @@ export default function DriverBookingList() {
           <Text className="text-base font-bold text-ink-primary mb-1">Something went wrong</Text>
           <Text className="text-sm text-ink-faint text-center mb-4">{error}</Text>
           <TouchableOpacity
-            onPress={fetchBookings}
+            onPress={() => loadCacheThenFetch()}
             activeOpacity={0.8}
             className="bg-ink-primary rounded-xl px-6 py-3"
           >
@@ -438,37 +528,46 @@ export default function DriverBookingList() {
           </TouchableOpacity>
         </View>
       ) : (
-        <FlatList
-          data={displayed}
-          keyExtractor={(item) => item.booking_id}
-          contentContainerStyle={{
-            paddingHorizontal: 16,
-            paddingTop: 4,
-            paddingBottom: insets.bottom + 24,
-          }}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor="#ffffff"
-              colors={['#ffffff']}
-            />
-          }
-          ListEmptyComponent={<EmptyState filter={activeFilter} />}
-          renderItem={({ item, index }) => (
-            <BookingCard
-              booking={item}
-              index={index}
-              onPress={() =>
-                router.push({
-                  pathname: '/driver/maps/[bookingId]',
-                  params: { bookingId: item.booking_id },
-                })
-              }
+        <>
+          {offlineMeta && (
+            <OfflineBanner
+              savedAt={offlineMeta.savedAt}
+              onRetry={() => loadCacheThenFetch()}
             />
           )}
-        />
+
+          <FlatList
+            data={displayed}
+            keyExtractor={(item) => item.booking_id}
+            contentContainerStyle={{
+              paddingHorizontal: 16,
+              paddingTop: 4,
+              paddingBottom: insets.bottom + 24,
+            }}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor="#ffffff"
+                colors={['#ffffff']}
+              />
+            }
+            ListEmptyComponent={<EmptyState filter={activeFilter} />}
+            renderItem={({ item, index }) => (
+              <BookingCard
+                booking={item}
+                index={index}
+                onPress={() =>
+                  router.push({
+                    pathname: '/driver/maps/[bookingId]',
+                    params: { bookingId: item.booking_id },
+                  })
+                }
+              />
+            )}
+          />
+        </>
       )}
     </View>
   )

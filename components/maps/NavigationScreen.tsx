@@ -1,17 +1,9 @@
-/**
- * Lazy entry for the driver map screen. The real implementation lives in
- * `NavigationScreenMapInner.tsx` and is loaded with `import()` so Expo Router
- * does not evaluate `@rnmapbox/maps` while scanning routes (and so Expo Go
- * shows a message instead of crashing the whole app).
- */
-
 import Constants, { ExecutionEnvironment } from 'expo-constants'
 import React, { useEffect, useState } from 'react'
 import { ActivityIndicator, NativeModules, Platform, Text, View } from 'react-native'
 
 function isMapboxNativeLinked(): boolean {
   const mod = NativeModules.RNMBXModule as { setAccessToken?: unknown } | null | undefined
-  // A bare truthy object is not enough — the real bridge exposes native methods.
   return mod != null && typeof mod.setAccessToken === 'function'
 }
 
@@ -27,7 +19,6 @@ export default function NavigationScreen({ bookingId }: NavigationScreenProps) {
   useEffect(() => {
     let cancelled = false
 
-    // Never load @rnmapbox/maps JS in Expo Go — it throws during module init.
     if (Constants.executionEnvironment === ExecutionEnvironment.StoreClient) {
       setLoadErr(
         'Maps are not available in Expo Go. Create a development build with Mapbox included (eas build -p ios on a cloud Mac, or npx expo run:android on Windows), then install that build on your device.',

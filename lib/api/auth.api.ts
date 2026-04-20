@@ -13,22 +13,15 @@ function getApiUrl(): string {
   return url
 }
 
-
 const KEYS = {
   ACCESS_TOKEN:  'access_token',
   REFRESH_TOKEN: 'refresh_token',
 } as const
 
 const webStorage = {
-  getItemAsync: (key: string) => Promise.resolve(localStorage.getItem(key)),
-  setItemAsync: (key: string, value: string) => {
-    localStorage.setItem(key, value)
-    return Promise.resolve()
-  },
-  deleteItemAsync: (key: string) => {
-    localStorage.removeItem(key)
-    return Promise.resolve()
-  },
+  getItemAsync:    (key: string) => Promise.resolve(localStorage.getItem(key)),
+  setItemAsync:    (key: string, value: string) => { localStorage.setItem(key, value); return Promise.resolve() },
+  deleteItemAsync: (key: string) => { localStorage.removeItem(key); return Promise.resolve() },
 }
 
 const storage = Platform.OS === 'web'
@@ -52,16 +45,13 @@ export const TokenStore = {
   },
 }
 
-
 const api: AxiosInstance = axios.create({
   baseURL: getApiUrl(),
   headers: { 'Content-Type': 'application/json' },
   timeout: 15_000,
 })
 
-interface JwtPayload {
-  exp: number
-}
+interface JwtPayload { exp: number }
 
 function isTokenExpiredOrExpiringSoon(token: string): boolean {
   try {
@@ -89,7 +79,6 @@ let _onSessionExpired: (() => void) | null = null
 export function setSessionExpiredHandler(fn: () => void) {
   _onSessionExpired = fn
 }
-
 
 async function doRefresh(): Promise<string> {
   const refreshToken = await TokenStore.getRefresh()
@@ -142,10 +131,7 @@ api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
     }
   }
 
-  if (token) {
-    config.headers['Authorization'] = `Bearer ${token}`
-  }
-
+  if (token) config.headers['Authorization'] = `Bearer ${token}`
   return config
 })
 
@@ -197,7 +183,6 @@ api.interceptors.response.use(
   }
 )
 
-
 function getDeviceInfo(): string {
   return `React Native — ${Platform.OS} ${Platform.Version}`
 }
@@ -223,13 +208,6 @@ export interface AuthUser {
     license_expiry:   string
     status:           string
     is_vendor_driver: boolean
-  } | null
-
-  assistant_drivers?: {
-    assistant_driver_id: string
-    license_number:      string | null
-    license_expiry:      string | null
-    status:              string
   } | null
 
   clients?: {
@@ -260,10 +238,7 @@ export async function requestOtp(email: string): Promise<void> {
   await api.post('/auth/request-otp', { email })
 }
 
-export async function verifyOtp(
-  email: string,
-  code:  string,
-): Promise<AuthResponse> {
+export async function verifyOtp(email: string, code: string): Promise<AuthResponse> {
   const { data } = await api.post<{ status: string; data: AuthResponse }>(
     '/auth/verify-otp',
     {
