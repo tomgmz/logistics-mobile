@@ -173,7 +173,7 @@ export function TurnCard({
               borderColor:     'rgba(0,229,255,0.25)',
             }}
           >
-            <ManeuverIcon maneuver={instruction.maneuver} />
+            <ManeuverIcon key={instruction.maneuver} maneuver={instruction.maneuver} />
           </View>
 
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
