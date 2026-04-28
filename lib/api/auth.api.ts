@@ -191,6 +191,7 @@ export interface AuthStatusResponse {
   locked:        boolean
   permanent?:    boolean
   locked_until?: string
+  role:          string
 }
 
 export interface AuthUser {
@@ -252,6 +253,27 @@ export async function verifyOtp(email: string, code: string): Promise<AuthRespon
   const auth = data.data
   if (!auth?.accessToken || !auth?.refreshToken) {
     throw new Error('verify-otp response is missing token fields.')
+  }
+
+  await TokenStore.setAccess(auth.accessToken)
+  await TokenStore.setRefresh(auth.refreshToken)
+  return auth
+}
+
+export async function loginWithPassword(email: string, password: string): Promise<AuthResponse> {
+  const { data } = await api.post<{ status: string; data: AuthResponse }>(
+    '/auth/login',
+    {
+      email,
+      password,
+      device_info: getDeviceInfo(),
+      platform:    'mobile',
+    }
+  )
+
+  const auth = data.data
+  if (!auth?.accessToken || !auth?.refreshToken) {
+    throw new Error('login response is missing token fields.')
   }
 
   await TokenStore.setAccess(auth.accessToken)

@@ -1,4 +1,3 @@
-// tailwind.config.js
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: ["./app/**/*.{js,ts,jsx,tsx}", "./components/**/*.{js,ts,jsx,tsx}"],
@@ -29,6 +28,23 @@ module.exports = {
           faint:     '#818181',
           disabled:  '#555555',
         },
+
+        cyan: {
+          DEFAULT: '#4df9ed',
+          dim:     'rgba(77,249,237,0.12)',
+          glow:    'rgba(77,249,237,0.06)',
+          border:  'rgba(77,249,237,0.30)',
+          accent:  'rgba(77,249,237,0.15)',
+        },
+
+        error: {
+          DEFAULT: '#ff4d4d',
+          dim:     'rgba(255,77,77,0.10)',
+        },
+
+        success: {
+          DEFAULT: '#3af626',
+        },
       },
 
       borderRadius: {
@@ -42,7 +58,7 @@ module.exports = {
       },
 
       boxShadow: {
-        'card-dark': '0 2px 8px rgba(0,0,0,0.5)',
+        'card-dark':    '0 2px 8px rgba(0,0,0,0.5)',
         'card-dark-lg': '0 4px 16px rgba(0,0,0,0.6)',
       },
     },
