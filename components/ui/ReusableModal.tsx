@@ -11,6 +11,7 @@ import {
   BackHandler,
 } from 'react-native'
 import { MotiView, AnimatePresence } from 'moti'
+import { Easing } from 'react-native-reanimated'
 
 const COLORS = {
   bg:          '#1a1a1a',
@@ -94,7 +95,7 @@ export default function ReusableModal({
                 : { opacity: 0, translateY: 300 }}
               transition={isTablet
                 ? { type: 'spring', stiffness: 320, damping: 28 }
-                : { type: 'spring', stiffness: 300, damping: 32 }}
+                : { type: 'timing', duration: 400, easing: Easing.out(Easing.cubic) }}
               style={[
                 styles.card,
                 isTablet ? styles.cardTablet : styles.cardMobile,

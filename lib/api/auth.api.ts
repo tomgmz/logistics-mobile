@@ -104,6 +104,7 @@ api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
     url.includes('/auth/verify-otp')  ||
     url.includes('/auth/request-otp') ||
     url.includes('/auth/status')      ||
+    url.includes('/auth/login')       ||
     url.includes('/auth/logout')
 
   if (isExcluded) return config
@@ -146,6 +147,7 @@ api.interceptors.response.use(
       url.includes('/auth/verify-otp')  ||
       url.includes('/auth/request-otp') ||
       url.includes('/auth/status')      ||
+      url.includes('/auth/login')       ||
       url.includes('/auth/logout')
 
     if (error.response?.status === 401 && !original?._retry && !isExcluded) {

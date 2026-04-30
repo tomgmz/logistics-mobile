@@ -40,6 +40,15 @@ function formatCountdown(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
+function extractMessage(err: any, fallback: string): string {
+  return (
+    err?.response.data?.message  ??
+    err?.data?.message ??
+    err?.message                 ??
+    fallback
+  )
+}
+
 type LockState = 'none' | 'temporary' | 'permanent'
 type Step      = 'email' | 'method' | 'otp' | 'password'
 type Method    = 'otp' | 'password'
@@ -118,8 +127,8 @@ function ResendTimer({
   email:    string
   disabled: boolean
 }) {
-  const expiresAt               = useRef(Date.now() + 60_000)
-  const [seconds,   setSeconds] = useState(60)
+  const expiresAt                 = useRef(Date.now() + 60_000)
+  const [seconds,   setSeconds]   = useState(60)
   const [resending, setResending] = useState(false)
 
   useEffect(() => {
@@ -333,9 +342,9 @@ function MethodCard({
 }
 
 function useLockCountdown(
-  lockState:    LockState,
+  lockState:     LockState,
   lockExpiresAt: React.MutableRefObject<number>,
-  onUnlock:     () => void,
+  onUnlock:      () => void,
 ) {
   const [lockRemaining, setLockRemaining] = useState(0)
 
@@ -423,7 +432,6 @@ export default function SignInScreen() {
     }
   }, [])
 
-
   const handleEmailSubmit = useCallback(async () => {
     const trimmed = email.trim().toLowerCase()
     if (!trimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
@@ -463,7 +471,7 @@ export default function SignInScreen() {
         setStep('otp')
       }
     } catch (err: any) {
-      setError(err?.response?.data?.message ?? 'Something went wrong. Try again.')
+      setError(extractMessage(err, 'Something went wrong. Try again.'))
     } finally {
       setLoading(false)
     }
@@ -483,7 +491,7 @@ export default function SignInScreen() {
         await requestOtp(email)
         setStep('otp')
       } catch (err: any) {
-        setError(err?.response?.data?.message ?? 'Failed to send OTP. Try again.')
+        setError(extractMessage(err, 'Failed to send OTP. Try again.'))
       } finally {
         setLoading(false)
       }
@@ -502,9 +510,14 @@ export default function SignInScreen() {
       setUser(auth.user)
       const me = await getMe()
       setUser(me)
-      router.replace(getMobileRoute(me.role) as any)
+      const route = getMobileRoute(me.role)
+      if (route === '/') {
+        setError(`Role "${me.role}" has no mobile access.`)
+        return
+      }
+      router.replace(route as any)
     } catch (err: any) {
-      const message: string = err?.response?.data?.message ?? 'Invalid code. Try again.'
+      const message = extractMessage(err, 'Invalid code. Try again.')
       setError(message)
       setOtp('')
       await handleLockError(message, email)
@@ -538,9 +551,14 @@ export default function SignInScreen() {
       setUser(auth.user)
       const me = await getMe()
       setUser(me)
-      router.replace(getMobileRoute(me.role) as any)
+      const route = getMobileRoute(me.role)
+      if (route === '/') {
+        setError(`Role "${me.role}" has no mobile access.`)
+        return
+      }
+      router.replace(route as any)
     } catch (err: any) {
-      const message: string = err?.response?.data?.message ?? 'Incorrect password. Try again.'
+      const message = extractMessage(err, 'Incorrect password. Try again.')
       setError(message)
       await handleLockError(message, email)
     } finally {
@@ -557,8 +575,8 @@ export default function SignInScreen() {
     if (step === 'password') setStep('method')
   }
 
-  const hasOtpError    = !!error && step === 'otp'    && lockState === 'none'
-  const isLocked       = lockState !== 'none'
+  const hasOtpError = !!error && step === 'otp'    && lockState === 'none'
+  const isLocked    = lockState !== 'none'
 
   return (
     <KeyboardAvoidingView
@@ -669,7 +687,7 @@ export default function SignInScreen() {
                   How to sign in?
                 </Text>
                 <Text className="text-[13px] leading-5 mb-6 text-ink-muted">
-                  Choose your preferred login method for{'\n'}
+                  Choose your preferred sign in method for{'\n'}
                   <Text className="text-cyan">{email}</Text>
                 </Text>
 
