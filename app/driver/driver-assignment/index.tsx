@@ -12,6 +12,7 @@ import {
 import { useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import NetInfo from '@react-native-community/netinfo'
 import api from '../../../lib/api/auth.api'
 import { useDriverId, useAuthHydrated } from '../../../lib/store/auth.store'
 import { Package, Search, Truck, TriangleAlert, WifiOff } from 'lucide-react-native'
@@ -439,6 +440,7 @@ export default function DriverBookingList() {
     }
   }, [driverId, hasHydrated])
 
+  // Initial load
   useEffect(() => {
     if (!hasHydrated) return
     if (!driverId) {
@@ -448,6 +450,16 @@ export default function DriverBookingList() {
     }
     loadCacheThenFetch()
   }, [hasHydrated, driverId])
+
+  // Auto-retry when connectivity is restored while banner is showing
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      if (state.isConnected && state.isInternetReachable && offlineMeta) {
+        loadCacheThenFetch(true)
+      }
+    })
+    return () => unsubscribe()
+  }, [offlineMeta, loadCacheThenFetch])
 
   const onRefresh = useCallback(() => {
     setRefreshing(true)
@@ -532,7 +544,7 @@ export default function DriverBookingList() {
           {offlineMeta && (
             <OfflineBanner
               savedAt={offlineMeta.savedAt}
-              onRetry={() => loadCacheThenFetch()}
+              onRetry={() => loadCacheThenFetch(true)}
             />
           )}
 

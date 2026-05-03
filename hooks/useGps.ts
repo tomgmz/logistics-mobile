@@ -1,21 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as Location from 'expo-location'
-import MapboxGL from '@rnmapbox/maps'
+import MapboxGL      from '@rnmapbox/maps'
 
 import type { LatLng } from '../types/navigation.types'
-import { toCoord } from '../utils/geo'
+import { toCoord }     from '../utils/geo'
+
+const HEADING_SMOOTH = 0.3
 
 interface UseGPSOptions {
-  cameraRef: React.RefObject<MapboxGL.Camera | null>
-  trackingModeRef:    React.RefObject<boolean>
+  cameraRef:            React.RefObject<MapboxGL.Camera | null>
+  trackingModeRef:      React.RefObject<boolean>
   onLocationUpdateRef?: React.RefObject<((pos: LatLng) => void) | undefined>
-  onError?: (msg: string) => void
+  onError?:             (msg: string) => void
 }
 
 interface UseGPSReturn {
-  userLocation: LatLng | null
+  userLocation:    LatLng | null
   userLocationRef: React.MutableRefObject<LatLng | null>
-  heading: number
+  heading:         number
 }
 
 export function useGPS({
@@ -26,16 +28,26 @@ export function useGPS({
 }: UseGPSOptions): UseGPSReturn {
   const [userLocation, setUserLocation] = useState<LatLng | null>(null)
   const [heading,      setHeading]      = useState(0)
-  const userLocationRef = useRef<LatLng | null>(null)
 
-  const setPos = useCallback((pos: LatLng, hdg: number) => {
-    setUserLocation(pos)
-    userLocationRef.current = pos
-    setHeading(hdg)
+  const userLocationRef = useRef<LatLng | null>(null)
+  const smoothHeading   = useRef(0)
+
+  const applyHeading = useCallback((raw: number) => {
+    const delta       = ((raw - smoothHeading.current + 540) % 360) - 180
+    smoothHeading.current = (smoothHeading.current + delta * HEADING_SMOOTH + 360) % 360
+    setHeading(smoothHeading.current)
+    return smoothHeading.current
   }, [])
 
+  const setPos = useCallback((pos: LatLng, rawHdg: number) => {
+    setUserLocation(pos)
+    userLocationRef.current = pos
+    applyHeading(rawHdg)
+  }, [applyHeading])
+
   useEffect(() => {
-    let sub: Location.LocationSubscription | null = null
+    let sub:       Location.LocationSubscription | null = null
+    let cancelled = false
 
     ;(async () => {
       const { status } = await Location.requestForegroundPermissionsAsync()
@@ -44,21 +56,42 @@ export function useGPS({
         return
       }
 
-      const last = await Location.getLastKnownPositionAsync()
-      if (last) {
-        setPos(
-          { latitude: last.coords.latitude, longitude: last.coords.longitude },
-          last.coords.heading ?? 0,
-        )
+      try {
+        const last = await Location.getLastKnownPositionAsync()
+        if (last && !cancelled) {
+          setPos(
+            { latitude: last.coords.latitude, longitude: last.coords.longitude },
+            last.coords.heading ?? 0,
+          )
+        }
+      } catch { /* no last-known position */ }
+
+      let gotFix  = false
+      let attempt = 0
+      while (!cancelled && !gotFix) {
+        try {
+          const loc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          })
+          if (!cancelled) {
+            setPos(
+              { latitude: loc.coords.latitude, longitude: loc.coords.longitude },
+              loc.coords.heading ?? 0,
+            )
+          }
+          gotFix = true
+        } catch {
+          const delay = Math.min(1_000 * Math.pow(2, attempt), 10_000)
+          attempt++
+          await new Promise((r) => setTimeout(r, delay))
+        }
       }
 
-      const loc = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      })
-      setPos(
-        { latitude: loc.coords.latitude, longitude: loc.coords.longitude },
-        loc.coords.heading ?? 0,
-      )
+      if (!gotFix && !cancelled) {
+        onError?.('Could not get your location. Make sure GPS is on and try again.')
+      }
+
+      if (cancelled) return
 
       sub = await Location.watchPositionAsync(
         {
@@ -71,15 +104,16 @@ export function useGPS({
             latitude:  update.coords.latitude,
             longitude: update.coords.longitude,
           }
-          const hdg = update.coords.heading ?? 0
-          setPos(pos, hdg)
+          const smooth = applyHeading(update.coords.heading ?? 0)
+          setUserLocation(pos)
+          userLocationRef.current = pos
 
           if (trackingModeRef.current) {
             cameraRef.current?.setCamera({
-              centerCoordinate: toCoord(pos),
-              heading:          hdg,
-              pitch:            45,
-              zoomLevel:        17,
+              centerCoordinate:  toCoord(pos),
+              heading:           smooth,   // camera uses smoothed heading too
+              pitch:             45,
+              zoomLevel:         17,
               animationDuration: 500,
             })
           }
@@ -89,7 +123,10 @@ export function useGPS({
       )
     })()
 
-    return () => { sub?.remove() }
+    return () => {
+      cancelled = true
+      sub?.remove()
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

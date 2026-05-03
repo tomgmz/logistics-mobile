@@ -46,22 +46,22 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
   const router    = useRouter()
   const cameraRef = useRef<MapboxGL.Camera>(null)
 
-  const [mapReady,      setMapReady]      = useState(false)
-  const [trackingMode,  setTrackingMode]  = useState(true)
-  const [sheetOpen,     setSheetOpen]     = useState(false)
+  const [mapReady,       setMapReady]       = useState(false)
+  const [trackingMode,   setTrackingMode]   = useState(true)
+  const [sheetOpen,      setSheetOpen]      = useState(false)
+  const [cameraBearing,  setCameraBearing]  = useState(0)
 
   const trackingModeRef = useRef(trackingMode)
   useEffect(() => { trackingModeRef.current = trackingMode }, [trackingMode])
 
   const sheetAnim = useRef(new Animated.Value(0)).current
 
-  // ── Sheet animation ──────────────────────────────────────────────────────────
   useEffect(() => {
     Animated.spring(sheetAnim, {
-      toValue:          sheetOpen ? 1 : 0,
-      useNativeDriver:  false,
-      tension:          80,
-      friction:         12,
+      toValue:         sheetOpen ? 1 : 0,
+      useNativeDriver: false,
+      tension:         80,
+      friction:        12,
     }).start()
   }, [sheetOpen, sheetAnim])
 
@@ -70,9 +70,9 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
     const lngs = polyline.map((p: any) => p.longitude)
     const lats  = polyline.map((p: any) => p.latitude)
     cameraRef.current?.fitBounds(
-      [Math.max(...lngs), Math.max(...lats)], // NE
-      [Math.min(...lngs), Math.min(...lats)], // SW
-      [220, 60, 320, 60],                     
+      [Math.max(...lngs), Math.max(...lats)],
+      [Math.min(...lngs), Math.min(...lats)],
+      [220, 60, 320, 60],
       800,
     )
   }, [])
@@ -87,6 +87,7 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
 
   const {
     routeData,
+    displayPolyline,
     loading,
     error,
     isOffline,
@@ -98,6 +99,7 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
     onLocationUpdate,
   } = useRoute({
     bookingId,
+    userLocation,
     userLocationRef,
     mapReady,
     onRouteReady: fitMapToRoute,
@@ -108,6 +110,11 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
 
   const handleMapReady = useCallback(() => {
     setMapReady(true)
+  }, [])
+
+  // Track camera bearing so DriverMarker can counter-rotate correctly
+  const handleCameraChanged = useCallback((state: any) => {
+    setCameraBearing(state.properties.heading ?? 0)
   }, [])
 
   const recenter = useCallback(() => {
@@ -140,6 +147,12 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
       ...routeData.stops,
     ]
   }, [routeData])
+
+  // Build traffic segments from the live-trimmed display polyline
+  const trafficSegments = useMemo(() => {
+    if (!routeData || !displayPolyline.length) return routeData?.trafficSegments ?? []
+    return routeData.trafficSegments
+  }, [routeData, displayPolyline])
 
   const showOffline = isOffline || usingCache
 
@@ -190,6 +203,7 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
         scaleBarEnabled={false}
         onDidFinishLoadingMap={handleMapReady}
         onTouchStart={() => setTrackingMode(false)}
+        onCameraChanged={handleCameraChanged}
       >
         <MapboxGL.Camera
           ref={cameraRef}
@@ -201,7 +215,7 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
         />
 
         {routeData && (
-          <TrafficLayer segments={routeData.trafficSegments} />
+          <TrafficLayer segments={trafficSegments} />
         )}
 
         {routeData?.origin && (
@@ -216,7 +230,11 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
         )}
 
         {userLocation && (
-          <DriverMarker location={userLocation} heading={heading} />
+          <DriverMarker
+            location={userLocation}
+            heading={heading}
+            cameraBearing={cameraBearing}
+          />
         )}
       </MapboxGL.MapView>
 

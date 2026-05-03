@@ -1,11 +1,13 @@
 import React from 'react'
 import { Text, View } from 'react-native'
-import MapboxGL from '@rnmapbox/maps'
+import MapboxGL       from '@rnmapbox/maps'
 import { Navigation2, Truck } from 'lucide-react-native'
-import { C } from '../../theme/navigation.theme'
+
+import { C }                          from '../../theme/navigation.theme'
 import { toCoord, toTrafficFeatures } from '../../utils/geo'
 import type { BookingRoute, LatLng, Stop, TrafficSegment } from '../../types/navigation.types'
 
+// ─── TrafficLayer ────────────────────────────────────────────────────────────
 
 interface TrafficLayerProps {
   segments: TrafficSegment[]
@@ -18,25 +20,27 @@ export function TrafficLayer({ segments }: TrafficLayerProps) {
       <MapboxGL.LineLayer
         id="traffic-line"
         style={{
-          lineColor:  ['get', 'color'] as any,
-          lineWidth:  6,
-          lineCap:    'round',
-          lineJoin:   'round',
+          lineColor: ['get', 'color'] as any,
+          lineWidth: 6,
+          lineCap:   'round',
+          lineJoin:  'round',
         }}
       />
       <MapboxGL.LineLayer
         id="traffic-line-outline"
         belowLayerID="traffic-line"
         style={{
-          lineColor:   'rgba(0,0,0,0.35)',
-          lineWidth:   9,
-          lineCap:     'round',
-          lineJoin:    'round',
+          lineColor: 'rgba(0,0,0,0.35)',
+          lineWidth: 9,
+          lineCap:   'round',
+          lineJoin:  'round',
         }}
       />
     </MapboxGL.ShapeSource>
   )
 }
+
+// ─── OriginMarker ────────────────────────────────────────────────────────────
 
 interface OriginMarkerProps {
   origin: BookingRoute['origin']
@@ -61,6 +65,8 @@ export function OriginMarker({ origin }: OriginMarkerProps) {
   )
 }
 
+// ─── StopMarkers ─────────────────────────────────────────────────────────────
+
 interface StopMarkersProps {
   stops:       Stop[]
   nextStopId?: string
@@ -75,9 +81,9 @@ export function StopMarkers({ stops, nextStopId }: StopMarkersProps) {
         const isNext    = stop.destination_id === nextStopId
         const bg        =
           delivered ? C.green :
-          failed    ? C.red :
+          failed    ? C.red   :
           isNext    ? C.orange : C.surfaceHi
-        const border    = isNext ? C.orange : bg
+        const border = isNext ? C.orange : bg
 
         return (
           <MapboxGL.MarkerView
@@ -103,18 +109,17 @@ export function StopMarkers({ stops, nextStopId }: StopMarkersProps) {
                   backgroundColor: bg,
                   borderWidth: 2, borderColor: border,
                   alignItems: 'center', justifyContent: 'center',
-                  shadowColor: isNext ? C.orange : '#000',
-                  shadowOffset: { width: 0, height: 2 },
+                  shadowColor:   isNext ? C.orange : '#000',
+                  shadowOffset:  { width: 0, height: 2 },
                   shadowOpacity: isNext ? 0.6 : 0.35,
-                  shadowRadius:  isNext ? 6 : 4,
-                  elevation: isNext ? 6 : 4,
+                  shadowRadius:  isNext ? 6   : 4,
+                  elevation:     isNext ? 6   : 4,
                 }}
               >
                 <Text style={{ color: C.white, fontSize: 11, fontWeight: '900' }}>
                   {stop.optimized_sequence_order}
                 </Text>
               </View>
-              {/* Pin tail */}
               <View
                 style={{
                   width: 0, height: 0,
@@ -131,19 +136,27 @@ export function StopMarkers({ stops, nextStopId }: StopMarkersProps) {
   )
 }
 
+// ─── DriverMarker ────────────────────────────────────────────────────────────
+
 interface DriverMarkerProps {
-  location: LatLng
-  heading:  number
+  location:      LatLng  // always the real GPS position
+  heading:       number  // GPS travel heading in degrees (0 = north)
+  cameraBearing: number  // current map camera bearing in degrees
 }
 
-export function DriverMarker({ location, heading }: DriverMarkerProps) {
+export function DriverMarker({ location, heading, cameraBearing }: DriverMarkerProps) {
+  // Subtract cameraBearing so the arrow stays correctly oriented
+  // when the user manually rotates the map.
+  // Subtract 90 to correct Navigation2 which points east at 0°.
+  const rotation = heading - cameraBearing - 90
+
   return (
     <MapboxGL.MarkerView
       id="user-location"
       coordinate={toCoord(location)}
       anchor={{ x: 0.5, y: 0.5 }}
     >
-      <View style={{ transform: [{ rotate: `${heading}deg` }] }}>
+      <View style={{ transform: [{ rotate: `${rotation}deg` }] }}>
         <View
           style={{
             width: 56, height: 56, borderRadius: 28,

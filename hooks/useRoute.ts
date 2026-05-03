@@ -19,49 +19,63 @@ import {
 } from '../theme/navigation.theme'
 
 interface UseRouteOptions {
-  bookingId:     string
+  bookingId:       string
+  userLocation:    LatLng | null
   userLocationRef: React.MutableRefObject<LatLng | null>
-  mapReady:      boolean
-  onRouteReady:  (polyline: LatLng[]) => void
+  mapReady:        boolean
+  onRouteReady:    (polyline: LatLng[]) => void
 }
 
 interface UseRouteReturn {
-  routeData:   BookingRoute | null
-  loading:     boolean
-  error:       string | null
-  isOffline:   boolean
-  usingCache:  boolean
-  isRerouting: boolean
-  currentStep: number
-  setCurrentStep: React.Dispatch<React.SetStateAction<number>>
-  fetchRoute:  (isRefresh?: boolean, silent?: boolean) => Promise<void>
+  routeData:       BookingRoute | null
+  displayPolyline: LatLng[]           // live-trimmed polyline for rendering
+  loading:         boolean
+  error:           string | null
+  isOffline:       boolean
+  usingCache:      boolean
+  isRerouting:     boolean
+  currentStep:     number
+  setCurrentStep:  React.Dispatch<React.SetStateAction<number>>
+  fetchRoute:      (isRefresh?: boolean, silent?: boolean) => Promise<void>
   onLocationUpdate: (pos: LatLng) => void
+}
+
+function closestPointIndex(pos: LatLng, points: LatLng[]): number {
+  let minDist = Infinity
+  let minIdx  = 0
+  for (let i = 0; i < points.length; i++) {
+    const d = haversineDistance(pos, points[i])
+    if (d < minDist) { minDist = d; minIdx = i }
+  }
+  return minIdx
 }
 
 export function useRoute({
   bookingId,
+  userLocation,
   userLocationRef,
   mapReady,
   onRouteReady,
 }: UseRouteOptions): UseRouteReturn {
-  const [routeData,   setRouteData]   = useState<BookingRoute | null>(null)
-  const [loading,     setLoading]     = useState(true)
+  const [routeData,       setRouteData]       = useState<BookingRoute | null>(null)
+  const [displayPolyline, setDisplayPolyline] = useState<LatLng[]>([])
+  const [loading,         setLoading]         = useState(true)
   const [error,       setError]       = useState<string | null>(null)
   const [isOffline,   setIsOffline]   = useState(false)
   const [usingCache,  setUsingCache]  = useState(false)
   const [isRerouting, setIsRerouting] = useState(false)
   const [currentStep, setCurrentStep] = useState(0)
 
-  const isOfflineRef    = useRef(isOffline)
-  const hasFetchedRef   = useRef(false)
-  const fetchRouteRef   = useRef<((isRefresh?: boolean, silent?: boolean) => Promise<void>) | null>(null)
+  const isOfflineRef     = useRef(isOffline)
+  const hasFetchedRef    = useRef(false)
+  const fetchRouteRef    = useRef<((isRefresh?: boolean, silent?: boolean) => Promise<void>) | null>(null)
   const offRouteSinceRef = useRef<number | null>(null)
-  const routeDataRef    = useRef<BookingRoute | null>(null)
-  const currentStepRef  = useRef(0)
-  const pendingFitRef   = useRef<LatLng[] | null>(null)
+  const routeDataRef     = useRef<BookingRoute | null>(null)
+  const currentStepRef   = useRef(0)
+  const pendingFitRef    = useRef<LatLng[] | null>(null)
 
-  useEffect(() => { isOfflineRef.current  = isOffline   }, [isOffline])
-  useEffect(() => { routeDataRef.current  = routeData   }, [routeData])
+  useEffect(() => { isOfflineRef.current   = isOffline   }, [isOffline])
+  useEffect(() => { routeDataRef.current   = routeData   }, [routeData])
   useEffect(() => { currentStepRef.current = currentStep }, [currentStep])
 
   useEffect(() => {
@@ -81,7 +95,6 @@ export function useRoute({
   }, [])
 
   const fetchRoute = useCallback(async (isRefresh = false, silent = false) => {
-    // Don't refresh while offline
     if (isOfflineRef.current && isRefresh) return
 
     if (!isRefresh && !silent) {
@@ -94,6 +107,7 @@ export function useRoute({
       const cached = await loadRouteCache(bookingId)
       if (cached) {
         setRouteData(cached)
+        setDisplayPolyline(cached.polyline)
         setUsingCache(true)
         setLoading(false)
         if (mapReady) onRouteReady(cached.polyline)
@@ -105,19 +119,12 @@ export function useRoute({
       return
     }
 
-    let driverPos = userLocationRef.current
-    if (!driverPos) {
-      for (let i = 0; i < 20; i++) {
-        await new Promise((r) => setTimeout(r, 500))
-        driverPos = userLocationRef.current
-        if (driverPos) break
-      }
-    }
-
+    const driverPos = userLocationRef.current
     if (!driverPos) {
       const cached = await loadRouteCache(bookingId)
       if (cached) {
         setRouteData(cached)
+        setDisplayPolyline(cached.polyline)
         setUsingCache(true)
         setLoading(false)
         if (mapReady) onRouteReady(cached.polyline)
@@ -189,14 +196,33 @@ export function useRoute({
         extraComputations: ['TRAFFIC_ON_POLYLINE'],
       })
 
-      const route    = directionsRes.data.data.routes[0]
-      const polyline = decodePolyline(route.polyline.encodedPolyline)
+      const route = directionsRes.data.data.routes[0]
+
+      // Use Mapbox-snapped coords if available, else raw Google polyline
+      const googlePolyline = decodePolyline(route.polyline.encodedPolyline)
+      const snappedCoords  = route.polyline._snappedCoords as LatLng[] | undefined
+      const fullPolyline   = snappedCoords?.length ? snappedCoords : googlePolyline
+
+      // Trim polyline to start from closest point to driver's current position
+      const startIdx = closestPointIndex(driverPos, fullPolyline)
+      const polyline = fullPolyline.slice(startIdx)
+
       const totalMins = Math.round(parseInt(route.duration ?? '0') / 60)
 
-      const trafficSegments = buildTrafficSegments(
-        polyline,
-        route.travelAdvisory?.speedReadingIntervals ?? [],
-      )
+      // Remap traffic intervals to trimmed polyline indices
+      const rawIntervals     = route.travelAdvisory?.speedReadingIntervals ?? []
+      const trimmedIntervals = rawIntervals
+        .map((iv: any) => ({
+          ...iv,
+          startPolylinePointIndex: Math.max(0, (iv.startPolylinePointIndex ?? 0) - startIdx),
+          endPolylinePointIndex:   Math.max(0, (iv.endPolylinePointIndex   ?? fullPolyline.length - 1) - startIdx),
+        }))
+        .filter((iv: any) =>
+          iv.endPolylinePointIndex >= 0 &&
+          iv.startPolylinePointIndex <= polyline.length - 1,
+        )
+
+      const trafficSegments = buildTrafficSegments(polyline, trimmedIntervals)
 
       const steps = (route.legs ?? []).flatMap((leg: any) =>
         (leg.steps ?? []).map((step: any) => ({
@@ -212,13 +238,17 @@ export function useRoute({
       )
 
       const newRoute: BookingRoute = {
-        origin: pickup, stops: allStops,
+        origin:         pickup,
+        stops:          allStops,
         total_duration: totalMins,
         total_distance: parseFloat((route.distanceMeters / 1000).toFixed(1)) || 0,
-        polyline, trafficSegments, steps,
+        polyline,
+        trafficSegments,
+        steps,
       }
 
       setRouteData(newRoute)
+      setDisplayPolyline(polyline)   // seed display with full trimmed polyline
       setUsingCache(false)
       setCurrentStep(0)
       offRouteSinceRef.current = null
@@ -227,7 +257,7 @@ export function useRoute({
       ensureOfflinePack(bookingId, [
         pickup,
         ...allStops.map((s) => ({ latitude: s.latitude, longitude: s.longitude })),
-        ...polyline,
+        ...fullPolyline,
       ])
 
       if (mapReady) onRouteReady(polyline)
@@ -238,6 +268,7 @@ export function useRoute({
         const cached = await loadRouteCache(bookingId)
         if (cached) {
           setRouteData(cached)
+          setDisplayPolyline(cached.polyline)
           setUsingCache(true)
           setLoading(false)
           if (mapReady) onRouteReady(cached.polyline)
@@ -256,11 +287,11 @@ export function useRoute({
   useEffect(() => { fetchRouteRef.current = fetchRoute }, [fetchRoute])
 
   useEffect(() => {
-    if (!hasFetchedRef.current) {
+    if (!hasFetchedRef.current && userLocation) {
       hasFetchedRef.current = true
       fetchRoute(false, false)
     }
-  }, [fetchRoute])
+  }, [userLocation, fetchRoute])
 
   useEffect(() => {
     const t = setInterval(async () => {
@@ -289,6 +320,10 @@ export function useRoute({
       }
     }
 
+    // Shrink the rendered polyline from the driver's current position forward
+    const snapIdx = closestPointIndex(pos, route.polyline)
+    setDisplayPolyline(route.polyline.slice(snapIdx))
+
     if (isOfflineRef.current) return
 
     const distOff = distanceToPolyline(pos, route.polyline)
@@ -308,6 +343,7 @@ export function useRoute({
 
   return {
     routeData,
+    displayPolyline,
     loading,
     error,
     isOffline,
