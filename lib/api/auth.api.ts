@@ -283,9 +283,15 @@ export async function loginWithPassword(email: string, password: string): Promis
   return auth
 }
 
+let _getMePromise: Promise<AuthUser> | null = null
+
 export async function getMe(): Promise<AuthUser> {
-  const { data } = await api.get<{ status: string; data: AuthUser }>('/auth/me')
-  return data.data
+  if (_getMePromise) return _getMePromise
+  _getMePromise = api
+    .get<{ status: string; data: AuthUser }>('/auth/me')
+    .then(({ data }) => data.data)
+    .finally(() => { _getMePromise = null })
+  return _getMePromise
 }
 
 export async function logout(): Promise<void> {

@@ -451,10 +451,9 @@ export default function DriverBookingList() {
     loadCacheThenFetch()
   }, [hasHydrated, driverId])
 
-  // Auto-retry when connectivity is restored while banner is showing
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener((state) => {
-      if (state.isConnected && state.isInternetReachable && offlineMeta) {
+      if (state.isConnected && state.isInternetReachable !== false && offlineMeta) {
         loadCacheThenFetch(true)
       }
     })
