@@ -2,7 +2,7 @@ import React from 'react'
 import {
   Animated, Dimensions, FlatList, Text, TouchableOpacity, View,
 } from 'react-native'
-import {
+import { 
   Clock, Route, CheckCircle2, ChevronDown, ChevronUp, MapPin,
 } from 'lucide-react-native'
 
