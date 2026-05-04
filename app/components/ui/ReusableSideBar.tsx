@@ -62,11 +62,11 @@ export default function ReusableSidebar({
   const displayName =
     user?.first_name && user?.last_name
       ? `${user.first_name} ${user.last_name}`
-      : user?.username ?? 'User'
+      : user?.email ?? 'User'
 
   const avatarLetter =
     user?.first_name?.[0]?.toUpperCase() ??
-    user?.username?.[0]?.toUpperCase()   ??
+    user?.email?.[0]?.toUpperCase()      ??
     '?'
 
   return (

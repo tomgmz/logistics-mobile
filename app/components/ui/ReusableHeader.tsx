@@ -34,7 +34,7 @@ export default function ReusableHeader({
 
   const avatarLetter =
     user?.first_name?.[0]?.toUpperCase() ??
-    user?.username?.[0]?.toUpperCase()   ??
+    user?.email?.[0]?.toUpperCase()      ??
     '?'
 
   return (
