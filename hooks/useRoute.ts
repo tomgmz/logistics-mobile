@@ -138,6 +138,7 @@ export function useRoute({
 
     try {
       const bookingRes = await api.get(`/booking/${bookingId}`)
+      console.log('[useRoute] booking response:', bookingRes.data)
       const booking    = bookingRes.data.data
 
       const pickup = {
@@ -248,7 +249,7 @@ export function useRoute({
       }
 
       setRouteData(newRoute)
-      setDisplayPolyline(polyline)   // seed display with full trimmed polyline
+      setDisplayPolyline(polyline)
       setUsingCache(false)
       setCurrentStep(0)
       offRouteSinceRef.current = null
@@ -264,6 +265,7 @@ export function useRoute({
       else pendingFitRef.current = polyline
 
     } catch (err: any) {
+      console.log('[useRoute] ERROR:', err?.response?.status, err?.response?.data)
       if (!isRefresh && !silent) {
         const cached = await loadRouteCache(bookingId)
         if (cached) {
