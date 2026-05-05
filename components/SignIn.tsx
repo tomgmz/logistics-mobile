@@ -582,7 +582,7 @@ export default function SignInScreen() {
     <KeyboardAvoidingView
       className="flex-1 bg-surface-bg"
       style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View className="absolute inset-0" pointerEvents="none">
         {[...Array(8)].map((_, i) => (

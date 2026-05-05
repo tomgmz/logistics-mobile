@@ -138,7 +138,6 @@ export function useRoute({
 
     try {
       const bookingRes = await api.get(`/booking/${bookingId}`)
-      console.log('[useRoute] booking response:', bookingRes.data)
       const booking    = bookingRes.data.data
 
       const pickup = {
@@ -192,7 +191,7 @@ export function useRoute({
         }),
         travelMode:        'DRIVE',
         routingPreference: 'TRAFFIC_AWARE',
-        routeModifiers:    { avoidFerries: true },
+        routeModifiers:    { avoidFerries: false },
         units:             'METRIC',
         extraComputations: ['TRAFFIC_ON_POLYLINE'],
       })
