@@ -30,7 +30,7 @@ export const C = {
 import MapboxGL from '@rnmapbox/maps'
 export const MAPBOX_STYLE = MapboxGL.StyleURL.Street
 
-export const STEP_ADVANCE_M    = 40 
+export const STEP_ADVANCE_M    = 50 
 export const OFF_ROUTE_M       = 80
-export const OFF_ROUTE_HOLD_MS = 6_000
+export const OFF_ROUTE_HOLD_MS = 4_000
 export const ROUTE_REFRESH_MS  = 60_000
