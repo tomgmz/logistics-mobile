@@ -18,26 +18,35 @@ import {
   STEP_ADVANCE_M,
 } from '../theme/navigation.theme'
 
+const ARRIVAL_PROXIMITY_M = 50   // auto-detect threshold
+const MANUAL_BUTTON_M     = 200  // show manual button within 200m
+
 interface UseRouteOptions {
   bookingId:       string
   userLocation:    LatLng | null
   userLocationRef: React.MutableRefObject<LatLng | null>
   mapReady:        boolean
   onRouteReady:    (polyline: LatLng[]) => void
+  onArrival?:      (type: 'pickup' | 'dropoff', stopId?: string) => void
 }
 
 interface UseRouteReturn {
-  routeData:       BookingRoute | null
-  displayPolyline: LatLng[]           // live-trimmed polyline for rendering
-  loading:         boolean
-  error:           string | null
-  isOffline:       boolean
-  usingCache:      boolean
-  isRerouting:     boolean
-  currentStep:     number
-  setCurrentStep:  React.Dispatch<React.SetStateAction<number>>
-  fetchRoute:      (isRefresh?: boolean, silent?: boolean) => Promise<void>
-  onLocationUpdate: (pos: LatLng) => void
+  routeData:         BookingRoute | null
+  displayPolyline:   LatLng[]
+  loading:           boolean
+  error:             string | null
+  isOffline:         boolean
+  usingCache:        boolean
+  isRerouting:       boolean
+  currentStep:       number
+  setCurrentStep:    React.Dispatch<React.SetStateAction<number>>
+  fetchRoute:        (isRefresh?: boolean, silent?: boolean, fastMode?: boolean) => Promise<void>
+  onLocationUpdate:  (pos: LatLng) => void
+  // Manual confirm
+  nearbyTarget:      'pickup' | 'dropoff' | null
+  distanceToTarget:  number
+  markPickupArrived: () => void
+  markStopArrived:   (stopId: string) => void
 }
 
 function closestPointIndex(pos: LatLng, points: LatLng[]): number {
@@ -56,26 +65,32 @@ export function useRoute({
   userLocationRef,
   mapReady,
   onRouteReady,
+  onArrival,
 }: UseRouteOptions): UseRouteReturn {
-  const [routeData,       setRouteData]       = useState<BookingRoute | null>(null)
-  const [displayPolyline, setDisplayPolyline] = useState<LatLng[]>([])
-  const [loading,         setLoading]         = useState(true)
-  const [error,       setError]       = useState<string | null>(null)
-  const [isOffline,   setIsOffline]   = useState(false)
-  const [usingCache,  setUsingCache]  = useState(false)
-  const [isRerouting, setIsRerouting] = useState(false)
-  const [currentStep, setCurrentStep] = useState(0)
+  const [routeData,        setRouteData]        = useState<BookingRoute | null>(null)
+  const [displayPolyline,  setDisplayPolyline]  = useState<LatLng[]>([])
+  const [loading,          setLoading]          = useState(true)
+  const [error,            setError]            = useState<string | null>(null)
+  const [isOffline,        setIsOffline]        = useState(false)
+  const [usingCache,       setUsingCache]       = useState(false)
+  const [isRerouting,      setIsRerouting]      = useState(false)
+  const [currentStep,      setCurrentStep]      = useState(0)
+  const [nearbyTarget,     setNearbyTarget]     = useState<'pickup' | 'dropoff' | null>(null)
+  const [distanceToTarget, setDistanceToTarget] = useState(0)
 
   const isOfflineRef     = useRef(isOffline)
   const hasFetchedRef    = useRef(false)
-  const fetchRouteRef    = useRef<((isRefresh?: boolean, silent?: boolean) => Promise<void>) | null>(null)
+  const fetchRouteRef    = useRef<((isRefresh?: boolean, silent?: boolean, fastMode?: boolean) => Promise<void>) | null>(null)
   const offRouteSinceRef = useRef<number | null>(null)
   const routeDataRef     = useRef<BookingRoute | null>(null)
   const currentStepRef   = useRef(0)
   const pendingFitRef    = useRef<LatLng[] | null>(null)
+  const arrivedPickupRef = useRef(false)
+  const arrivedStopIds   = useRef<Set<string>>(new Set())
+  const lastSnapIdxRef   = useRef(0)
 
-  useEffect(() => { isOfflineRef.current   = isOffline   }, [isOffline])
-  useEffect(() => { routeDataRef.current   = routeData   }, [routeData])
+  useEffect(() => { isOfflineRef.current  = isOffline  }, [isOffline])
+  useEffect(() => { routeDataRef.current  = routeData  }, [routeData])
   useEffect(() => { currentStepRef.current = currentStep }, [currentStep])
 
   useEffect(() => {
@@ -84,7 +99,6 @@ export function useRoute({
       setIsOffline(offline)
       isOfflineRef.current = offline
     })
-
     const unsub = NetInfo.addEventListener((s: NetInfoState) => {
       const offline = !s.isConnected
       setIsOffline(offline)
@@ -94,7 +108,11 @@ export function useRoute({
     return () => unsub()
   }, [])
 
-  const fetchRoute = useCallback(async (isRefresh = false, silent = false) => {
+  const fetchRoute = useCallback(async (
+    isRefresh = false,
+    silent    = false,
+    fastMode  = false,
+  ) => {
     if (isOfflineRef.current && isRefresh) return
 
     if (!isRefresh && !silent) {
@@ -110,6 +128,7 @@ export function useRoute({
         setDisplayPolyline(cached.polyline)
         setUsingCache(true)
         setLoading(false)
+        lastSnapIdxRef.current = 0
         if (mapReady) onRouteReady(cached.polyline)
         else pendingFitRef.current = cached.polyline
         return
@@ -127,6 +146,7 @@ export function useRoute({
         setDisplayPolyline(cached.polyline)
         setUsingCache(true)
         setLoading(false)
+        lastSnapIdxRef.current = 0
         if (mapReady) onRouteReady(cached.polyline)
         else pendingFitRef.current = cached.polyline
         return
@@ -164,8 +184,10 @@ export function useRoute({
 
       if (!allStops.length) throw new Error('No stops with coordinates found')
 
-      const isPickedUp   = ['picked_up', 'in_transit', 'delivered'].includes(booking.status)
+      const isPickedUp   = ['in_transit', 'completed'].includes(booking.status)
       const pendingStops = allStops.filter((s) => s.status === 'pending')
+
+      if (isPickedUp) arrivedPickupRef.current = true
 
       if (pendingStops.length === 0 && isPickedUp) {
         setRouteData((prev) => (prev ? { ...prev, stops: allStops } : null))
@@ -193,23 +215,21 @@ export function useRoute({
         routingPreference: 'TRAFFIC_AWARE',
         routeModifiers:    { avoidFerries: false },
         units:             'METRIC',
-        extraComputations: ['TRAFFIC_ON_POLYLINE'],
+        extraComputations: fastMode ? [] : ['TRAFFIC_ON_POLYLINE'],
       })
 
       const route = directionsRes.data.data.routes[0]
 
-      // Use Mapbox-snapped coords if available, else raw Google polyline
       const googlePolyline = decodePolyline(route.polyline.encodedPolyline)
-      const snappedCoords  = route.polyline._snappedCoords as LatLng[] | undefined
+      const snappedCoords  = fastMode ? undefined : (route.polyline._snappedCoords as LatLng[] | undefined)
       const fullPolyline   = snappedCoords?.length ? snappedCoords : googlePolyline
 
-      // Trim polyline to start from closest point to driver's current position
       const startIdx = closestPointIndex(driverPos, fullPolyline)
       const polyline = fullPolyline.slice(startIdx)
+      lastSnapIdxRef.current = 0
 
       const totalMins = Math.round(parseInt(route.duration ?? '0') / 60)
 
-      // Remap traffic intervals to trimmed polyline indices
       const rawIntervals     = route.travelAdvisory?.speedReadingIntervals ?? []
       const trimmedIntervals = rawIntervals
         .map((iv: any) => ({
@@ -309,38 +329,142 @@ export function useRoute({
     }
   }, [mapReady, onRouteReady])
 
+  // ── Manual confirm handlers ──────────────────────────────────────────────
+
+  const markPickupArrived = useCallback(() => {
+    if (arrivedPickupRef.current) return
+    arrivedPickupRef.current = true
+    setNearbyTarget(null)
+    onArrival?.('pickup')
+    api.patch(`/booking/${bookingId}/status`, { status: 'in_transit' }).catch((e) =>
+      console.warn('[manual] Failed to update booking status:', e),
+    )
+  }, [bookingId, onArrival])
+
+  const markStopArrived = useCallback((stopId: string) => {
+    if (arrivedStopIds.current.has(stopId)) return
+    arrivedStopIds.current.add(stopId)
+    setNearbyTarget(null)
+    onArrival?.('dropoff', stopId)
+    setRouteData((prev) =>
+      prev
+        ? {
+            ...prev,
+            stops: prev.stops.map((s) =>
+              s.destination_id === stopId ? { ...s, status: 'delivered' } : s,
+            ),
+          }
+        : null,
+    )
+    api
+      .patch(`/booking-destinations/${stopId}/status`, { status: 'delivered' })
+      .catch((e) => console.warn('[manual] Failed to update stop status:', e))
+  }, [onArrival])
+
+  // ── Location update (GPS tick) ───────────────────────────────────────────
+
   const onLocationUpdate = useCallback((pos: LatLng) => {
     const route = routeDataRef.current
-    if (!route?.steps.length) return
+    if (!route) return
 
-    const nextIdx = currentStepRef.current + 1
-    if (nextIdx < route.steps.length) {
-      const next = route.steps[nextIdx]
-      if (next?.startLocation && haversineDistance(pos, next.startLocation) <= STEP_ADVANCE_M) {
-        setCurrentStep(nextIdx)
+    // 1. Trim polyline
+    const poly        = route.polyline
+    const searchStart = Math.max(0, lastSnapIdxRef.current - 5)
+    let minDist       = Infinity
+    let snapIdx       = lastSnapIdxRef.current
+    for (let i = searchStart; i < poly.length; i++) {
+      const d = haversineDistance(pos, poly[i])
+      if (d < minDist) { minDist = d; snapIdx = i }
+      else if (d > minDist + 20) break
+    }
+    lastSnapIdxRef.current = snapIdx
+    setDisplayPolyline(poly.slice(snapIdx))
+
+    // 2. Auto-advance TurnCard step
+    if (route.steps.length) {
+      const nextIdx = currentStepRef.current + 1
+      if (nextIdx < route.steps.length) {
+        const next = route.steps[nextIdx]
+        if (next?.startLocation && haversineDistance(pos, next.startLocation) <= STEP_ADVANCE_M) {
+          setCurrentStep(nextIdx)
+        }
       }
     }
 
-    // Shrink the rendered polyline from the driver's current position forward
-    const snapIdx = closestPointIndex(pos, route.polyline)
-    setDisplayPolyline(route.polyline.slice(snapIdx))
+    // 3. Auto arrival detection (50m)
+    if (!arrivedPickupRef.current && route.origin) {
+      const d = haversineDistance(pos, route.origin)
+      if (d <= ARRIVAL_PROXIMITY_M) {
+        arrivedPickupRef.current = true
+        setNearbyTarget(null)
+        onArrival?.('pickup')
+        api.patch(`/booking/${bookingId}/status`, { status: 'in_transit' }).catch((e) =>
+          console.warn('[proximity] Failed to update booking status:', e),
+        )
+      }
+    }
 
+    const nextStop = route.stops.find((s) => s.status === 'pending')
+    if (nextStop && !arrivedStopIds.current.has(nextStop.destination_id)) {
+      const d = haversineDistance(pos, nextStop)
+      if (d <= ARRIVAL_PROXIMITY_M) {
+        arrivedStopIds.current.add(nextStop.destination_id)
+        setNearbyTarget(null)
+        onArrival?.('dropoff', nextStop.destination_id)
+        setRouteData((prev) =>
+          prev
+            ? {
+                ...prev,
+                stops: prev.stops.map((s) =>
+                  s.destination_id === nextStop.destination_id
+                    ? { ...s, status: 'delivered' }
+                    : s,
+                ),
+              }
+            : null,
+        )
+        api
+          .patch(`/booking-destinations/${nextStop.destination_id}/status`, { status: 'delivered' })
+          .catch((e) => console.warn('[proximity] Failed to update stop status:', e))
+      }
+    }
+
+    // 4. Manual button visibility (200m window)
+    if (!arrivedPickupRef.current && route.origin) {
+      const d = haversineDistance(pos, route.origin)
+      if (d <= MANUAL_BUTTON_M) {
+        setNearbyTarget('pickup')
+        setDistanceToTarget(Math.round(d))
+      } else {
+        setNearbyTarget(null)
+      }
+    } else if (nextStop && !arrivedStopIds.current.has(nextStop.destination_id)) {
+      const d = haversineDistance(pos, nextStop)
+      if (d <= MANUAL_BUTTON_M) {
+        setNearbyTarget('dropoff')
+        setDistanceToTarget(Math.round(d))
+      } else {
+        setNearbyTarget(null)
+      }
+    } else {
+      setNearbyTarget(null)
+    }
+
+    // 5. Off-route rerouting
     if (isOfflineRef.current) return
-
-    const distOff = distanceToPolyline(pos, route.polyline)
-
+    const distOff = distanceToPolyline(pos, poly)
     if (distOff > OFF_ROUTE_M) {
       if (offRouteSinceRef.current === null) {
         offRouteSinceRef.current = Date.now()
       } else if (Date.now() - offRouteSinceRef.current >= OFF_ROUTE_HOLD_MS) {
         offRouteSinceRef.current = null
         setIsRerouting(true)
-        fetchRoute(false, true)
+        fetchRoute(false, true, true)
       }
     } else {
       offRouteSinceRef.current = null
     }
-  }, [fetchRoute])
+  }, [bookingId, fetchRoute, onArrival])
 
   return {
     routeData,
@@ -354,5 +478,9 @@ export function useRoute({
     setCurrentStep,
     fetchRoute,
     onLocationUpdate,
+    nearbyTarget,
+    distanceToTarget,
+    markPickupArrived,
+    markStopArrived,
   }
 }

@@ -7,8 +7,6 @@ import { C }                          from '../../theme/navigation.theme'
 import { toCoord, toTrafficFeatures } from '../../utils/geo'
 import type { BookingRoute, LatLng, Stop, TrafficSegment } from '../../types/navigation.types'
 
-// ─── TrafficLayer ────────────────────────────────────────────────────────────
-
 interface TrafficLayerProps {
   segments: TrafficSegment[]
 }
@@ -40,8 +38,6 @@ export function TrafficLayer({ segments }: TrafficLayerProps) {
   )
 }
 
-// ─── OriginMarker ────────────────────────────────────────────────────────────
-
 interface OriginMarkerProps {
   origin: BookingRoute['origin']
 }
@@ -64,8 +60,6 @@ export function OriginMarker({ origin }: OriginMarkerProps) {
     </MapboxGL.MarkerView>
   )
 }
-
-// ─── StopMarkers ─────────────────────────────────────────────────────────────
 
 interface StopMarkersProps {
   stops:       Stop[]
@@ -136,8 +130,6 @@ export function StopMarkers({ stops, nextStopId }: StopMarkersProps) {
   )
 }
 
-// ─── DriverMarker ────────────────────────────────────────────────────────────
-
 interface DriverMarkerProps {
   location:      LatLng  // always the real GPS position
   heading:       number  // GPS travel heading in degrees (0 = north)
@@ -145,10 +137,7 @@ interface DriverMarkerProps {
 }
 
 export function DriverMarker({ location, heading, cameraBearing }: DriverMarkerProps) {
-  // Subtract cameraBearing so the arrow stays correctly oriented
-  // when the user manually rotates the map.
-  // Subtract 90 to correct Navigation2 which points east at 0°.
-  const rotation = heading - cameraBearing - 90
+  const rotation = heading - cameraBearing
 
   return (
     <MapboxGL.MarkerView

@@ -17,7 +17,7 @@ import MapboxGL from '@rnmapbox/maps'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { AnimatePresence, MotiView } from 'moti'
 import { useRouter } from 'expo-router'
-import { AlertCircle, Navigation2, WifiOff } from 'lucide-react-native'
+import { AlertCircle, CheckCircle2, Navigation2, WifiOff } from 'lucide-react-native'
 
 import { useGPS }   from '../../hooks/useGps'
 import { useRoute } from '../../hooks/useRoute'
@@ -46,10 +46,10 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
   const router    = useRouter()
   const cameraRef = useRef<MapboxGL.Camera>(null)
 
-  const [mapReady,       setMapReady]       = useState(false)
-  const [trackingMode,   setTrackingMode]   = useState(true)
-  const [sheetOpen,      setSheetOpen]      = useState(false)
-  const [cameraBearing,  setCameraBearing]  = useState(0)
+  const [mapReady,      setMapReady]      = useState(false)
+  const [trackingMode,  setTrackingMode]  = useState(true)
+  const [sheetOpen,     setSheetOpen]     = useState(false)
+  const [cameraBearing, setCameraBearing] = useState(0)
 
   const trackingModeRef = useRef(trackingMode)
   useEffect(() => { trackingModeRef.current = trackingMode }, [trackingMode])
@@ -77,12 +77,13 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
     )
   }, [])
 
+  const onLocationUpdateRef = useRef<((pos: { latitude: number; longitude: number }) => void) | undefined>(undefined)
+
   const { userLocation, userLocationRef, heading } = useGPS({
     cameraRef,
     trackingModeRef,
-    onError: (msg) => {
-      console.warn('[GPS]', msg)
-    },
+    onLocationUpdateRef,
+    onError: (msg) => { console.warn('[GPS]', msg) },
   })
 
   const {
@@ -97,6 +98,10 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
     setCurrentStep,
     fetchRoute,
     onLocationUpdate,
+    nearbyTarget,
+    distanceToTarget,
+    markPickupArrived,
+    markStopArrived,
   } = useRoute({
     bookingId,
     userLocation,
@@ -105,14 +110,12 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
     onRouteReady: fitMapToRoute,
   })
 
-  const onLocationUpdateRef = useRef(onLocationUpdate)
-  useEffect(() => { onLocationUpdateRef.current = onLocationUpdate }, [onLocationUpdate])
+  useEffect(() => {
+    onLocationUpdateRef.current = onLocationUpdate
+  }, [onLocationUpdate])
 
-  const handleMapReady = useCallback(() => {
-    setMapReady(true)
-  }, [])
+  const handleMapReady = useCallback(() => setMapReady(true), [])
 
-  // Track camera bearing so DriverMarker can counter-rotate correctly
   const handleCameraChanged = useCallback((state: any) => {
     setCameraBearing(state.properties.heading ?? 0)
   }, [])
@@ -148,11 +151,18 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
     ]
   }, [routeData])
 
-  // Build traffic segments from the live-trimmed display polyline
   const trafficSegments = useMemo(() => {
     if (!routeData || !displayPolyline.length) return routeData?.trafficSegments ?? []
     return routeData.trafficSegments
   }, [routeData, displayPolyline])
+
+  const handleConfirmArrival = useCallback(() => {
+    if (nearbyTarget === 'pickup') {
+      markPickupArrived()
+    } else if (nearbyTarget === 'dropoff' && nextStop) {
+      markStopArrived(nextStop.destination_id)
+    }
+  }, [nearbyTarget, nextStop, markPickupArrived, markStopArrived])
 
   const showOffline = isOffline || usingCache
 
@@ -214,19 +224,12 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
           }
         />
 
-        {routeData && (
-          <TrafficLayer segments={trafficSegments} />
-        )}
+        {routeData && <TrafficLayer segments={trafficSegments} />}
 
-        {routeData?.origin && (
-          <OriginMarker origin={routeData.origin} />
-        )}
+        {routeData?.origin && <OriginMarker origin={routeData.origin} />}
 
         {routeData?.stops && (
-          <StopMarkers
-            stops={routeData.stops}
-            nextStopId={nextStop?.destination_id}
-          />
+          <StopMarkers stops={routeData.stops} nextStopId={nextStop?.destination_id} />
         )}
 
         {userLocation && (
@@ -256,6 +259,7 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
         )}
       </AnimatePresence>
 
+      {/* ── Offline banner ── */}
       <AnimatePresence>
         {showOffline && !routeData?.steps[currentStep] && (
           <MotiView
@@ -264,20 +268,12 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
             exit={{ opacity: 0, translateY: -30 }}
             transition={{ type: 'spring', damping: 20, stiffness: 220 }}
             style={{
-              position:        'absolute',
-              top:             insets.top + 10,
-              left:            12,
-              right:           12,
-              zIndex:          20,
-              flexDirection:   'row',
-              alignItems:      'center',
-              justifyContent:  'center',
-              gap:             6,
-              paddingVertical: 9,
-              borderRadius:    12,
+              position: 'absolute', top: insets.top + 10,
+              left: 12, right: 12, zIndex: 20,
+              flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+              gap: 6, paddingVertical: 9, borderRadius: 12,
               backgroundColor: C.offlineBg,
-              borderWidth:     1,
-              borderColor:     C.offlineBorder,
+              borderWidth: 1, borderColor: C.offlineBorder,
             }}
           >
             <WifiOff size={13} color={C.orange} />
@@ -290,6 +286,52 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
         )}
       </AnimatePresence>
 
+      {/* ── Manual confirm arrival button ── */}
+      <AnimatePresence>
+        {nearbyTarget && (
+          <MotiView
+            from={{ opacity: 0, translateY: 20 }}
+            animate={{ opacity: 1, translateY: 0 }}
+            exit={{ opacity: 0, translateY: 20 }}
+            transition={{ type: 'spring', damping: 20, stiffness: 220 }}
+            style={{
+              position: 'absolute',
+              bottom:   sheetOpen ? 16 : 210,
+              left:     16,
+              right:    16,
+              zIndex:   25,
+            }}
+          >
+            <TouchableOpacity
+              onPress={handleConfirmArrival}
+              activeOpacity={0.85}
+              style={{
+                flexDirection:   'row',
+                alignItems:      'center',
+                justifyContent:  'center',
+                gap:             8,
+                paddingVertical: 14,
+                borderRadius:    16,
+                backgroundColor: nearbyTarget === 'pickup' ? C.cyan : C.green ?? '#22c55e',
+                shadowColor:     nearbyTarget === 'pickup' ? C.cyan : '#22c55e',
+                shadowOffset:    { width: 0, height: 0 },
+                shadowOpacity:   0.4,
+                shadowRadius:    10,
+                elevation:       8,
+              }}
+            >
+              <CheckCircle2 size={18} color="#000" />
+              <Text style={{ color: '#000', fontSize: 14, fontWeight: '700' }}>
+                {nearbyTarget === 'pickup' ? 'Confirm Pickup' : 'Confirm Delivery'}
+                {'  ·  '}
+                <Text style={{ fontWeight: '400' }}>{distanceToTarget}m away</Text>
+              </Text>
+            </TouchableOpacity>
+          </MotiView>
+        )}
+      </AnimatePresence>
+
+      {/* ── Recenter button ── */}
       <AnimatePresence>
         {!trackingMode && (
           <MotiView
