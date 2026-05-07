@@ -89,6 +89,7 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
   const {
     routeData,
     displayPolyline,
+    routeVersion,
     loading,
     error,
     isOffline,
@@ -164,7 +165,10 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
     }
   }, [nearbyTarget, nextStop, markPickupArrived, markStopArrived])
 
-  const showOffline = isOffline || usingCache
+  // Only show the “offline/cached route” banner when we are actually offline.
+  // When connected, even if we currently display a cached route, we don't want
+  // the UI to keep saying “reconnecting…”.
+  const showOffline = isOffline
 
   if (loading) {
     return (
@@ -224,7 +228,7 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
           }
         />
 
-        {routeData && <TrafficLayer segments={trafficSegments} />}
+        {routeData && <TrafficLayer segments={trafficSegments} routeVersion={routeVersion} />}
 
         {routeData?.origin && <OriginMarker origin={routeData.origin} />}
 
@@ -278,9 +282,7 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
           >
             <WifiOff size={13} color={C.orange} />
             <Text style={{ fontSize: 12, fontWeight: '600', color: C.orange }}>
-              {isOffline
-                ? usingCache ? 'Offline — showing cached route' : 'No internet connection'
-                : 'Cached route · reconnecting…'}
+              {usingCache ? 'Offline — showing cached route' : 'No internet connection'}
             </Text>
           </MotiView>
         )}

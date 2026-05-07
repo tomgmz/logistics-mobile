@@ -18,78 +18,87 @@ import { useDriverId, useAuthHydrated } from '../../../lib/store/auth.store'
 import { Package, Search, Truck, TriangleAlert, WifiOff } from 'lucide-react-native'
 
 interface BookingDestination {
-  destination_id: string
-  booking_id: string
-  address: string
-  sequence_order: number
-  status: 'pending' | 'delivered' | 'failed'
-  delivered_at: string | null
-  notes: string | null
-  latitude: number | null
-  longitude: number | null
-  created_at: string
+  destination_id:  string
+  booking_id:      string
+  address:         string
+  sequence_order:  number
+  status:          'pending' | 'delivered' | 'failed'
+  delivered_at:    string | null
+  notes:           string | null
+  latitude:        number | null
+  longitude:       number | null
+  created_at:      string
+}
+
+interface TruckModel {
+  model_id:     string
+  name:         string
+  vehicle_type: string
+  image_url:    string | null
 }
 
 interface TruckAssignment {
   assignment_id: string
-  truck_id: string
-  assigned_at: string
+  truck_id:      string
+  assigned_at:   string
   trucks: {
     plate_number: string
-    truck_type: string
-    capacity_tons: number
+    status:       string | null
+    model_id:     string | null
+    truck_models: TruckModel | null 
   }
 }
 
 interface BookingClient {
-  client_id: string
-  company_name: string | null
+  client_id:       string
+  company_name:    string | null
   billing_address: string | null
-  payment_terms: number
+  payment_terms:   number
   users: {
     first_name: string
-    last_name: string
-    email: string
-    phone: string | null
+    last_name:  string
+    email:      string
+    phone:      string | null
   }
 }
 
 interface BookingWithRelations {
-  booking_id: string
-  client_id: string
-  origin: string
-  origin_latitude: number | null
-  origin_longitude: number | null
-  truck_type_needed: string
-  cargo_details: string | null
-  schedule_date: string
-  call_time: string
-  status: 'pending' | 'assigned' | 'in_transit' | 'completed' | 'cancelled'
-  total_cost: number | null
-  estimated_delivery: string | null
+  booking_id:          string
+  client_id:           string
+  origin:              string
+  origin_latitude:     number | null
+  origin_longitude:    number | null
+  truck_type_needed:   string
+  cargo_details:       string | null
+  schedule_date:       string
+  call_time:           string
+  status:              'pending' | 'assigned' | 'in_transit' | 'completed' | 'cancelled'
+  total_cost:          number | null
+  estimated_delivery:  string | null
   required_volume_cbm: number | null
-  required_weight_kg: number | null
-  required_length_cm: number | null
-  stackable_required: boolean | null
-  created_at: string
-  updated_at: string
-  clients: BookingClient
+  required_weight_kg:  number | null
+  required_length_cm:  number | null
+  stackable_required:  boolean | null
+  payment_terms:       string | null
+  created_at:          string
+  updated_at:          string
+  clients:             BookingClient
   booking_destinations: BookingDestination[]
-  truck_assignments: TruckAssignment[]
+  truck_assignments:   TruckAssignment[]
 }
 
 interface CachePayload {
   bookings: BookingWithRelations[]
-  savedAt: string
+  savedAt:  string
 }
 
 type StatusKey = 'pending' | 'assigned' | 'in_transit' | 'completed' | 'cancelled'
 
 const STATUS_CONFIG: Record<StatusKey, {
-  label: string
+  label:   string
   badgeCn: string
-  textCn: string
-  dotCn: string
+  textCn:  string
+  dotCn:   string
 }> = {
   pending:    { label: 'Pending',   badgeCn: 'bg-amber-950',   textCn: 'text-amber-400',   dotCn: 'bg-amber-400'   },
   assigned:   { label: 'Assigned',  badgeCn: 'bg-blue-950',    textCn: 'text-blue-400',    dotCn: 'bg-blue-400'    },
@@ -117,7 +126,7 @@ async function writeCache(driverId: string, bookings: BookingWithRelations[]) {
     const payload: CachePayload = { bookings, savedAt: new Date().toISOString() }
     await AsyncStorage.setItem(cacheKey(driverId), JSON.stringify(payload))
   } catch {
-    // storage write failures are non-fatal
+    // non-fatal
   }
 }
 
@@ -139,7 +148,7 @@ function formatDate(dateStr: string): string {
 
 function formatTime(timeStr: string): string {
   const [h, m] = timeStr.split(':')
-  const hour = parseInt(h, 10)
+  const hour   = parseInt(h, 10)
   return `${hour % 12 || 12}:${m} ${hour >= 12 ? 'PM' : 'AM'}`
 }
 
@@ -149,10 +158,26 @@ function getProgress(destinations: BookingDestination[]) {
   return { done, total, pct: total ? done / total : 0 }
 }
 
+function resolveTruckLabel(
+  truckAssignment: TruckAssignment | undefined,
+  truckTypeNeeded: string,
+): string {
+  if (!truckAssignment) return truckTypeNeeded
+
+  const { trucks } = truckAssignment
+  const plate      = trucks?.plate_number ?? ''
+  const modelName  = trucks?.truck_models?.name ?? trucks?.truck_models?.vehicle_type ?? ''
+
+  if (plate && modelName) return `${plate} · ${modelName}`
+  if (plate)              return plate
+  if (modelName)          return modelName
+  return truckTypeNeeded
+}
+
 interface BookingCardProps {
   booking: BookingWithRelations
   onPress: () => void
-  index: number
+  index:   number
 }
 
 function BookingCard({ booking, onPress, index }: BookingCardProps) {
@@ -176,10 +201,12 @@ function BookingCard({ booking, onPress, index }: BookingCardProps) {
   const onPressOut = () =>
     Animated.spring(scaleAnim, { toValue: 1, tension: 220, friction: 14, useNativeDriver: true }).start()
 
-  const cfg  = STATUS_CONFIG[booking.status] ?? STATUS_CONFIG.pending
+  const cfg            = STATUS_CONFIG[booking.status] ?? STATUS_CONFIG.pending
   const { done, total, pct } = getProgress(booking.booking_destinations)
 
-  const truck      = booking.truck_assignments?.[0]?.trucks
+  const firstAssignment = booking.truck_assignments?.[0]
+  const truckLabel      = resolveTruckLabel(firstAssignment, booking.truck_type_needed)
+
   const clientUser = booking.clients?.users
   const fullName   = clientUser
     ? `${clientUser.first_name} ${clientUser.last_name}`.trim()
@@ -195,7 +222,7 @@ function BookingCard({ booking, onPress, index }: BookingCardProps) {
     <Animated.View
       className="mb-3"
       style={{
-        opacity: fadeAnim,
+        opacity:   fadeAnim,
         transform: [{ translateY: slideAnim }, { scale: scaleAnim }],
       }}
     >
@@ -205,13 +232,14 @@ function BookingCard({ booking, onPress, index }: BookingCardProps) {
         onPressOut={onPressOut}
         className="card-dark"
         style={{
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 2 },
+          shadowColor:   '#000',
+          shadowOffset:  { width: 0, height: 2 },
           shadowOpacity: 0.4,
-          shadowRadius: 8,
-          elevation: 4,
+          shadowRadius:  8,
+          elevation:     4,
         }}
       >
+        {/* Row 1 — ID + status */}
         <View className="flex-row items-center justify-between mb-3">
           <View className="flex-row items-center gap-2">
             <Text className="text-[11px] font-black tracking-widest text-ink-primary font-mono">
@@ -231,6 +259,7 @@ function BookingCard({ booking, onPress, index }: BookingCardProps) {
           </View>
         </View>
 
+        {/* Row 2 — Client avatar + name + time */}
         <View className="flex-row items-center gap-2.5 mb-3">
           <View className="w-9 h-9 rounded-full bg-surface-border items-center justify-center">
             <Text className="text-sm font-black text-ink-primary">
@@ -256,6 +285,7 @@ function BookingCard({ booking, onPress, index }: BookingCardProps) {
           </View>
         </View>
 
+        {/* Row 3 — Route */}
         <View className="surface-raised mb-3">
           <View className="flex-row items-center gap-2">
             <View className="w-2.5 h-2.5 rounded-full bg-ink-primary" />
@@ -267,7 +297,6 @@ function BookingCard({ booking, onPress, index }: BookingCardProps) {
           {total > 0 && (
             <>
               <View className="w-px h-2.5 bg-surface-divider ml-[4.5px] my-0.5" />
-
               <View className="flex-row items-center gap-2">
                 <View
                   className={`w-2.5 h-2.5 rounded-sm border-2 ${
@@ -291,6 +320,7 @@ function BookingCard({ booking, onPress, index }: BookingCardProps) {
           )}
         </View>
 
+        {/* Row 4 — Progress bar */}
         {total > 0 && (
           <View className="flex-row items-center gap-2 mb-3">
             <View className="flex-1 h-1 bg-surface-border rounded-full overflow-hidden">
@@ -305,11 +335,12 @@ function BookingCard({ booking, onPress, index }: BookingCardProps) {
           </View>
         )}
 
+        {/* Row 5 — Truck chip + cost + arrow */}
         <View className="flex-row items-center gap-2">
-          <View className="flex-1 bg-surface-elevated rounded-lg px-2.5 py-1.5">
-            <Text className="text-[11px] font-semibold text-ink-secondary" numberOfLines={1}>
-              <Truck size={12} color="#818181" />{'  '}
-              {truck?.plate_number ?? booking.truck_type_needed}
+          <View className="flex-1 bg-surface-elevated rounded-lg px-2.5 py-1.5 flex-row items-center gap-1.5">
+            <Truck size={12} color="#818181" />
+            <Text className="text-[11px] font-semibold text-ink-secondary flex-1" numberOfLines={1}>
+              {truckLabel}
             </Text>
           </View>
 
@@ -340,7 +371,7 @@ function filterBookings(bookings: BookingWithRelations[], filter: FilterKey) {
   switch (filter) {
     case 'Active':    return bookings.filter((b) => b.status === 'in_transit' || b.status === 'assigned')
     case 'Pending':   return bookings.filter((b) => b.status === 'pending')
-    case 'Completed': return bookings.filter((b) => b.status === 'completed' || b.status === 'cancelled')
+    case 'Completed': return bookings.filter((b) => b.status === 'completed'  || b.status === 'cancelled')
     default:          return bookings
   }
 }
@@ -440,7 +471,6 @@ export default function DriverBookingList() {
     }
   }, [driverId, hasHydrated])
 
-  // Initial load
   useEffect(() => {
     if (!hasHydrated) return
     if (!driverId) {
@@ -468,21 +498,16 @@ export default function DriverBookingList() {
   const displayed = filterBookings(bookings, activeFilter)
   const countFor  = (f: FilterKey) => filterBookings(bookings, f).length
 
-  console.log('[BookingList] hydrated:', hasHydrated, '| driverId:', driverId, '| offline:', !!offlineMeta)
-
   return (
     <View className="flex-1 bg-surface-bg">
 
       <View className="flex-row items-end justify-between px-5 pt-3 pb-8">
         <View>
-          <Text className="label-mono text-ink-faint mb-0.5">
-            My Assignments
-          </Text>
+          <Text className="label-mono text-ink-faint mb-0.5">My Assignments</Text>
           <Text className="text-[28px] font-black text-ink-primary tracking-tight leading-9">
             Bookings
           </Text>
         </View>
-
         <View className="bg-ink-primary rounded-2xl min-w-[44px] h-11 items-center justify-center px-3 mb-1">
           <Text className="text-surface-bg font-black text-xl">{bookings.length}</Text>
         </View>
@@ -552,8 +577,8 @@ export default function DriverBookingList() {
             keyExtractor={(item) => item.booking_id}
             contentContainerStyle={{
               paddingHorizontal: 16,
-              paddingTop: 4,
-              paddingBottom: insets.bottom + 24,
+              paddingTop:        4,
+              paddingBottom:     insets.bottom + 24,
             }}
             showsVerticalScrollIndicator={false}
             refreshControl={

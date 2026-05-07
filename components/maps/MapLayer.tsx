@@ -9,12 +9,37 @@ import type { BookingRoute, LatLng, Stop, TrafficSegment } from '../../types/nav
 
 interface TrafficLayerProps {
   segments: TrafficSegment[]
+  routeVersion: number
 }
 
-export function TrafficLayer({ segments }: TrafficLayerProps) {
+export function TrafficLayer({ segments, routeVersion }: TrafficLayerProps) {
   const geoJSON = React.useMemo(() => toTrafficFeatures(segments), [segments])
+  const sourceKey = React.useMemo(() => {
+    if (!segments.length) return 'traffic:none'
+    const firstSeg = segments[0]!
+    const lastSeg = segments[segments.length - 1]!
+    const totalCoords = segments.reduce((acc, s) => acc + (s.coords?.length ?? 0), 0)
+    const firstStart = firstSeg.coords[0]
+    const firstEnd   = firstSeg.coords[firstSeg.coords.length - 1]
+    const lastStart  = lastSeg.coords[0]
+    const lastEnd    = lastSeg.coords[lastSeg.coords.length - 1]
+    // Keying forces Mapbox to fully remount the source on reroutes,
+    // avoiding “leftover” line segments when the route becomes shorter.
+    return [
+      `n:${segments.length}`,
+      `t:${totalCoords}`,
+      `a:${firstStart ? firstStart.latitude.toFixed(5) : 'x'}`,
+      `b:${firstStart ? firstStart.longitude.toFixed(5) : 'x'}`,
+      `c:${firstEnd ? firstEnd.latitude.toFixed(5) : 'x'}`,
+      `d:${firstEnd ? firstEnd.longitude.toFixed(5) : 'x'}`,
+      `e:${lastStart ? lastStart.latitude.toFixed(5) : 'x'}`,
+      `f:${lastStart ? lastStart.longitude.toFixed(5) : 'x'}`,
+      `g:${lastEnd ? lastEnd.latitude.toFixed(5) : 'x'}`,
+      `h:${lastEnd ? lastEnd.longitude.toFixed(5) : 'x'}`,
+    ].join('|')
+  }, [segments])
   return (
-    <MapboxGL.ShapeSource id="traffic-source" shape={geoJSON}>
+    <MapboxGL.ShapeSource key={`traffic:${routeVersion}:${sourceKey}`} id="traffic-source" shape={geoJSON}>
       <MapboxGL.LineLayer
         id="traffic-line"
         style={{

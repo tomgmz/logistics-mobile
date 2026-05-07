@@ -33,6 +33,7 @@ interface UseRouteOptions {
 interface UseRouteReturn {
   routeData:         BookingRoute | null
   displayPolyline:   LatLng[]
+  routeVersion:      number
   loading:           boolean
   error:             string | null
   isOffline:         boolean
@@ -69,6 +70,7 @@ export function useRoute({
 }: UseRouteOptions): UseRouteReturn {
   const [routeData,        setRouteData]        = useState<BookingRoute | null>(null)
   const [displayPolyline,  setDisplayPolyline]  = useState<LatLng[]>([])
+  const [routeVersion,     setRouteVersion]     = useState(0)
   const [loading,          setLoading]          = useState(true)
   const [error,            setError]            = useState<string | null>(null)
   const [isOffline,        setIsOffline]        = useState(false)
@@ -126,6 +128,7 @@ export function useRoute({
       if (cached) {
         setRouteData(cached)
         setDisplayPolyline(cached.polyline)
+        setRouteVersion((v) => v + 1)
         setUsingCache(true)
         setLoading(false)
         lastSnapIdxRef.current = 0
@@ -144,6 +147,7 @@ export function useRoute({
       if (cached) {
         setRouteData(cached)
         setDisplayPolyline(cached.polyline)
+        setRouteVersion((v) => v + 1)
         setUsingCache(true)
         setLoading(false)
         lastSnapIdxRef.current = 0
@@ -270,6 +274,7 @@ export function useRoute({
       setRouteData(newRoute)
       setDisplayPolyline(polyline)
       setUsingCache(false)
+      setRouteVersion((v) => v + 1)
       setCurrentStep(0)
       offRouteSinceRef.current = null
 
@@ -290,6 +295,7 @@ export function useRoute({
         if (cached) {
           setRouteData(cached)
           setDisplayPolyline(cached.polyline)
+          setRouteVersion((v) => v + 1)
           setUsingCache(true)
           setLoading(false)
           if (mapReady) onRouteReady(cached.polyline)
@@ -469,6 +475,7 @@ export function useRoute({
   return {
     routeData,
     displayPolyline,
+    routeVersion,
     loading,
     error,
     isOffline,
