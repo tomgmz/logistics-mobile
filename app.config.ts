@@ -7,7 +7,7 @@ loadEnv({ path: path.resolve(__dirname, '.env') })
 export default {
   expo: {
     scheme: 'logistics-mobile',
-    name: 'logistics-mobile',
+    name: '8338 Logistics',
     slug: 'logistics-mobile',
     version: '1.0.0',
     runtimeVersion: {
