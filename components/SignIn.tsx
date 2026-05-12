@@ -42,8 +42,8 @@ function formatCountdown(seconds: number): string {
 
 function extractMessage(err: any, fallback: string): string {
   return (
-    err?.response.data?.message  ??
-    err?.data?.message ??
+    err?.response?.data?.message ??
+    err?.data?.message           ??
     err?.message                 ??
     fallback
   )
