@@ -14,12 +14,12 @@ export default {
       policy: 'appVersion',
     },
     orientation: 'portrait',
-    icon: './assets/icon.png',
-    userInterfaceStyle: 'light',
+    icon: './assets/mobile-icon.png',
+    userInterfaceStyle: 'dark',
     splash: {
       image: './assets/splash-icon.png',
       resizeMode: 'contain',
-      backgroundColor: '#ffffff',
+      backgroundColor: '#242424',
     },
     ios: {
       supportsTablet: true,
@@ -38,8 +38,8 @@ export default {
       targetSdkVersion: 34,
       "ndkVersion": "27.1.12297006",
       adaptiveIcon: {
-        foregroundImage: './assets/adaptive-icon.png',
-        backgroundColor: '#ffffff',
+        foregroundImage: './assets/mobile-icon.png',
+        backgroundColor: '#242424',
       },
       predictiveBackGestureEnabled: false,
       config: {
