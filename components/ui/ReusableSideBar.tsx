@@ -8,7 +8,7 @@ import {
 } from 'react-native'
 import { MotiView, AnimatePresence } from 'moti'
 import { useRouter, usePathname } from 'expo-router'
-import { Settings, LogOut } from 'lucide-react-native'
+import { LogOut } from 'lucide-react-native'
 import { useAuthStore } from '../../lib/store/auth.store'
 import ReusableModal from './ReusableModal'
 import { Easing } from 'react-native-reanimated'
@@ -149,16 +149,6 @@ export default function ReusableSidebar({
               <View style={styles.bottomSep} />
 
               <View style={styles.bottom}>
-                <NavItemRow
-                  item={{
-                    href:  '/settings',
-                    label: 'Settings',
-                    icon:  <Settings size={17} color={COLORS.whiteDim} />,
-                  }}
-                  index={0}
-                  isActive={pathname === '/settings'}
-                  onPress={() => { close(); router.push('/settings') }}
-                />
                 <TouchableOpacity
                   activeOpacity={0.75}
                   onPress={() => setLogoutModal(true)}
