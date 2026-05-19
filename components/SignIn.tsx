@@ -510,6 +510,10 @@ export default function SignInScreen() {
       setUser(auth.user)
       const me = await getMe()
       setUser(me)
+      if (me.must_change_password) {
+        router.replace('/change-password')
+        return
+      }
       const route = getMobileRoute(me.role)
       if (route === '/') {
         setError(`Role "${me.role}" has no mobile access.`)
@@ -551,6 +555,10 @@ export default function SignInScreen() {
       setUser(auth.user)
       const me = await getMe()
       setUser(me)
+      if (me.must_change_password) {
+        router.replace('/change-password')
+        return
+      }
       const route = getMobileRoute(me.role)
       if (route === '/') {
         setError(`Role "${me.role}" has no mobile access.`)
@@ -877,7 +885,7 @@ export default function SignInScreen() {
         >
           <View className="w-[3px] h-[3px] rounded-sm bg-ink-faint" />
           <Text className="text-[11px] tracking-[1.5px] uppercase text-ink-faint">
-            {step === 'password' ? 'Secure · Password Auth' : 'Secure · Passwordless · OTP'}
+            {step === 'password' ? 'Secure · Password Auth' : 'Secure · Password · OTP'}
           </Text>
           <View className="w-[3px] h-[3px] rounded-sm bg-ink-faint" />
         </MotiView>

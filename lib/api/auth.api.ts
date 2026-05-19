@@ -202,8 +202,9 @@ export interface AuthUser {
   username:   string
   first_name: string | null
   last_name:  string | null
-  role:       string
-  status:     string
+  role:                  string
+  status:                string
+  must_change_password?: boolean
 
   drivers?: {
     driver_id:        string
@@ -281,6 +282,10 @@ export async function loginWithPassword(email: string, password: string): Promis
   await TokenStore.setAccess(auth.accessToken)
   await TokenStore.setRefresh(auth.refreshToken)
   return auth
+}
+
+export async function changePassword(password: string): Promise<void> {
+  await api.post('/auth/change-password', { password })
 }
 
 let _getMePromise: Promise<AuthUser> | null = null

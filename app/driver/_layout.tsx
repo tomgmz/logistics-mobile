@@ -14,7 +14,7 @@ const DRIVER_NAV = [
   //   label: 'Map',
   //   icon:  <MapPin size={17} color="rgba(255,255,255,0.40)" />,
   // },
-    {
+  {
     href:  '/driver/maintenance',
     label: 'Maintenance',
     icon:  <Toolbox size={17} color="rgba(255,255,255,0.40)" />,

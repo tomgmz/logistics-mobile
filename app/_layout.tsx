@@ -1,5 +1,5 @@
 import { useFonts } from 'expo-font'
-import { SplashScreen, Stack, router } from 'expo-router'
+import { SplashScreen, Stack, router, usePathname } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { useEffect } from 'react'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
@@ -31,6 +31,8 @@ export default function RootLayout() {
   // Once the Zustand store has rehydrated from SecureStore, sync the tokens
   // into TokenStore so the axios interceptor can find them on a cold start,
   // then refresh the user object to populate nested relations (drivers, etc).
+  const pathname = usePathname()
+
   useEffect(() => {
     if (!authReady) return
 
@@ -50,6 +52,12 @@ export default function RootLayout() {
         // setSessionExpiredHandler above.
       })
   }, [authReady])
+
+  useEffect(() => {
+    if (!isReady || !user || !user.must_change_password) return
+    if (pathname === '/change-password') return
+    router.replace('/change-password')
+  }, [isReady, pathname, user])
 
   useEffect(() => {
     if (!isReady) return
