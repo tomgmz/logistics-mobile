@@ -26,7 +26,7 @@ import {
 import { useAuthStore } from '../lib/store/auth.store'
 
 const MOBILE_ROLE_ROUTES: Record<string, string> = {
-  super_admin: '/superadmin',
+  admin: '/admin',
   driver:      '/driver',
 }
 

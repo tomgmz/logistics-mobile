@@ -22,7 +22,7 @@ const ERROR   = '#f87171'
 const MUTED   = 'rgba(255,255,255,0.35)'
 
 const ROLE_ROUTES: Record<string, string> = {
-  super_admin: '/superadmin',
+  admin: '/admin',
   driver:      '/driver',
 }
 
