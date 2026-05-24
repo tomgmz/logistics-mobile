@@ -17,7 +17,9 @@ import MapboxGL from '@rnmapbox/maps'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { AnimatePresence, MotiView } from 'moti'
 import { useRouter } from 'expo-router'
-import { AlertCircle, CheckCircle2, Navigation2, WifiOff } from 'lucide-react-native'
+import {
+  AlertCircle, CheckCircle2, Navigation2, WifiOff, PackageCheck,
+} from 'lucide-react-native'
 
 import { useGPS }   from '../../hooks/useGps'
 import { useRoute } from '../../hooks/useRoute'
@@ -50,6 +52,7 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
   const [trackingMode,  setTrackingMode]  = useState(true)
   const [sheetOpen,     setSheetOpen]     = useState(false)
   const [cameraBearing, setCameraBearing] = useState(0)
+  const [tripComplete,  setTripComplete]  = useState(false)
 
   const trackingModeRef = useRef(trackingMode)
   useEffect(() => { trackingModeRef.current = trackingMode }, [trackingMode])
@@ -79,12 +82,21 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
 
   const onLocationUpdateRef = useRef<((pos: { latitude: number; longitude: number }) => void) | undefined>(undefined)
 
-  const { userLocation, userLocationRef, heading } = useGPS({
+  const { userLocation, userLocationRef, heading, headingRef } = useGPS({
     cameraRef,
     trackingModeRef,
     onLocationUpdateRef,
     onError: (msg) => { console.warn('[GPS]', msg) },
   })
+
+  // ── Arrival handler wired to useRoute ───────────────────────────────────
+
+  const handleArrival = useCallback((type: 'pickup' | 'dropoff', _stopId?: string) => {
+    if (type === 'dropoff') {
+      // Trip complete check is handled by the completedCount effect below.
+      // This callback is the hook for any additional side effects (sound, haptics, etc.)
+    }
+  }, [])
 
   const {
     routeData,
@@ -107,13 +119,34 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
     bookingId,
     userLocation,
     userLocationRef,
+    headingRef,
     mapReady,
     onRouteReady: fitMapToRoute,
+    onArrival:    handleArrival,
   })
 
   useEffect(() => {
     onLocationUpdateRef.current = onLocationUpdate
   }, [onLocationUpdate])
+
+  // ── Trip complete detection ──────────────────────────────────────────────
+
+  const completedCount = useMemo(
+    () => routeData?.stops.filter((s) => s.status === 'delivered').length ?? 0,
+    [routeData],
+  )
+
+  useEffect(() => {
+    if (
+      routeData &&
+      routeData.stops.length > 0 &&
+      completedCount === routeData.stops.length
+    ) {
+      setTripComplete(true)
+    }
+  }, [completedCount, routeData])
+
+  // ────────────────────────────────────────────────────────────────────────
 
   const handleMapReady = useCallback(() => setMapReady(true), [])
 
@@ -134,8 +167,10 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
     }
   }, [userLocation, heading])
 
-  const nextStop       = useMemo(() => routeData?.stops.find((s) => s.status === 'pending'), [routeData])
-  const completedCount = useMemo(() => routeData?.stops.filter((s) => s.status === 'delivered').length ?? 0, [routeData])
+  const nextStop: Stop | undefined = useMemo(
+    () => routeData?.stops.find((s) => s.status === 'pending'),
+    [routeData],
+  )
 
   const stopListData: Stop[] = useMemo(() => {
     if (!routeData) return []
@@ -165,10 +200,9 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
     }
   }, [nearbyTarget, nextStop, markPickupArrived, markStopArrived])
 
-  // Only show the “offline/cached route” banner when we are actually offline.
-  // When connected, even if we currently display a cached route, we don't want
-  // the UI to keep saying “reconnecting…”.
   const showOffline = isOffline
+
+  // ── Loading ──────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -178,6 +212,8 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
       </View>
     )
   }
+
+  // ── Error ────────────────────────────────────────────────────────────────
 
   if (error) {
     return (
@@ -246,7 +282,7 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
       </MapboxGL.MapView>
 
       <AnimatePresence>
-        {routeData?.steps[currentStep] && (
+        {routeData?.steps[currentStep] && !tripComplete && (
           <TurnCard
             key="turn-card"
             instruction={routeData.steps[currentStep]}
@@ -265,7 +301,7 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
 
       {/* ── Offline banner ── */}
       <AnimatePresence>
-        {showOffline && !routeData?.steps[currentStep] && (
+        {showOffline && !routeData?.steps[currentStep] && !tripComplete && (
           <MotiView
             from={{ opacity: 0, translateY: -30 }}
             animate={{ opacity: 1, translateY: 0 }}
@@ -290,7 +326,7 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
 
       {/* ── Manual confirm arrival button ── */}
       <AnimatePresence>
-        {nearbyTarget && (
+        {nearbyTarget && !tripComplete && (
           <MotiView
             from={{ opacity: 0, translateY: 20 }}
             animate={{ opacity: 1, translateY: 0 }}
@@ -335,7 +371,7 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
 
       {/* ── Recenter button ── */}
       <AnimatePresence>
-        {!trackingMode && (
+        {!trackingMode && !tripComplete && (
           <MotiView
             from={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -365,15 +401,102 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
         )}
       </AnimatePresence>
 
-      <BottomSheet
-        routeData={routeData}
-        nextStop={nextStop}
-        completedCount={completedCount}
-        sheetOpen={sheetOpen}
-        sheetAnim={sheetAnim}
-        stopListData={stopListData}
-        onToggle={() => setSheetOpen((o) => !o)}
-      />
+      {!tripComplete && (
+        <BottomSheet
+          routeData={routeData}
+          nextStop={nextStop}
+          completedCount={completedCount}
+          sheetOpen={sheetOpen}
+          sheetAnim={sheetAnim}
+          stopListData={stopListData}
+          onToggle={() => setSheetOpen((o) => !o)}
+        />
+      )}
+
+      {/* ── Trip complete overlay ── */}
+      <AnimatePresence>
+        {tripComplete && (
+          <MotiView
+            from={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ type: 'timing', duration: 400 }}
+            style={{
+              position:        'absolute',
+              top: 0, left: 0, right: 0, bottom: 0,
+              backgroundColor: C.bg,
+              alignItems:      'center',
+              justifyContent:  'center',
+              zIndex:          50,
+              paddingHorizontal: 32,
+              paddingTop:      insets.top,
+              paddingBottom:   insets.bottom + 16,
+            }}
+          >
+            <MotiView
+              from={{ scale: 0.6, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: 'spring', damping: 14, stiffness: 180, delay: 200 }}
+              style={{
+                width: 96, height: 96, borderRadius: 48,
+                backgroundColor: C.greenDim,
+                borderWidth: 2, borderColor: C.green,
+                alignItems: 'center', justifyContent: 'center',
+                shadowColor: C.green, shadowOffset: { width: 0, height: 0 },
+                shadowOpacity: 0.5, shadowRadius: 20, elevation: 12,
+                marginBottom: 24,
+              }}
+            >
+              <PackageCheck size={44} color={C.green} />
+            </MotiView>
+
+            <MotiView
+              from={{ opacity: 0, translateY: 16 }}
+              animate={{ opacity: 1, translateY: 0 }}
+              transition={{ type: 'spring', damping: 20, stiffness: 200, delay: 350 }}
+              style={{ alignItems: 'center', gap: 8 }}
+            >
+              <Text style={{
+                fontSize: 28, fontWeight: '900', color: C.white,
+                letterSpacing: -0.5, textAlign: 'center',
+              }}>
+                Trip Complete
+              </Text>
+              <Text style={{
+                fontSize: 14, color: C.dimWhite, textAlign: 'center', lineHeight: 20,
+              }}>
+                All {routeData?.stops.length ?? 0} stop{(routeData?.stops.length ?? 0) !== 1 ? 's' : ''} delivered successfully
+              </Text>
+            </MotiView>
+
+            <MotiView
+              from={{ opacity: 0, translateY: 20 }}
+              animate={{ opacity: 1, translateY: 0 }}
+              transition={{ type: 'spring', damping: 20, stiffness: 200, delay: 500 }}
+              style={{ width: '100%', marginTop: 40, gap: 12 }}
+            >
+              <TouchableOpacity
+                onPress={() => router.back()}
+                activeOpacity={0.85}
+                style={{
+                  paddingVertical:  16,
+                  borderRadius:     16,
+                  backgroundColor:  C.cyan,
+                  alignItems:       'center',
+                  shadowColor:      C.cyan,
+                  shadowOffset:     { width: 0, height: 0 },
+                  shadowOpacity:    0.4,
+                  shadowRadius:     12,
+                  elevation:        8,
+                }}
+              >
+                <Text style={{ color: '#000', fontSize: 15, fontWeight: '800', letterSpacing: 0.2 }}>
+                  Done
+                </Text>
+              </TouchableOpacity>
+            </MotiView>
+          </MotiView>
+        )}
+      </AnimatePresence>
     </View>
   )
 }

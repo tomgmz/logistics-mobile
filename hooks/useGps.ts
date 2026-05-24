@@ -18,6 +18,7 @@ interface UseGPSReturn {
   userLocation:    LatLng | null
   userLocationRef: React.MutableRefObject<LatLng | null>
   heading:         number
+  headingRef:      React.MutableRefObject<number> 
 }
 
 export function useGPS({
@@ -130,5 +131,5 @@ export function useGPS({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  return { userLocation, userLocationRef, heading }
+  return { userLocation, userLocationRef, heading, headingRef: smoothHeading }
 }

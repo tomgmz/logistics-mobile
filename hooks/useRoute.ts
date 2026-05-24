@@ -18,13 +18,14 @@ import {
   STEP_ADVANCE_M,
 } from '../theme/navigation.theme'
 
-const ARRIVAL_PROXIMITY_M = 50   // auto-detect threshold
-const MANUAL_BUTTON_M     = 200  // show manual button within 200m
+const ARRIVAL_PROXIMITY_M = 50
+const MANUAL_BUTTON_M     = 200
 
 interface UseRouteOptions {
   bookingId:       string
   userLocation:    LatLng | null
   userLocationRef: React.MutableRefObject<LatLng | null>
+  headingRef:      React.MutableRefObject<number>
   mapReady:        boolean
   onRouteReady:    (polyline: LatLng[]) => void
   onArrival?:      (type: 'pickup' | 'dropoff', stopId?: string) => void
@@ -43,7 +44,6 @@ interface UseRouteReturn {
   setCurrentStep:    React.Dispatch<React.SetStateAction<number>>
   fetchRoute:        (isRefresh?: boolean, silent?: boolean, fastMode?: boolean) => Promise<void>
   onLocationUpdate:  (pos: LatLng) => void
-  // Manual confirm
   nearbyTarget:      'pickup' | 'dropoff' | null
   distanceToTarget:  number
   markPickupArrived: () => void
@@ -64,6 +64,7 @@ export function useRoute({
   bookingId,
   userLocation,
   userLocationRef,
+  headingRef,
   mapReady,
   onRouteReady,
   onArrival,
@@ -91,8 +92,8 @@ export function useRoute({
   const arrivedStopIds   = useRef<Set<string>>(new Set())
   const lastSnapIdxRef   = useRef(0)
 
-  useEffect(() => { isOfflineRef.current  = isOffline  }, [isOffline])
-  useEffect(() => { routeDataRef.current  = routeData  }, [routeData])
+  useEffect(() => { isOfflineRef.current   = isOffline  }, [isOffline])
+  useEffect(() => { routeDataRef.current   = routeData  }, [routeData])
   useEffect(() => { currentStepRef.current = currentStep }, [currentStep])
 
   useEffect(() => {
@@ -171,7 +172,7 @@ export function useRoute({
       }
 
       if (!pickup.latitude || !pickup.longitude)
-        throw new Error('Booking is missing origin coordinates')
+        throw new Error('This booking is missing pickup coordinates. Run route optimization first to resolve addresses.')
 
       const allStops: Stop[] = (booking.booking_destinations ?? [])
         .filter((d: any) => d.latitude != null && d.longitude != null)
@@ -186,7 +187,7 @@ export function useRoute({
           notes:                    d.notes ?? null,
         }))
 
-      if (!allStops.length) throw new Error('No stops with coordinates found')
+      if (!allStops.length) throw new Error('No stops with coordinates found. Run route optimization first.')
 
       const isPickedUp   = ['in_transit', 'completed'].includes(booking.status)
       const pendingStops = allStops.filter((s) => s.status === 'pending')
@@ -210,7 +211,10 @@ export function useRoute({
       const intermediates = waypointsAfterDriver.slice(0, -1)
 
       const directionsRes = await api.post('/directions', {
-        origin:      { location: { latLng: { latitude: driverPos.latitude, longitude: driverPos.longitude } } },
+        origin: {
+          location: { latLng: { latitude: driverPos.latitude, longitude: driverPos.longitude } },
+          sideOfRoad: true,
+        },
         destination: { location: { latLng: destination } },
         ...(intermediates.length > 0 && {
           intermediates: intermediates.map((p) => ({ location: { latLng: p } })),
@@ -283,7 +287,7 @@ export function useRoute({
         pickup,
         ...allStops.map((s) => ({ latitude: s.latitude, longitude: s.longitude })),
         ...fullPolyline,
-      ])
+      ]).catch((e) => console.warn('[offline] tile pack failed:', e))
 
       if (mapReady) onRouteReady(polyline)
       else pendingFitRef.current = polyline
