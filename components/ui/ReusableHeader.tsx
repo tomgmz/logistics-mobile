@@ -9,7 +9,9 @@ import {
 import { MotiView } from 'moti'
 import { Bell, MessageCircle, Menu } from 'lucide-react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { useRouter } from 'expo-router'
 import { useAuthStore } from '../../lib/store/auth.store'
+import { useMessagingStore } from '../../lib/store/messaging.store'
 
 const COLORS = {
   bg:      '#1a1a1a',
@@ -29,8 +31,10 @@ interface ReusableHeaderProps {
 export default function ReusableHeader({
   onToggleSidebar,
 }: ReusableHeaderProps) {
-  const insets = useSafeAreaInsets()
-  const user   = useAuthStore((s) => s.user)
+  const insets       = useSafeAreaInsets()
+  const user         = useAuthStore((s) => s.user)
+  const router       = useRouter()
+  const totalUnread  = useMessagingStore((s) => s.totalUnread)
 
   const avatarLetter =
     user?.first_name?.[0]?.toUpperCase() ??
@@ -61,9 +65,16 @@ export default function ReusableHeader({
       </View>
 
       <View style={styles.right}>
-        <IconBtn>
+        <TouchableOpacity activeOpacity={0.7} style={styles.iconBtn} onPress={() => router.push('/driver/messages')}>
           <MessageCircle size={16} color={COLORS.white} />
-        </IconBtn>
+          {totalUnread > 0 && (
+            <View style={styles.msgBadge}>
+              <Text style={styles.msgBadgeText}>
+                {totalUnread > 9 ? '9+' : totalUnread}
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
 
         <IconBtn badge>
           <Bell size={16} color={COLORS.white} />
@@ -161,6 +172,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.glass,
     alignItems:      'center',
     justifyContent:  'center',
+    position:        'relative',
   },
   badge: {
     position:        'absolute',
@@ -170,6 +182,26 @@ const styles = StyleSheet.create({
     height:          6,
     borderRadius:    3,
     backgroundColor: COLORS.cyan,
+  },
+  msgBadge: {
+    position:        'absolute',
+    top:             -4,
+    right:           -4,
+    minWidth:        16,
+    height:          16,
+    borderRadius:    8,
+    backgroundColor: COLORS.cyan,
+    alignItems:      'center',
+    justifyContent:  'center',
+    paddingHorizontal: 3,
+    borderWidth:     1.5,
+    borderColor:     COLORS.bg,
+  },
+  msgBadgeText: {
+    color:      '#0a0a0a',
+    fontSize:   9,
+    fontWeight: '800',
+    lineHeight: 12,
   },
 
   avatar: {

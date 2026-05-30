@@ -105,11 +105,61 @@ export function haversineDistance(a: LatLng, b: LatLng): number {
   )
 }
 
-export function distanceToPolyline(point: LatLng, polyline: LatLng[]): number {
-  if (!polyline.length) return Infinity
-  return Math.min(...polyline.map((p) => haversineDistance(point, p)))
+function pointToSegmentDistance(p: LatLng, a: LatLng, b: LatLng): number {
+  const ax = a.longitude, ay = a.latitude
+  const bx = b.longitude, by = b.latitude
+  const px = p.longitude, py = p.latitude
+
+  const dx = bx - ax
+  const dy = by - ay
+  const lenSq = dx * dx + dy * dy
+
+  if (lenSq === 0) return haversineDistance(p, a)
+
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq))
+
+  const closest: LatLng = {
+    latitude:  ay + t * dy,
+    longitude: ax + t * dx,
+  }
+  return haversineDistance(p, closest)
 }
 
+export function distanceToPolyline(
+  point: LatLng,
+  polyline: LatLng[],
+  lastSnapIdx = 0,
+  windowSize  = 30,
+): { distance: number; snapIdx: number } {
+  if (polyline.length === 0) return { distance: Infinity, snapIdx: 0 }
+  if (polyline.length === 1) return { distance: haversineDistance(point, polyline[0]), snapIdx: 0 }
+
+  const start = Math.max(0, lastSnapIdx - 5)
+  const end   = Math.min(polyline.length - 1, lastSnapIdx + windowSize)
+
+  let minDist = Infinity
+  let snapIdx = lastSnapIdx
+
+  for (let i = start; i < end; i++) {
+    const d = pointToSegmentDistance(point, polyline[i], polyline[i + 1])
+    if (d < minDist) {
+      minDist = d
+      snapIdx = i
+    }
+  }
+
+  if (minDist > 150) {
+    for (let i = 0; i < polyline.length - 1; i++) {
+      const d = pointToSegmentDistance(point, polyline[i], polyline[i + 1])
+      if (d < minDist) {
+        minDist = d
+        snapIdx = i
+      }
+    }
+  }
+
+  return { distance: minDist, snapIdx }
+}
 
 export function fmtDuration(mins: number): string {
   if (mins < 60) return `${Math.round(mins)} min`
@@ -126,12 +176,11 @@ export function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim()
 }
 
-
 export function getBounds(points: LatLng[]): [[number, number], [number, number]] {
   const lngs = points.map((p) => p.longitude)
   const lats  = points.map((p) => p.latitude)
   return [
-    [Math.max(...lngs), Math.max(...lats)], // NE [lng, lat]
-    [Math.min(...lngs), Math.min(...lats)], // SW [lng, lat]
+    [Math.max(...lngs), Math.max(...lats)],
+    [Math.min(...lngs), Math.min(...lats)],
   ]
 }

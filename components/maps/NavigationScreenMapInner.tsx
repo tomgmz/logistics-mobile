@@ -37,6 +37,8 @@ import { C, MAPBOX_STYLE } from '../../theme/navigation.theme'
 import { toCoord }          from '../../utils/geo'
 import type { Stop }        from '../../types/navigation.types'
 
+import { cleanupTripPacks } from '../../utils/cache'
+
 MapboxGL.setAccessToken(process.env.EXPO_PUBLIC_MAPBOX_TOKEN ?? '')
 
 interface NavigationScreenProps {
@@ -89,7 +91,6 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
     onError: (msg) => { console.warn('[GPS]', msg) },
   })
 
-  // ── Arrival handler wired to useRoute ───────────────────────────────────
 
   const handleArrival = useCallback((type: 'pickup' | 'dropoff', _stopId?: string) => {
     if (type === 'dropoff') {
@@ -129,8 +130,6 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
     onLocationUpdateRef.current = onLocationUpdate
   }, [onLocationUpdate])
 
-  // ── Trip complete detection ──────────────────────────────────────────────
-
   const completedCount = useMemo(
     () => routeData?.stops.filter((s) => s.status === 'delivered').length ?? 0,
     [routeData],
@@ -143,10 +142,13 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
       completedCount === routeData.stops.length
     ) {
       setTripComplete(true)
+      // Clean up offline tile packs now that the trip is done.
+      // Runs in background — non-blocking.
+      cleanupTripPacks(bookingId, routeData.stops.length).catch((e) =>
+        console.warn('[offline] cleanup failed:', e),
+      )
     }
-  }, [completedCount, routeData])
-
-  // ────────────────────────────────────────────────────────────────────────
+  }, [completedCount, routeData, bookingId])
 
   const handleMapReady = useCallback(() => setMapReady(true), [])
 
@@ -202,8 +204,6 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
 
   const showOffline = isOffline
 
-  // ── Loading ──────────────────────────────────────────────────────────────
-
   if (loading) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bg, gap: 12 }}>
@@ -212,8 +212,6 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
       </View>
     )
   }
-
-  // ── Error ────────────────────────────────────────────────────────────────
 
   if (error) {
     return (

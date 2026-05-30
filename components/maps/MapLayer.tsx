@@ -23,8 +23,6 @@ export function TrafficLayer({ segments, routeVersion }: TrafficLayerProps) {
     const firstEnd   = firstSeg.coords[firstSeg.coords.length - 1]
     const lastStart  = lastSeg.coords[0]
     const lastEnd    = lastSeg.coords[lastSeg.coords.length - 1]
-    // Keying forces Mapbox to fully remount the source on reroutes,
-    // avoiding “leftover” line segments when the route becomes shorter.
     return [
       `n:${segments.length}`,
       `t:${totalCoords}`,
@@ -156,9 +154,9 @@ export function StopMarkers({ stops, nextStopId }: StopMarkersProps) {
 }
 
 interface DriverMarkerProps {
-  location:      LatLng  // always the real GPS position
-  heading:       number  // GPS travel heading in degrees (0 = north)
-  cameraBearing: number  // current map camera bearing in degrees
+  location:      LatLng
+  heading:       number
+  cameraBearing: number
 }
 
 export function DriverMarker({ location, heading, cameraBearing }: DriverMarkerProps) {

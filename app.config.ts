@@ -37,7 +37,7 @@ export default {
       versionCode: 1,
       targetSdkVersion: 34,
       "ndkVersion": "27.1.12297006",
-      softwareKeyboardLayoutMode: "resize",
+      softwareKeyboardLayoutMode: "pan",
       adaptiveIcon: {
         foregroundImage: './assets/mobile-icon.png',
         backgroundColor: '#242424',

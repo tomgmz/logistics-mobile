@@ -112,7 +112,7 @@ export function useGPS({
           if (trackingModeRef.current) {
             cameraRef.current?.setCamera({
               centerCoordinate:  toCoord(pos),
-              heading:           smooth,   // camera uses smoothed heading too
+              heading:           smooth,
               pitch:             45,
               zoomLevel:         17,
               animationDuration: 500,

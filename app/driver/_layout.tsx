@@ -9,11 +9,6 @@ const DRIVER_NAV = [
     label: 'Driver Assignment',
     icon:  <ClipboardList size={17} color="rgba(255,255,255,0.40)" />,
   },
-  // {
-  //   href:  '/driver/maps',
-  //   label: 'Map',
-  //   icon:  <MapPin size={17} color="rgba(255,255,255,0.40)" />,
-  // },
   {
     href:  '/driver/maintenance',
     label: 'Maintenance',
@@ -24,7 +19,10 @@ const DRIVER_NAV = [
 export default function DriverLayout() {
   const pathname = usePathname()
 
-  const hideShell = pathname.startsWith('/driver/maps')
+  // Hide the shell for map screens and individual chat screens (not the list)
+  const hideShell =
+    pathname.startsWith('/driver/maps') ||
+    (pathname.startsWith('/driver/messages/') && pathname !== '/driver/messages')
 
   if (hideShell) {
     return <Slot />

@@ -3,7 +3,7 @@ export interface LatLng {
   longitude: number
 }
 
-export type Coord = [number, number] // [lng, lat] — Mapbox order
+export type Coord = [number, number]
 
 
 export type StopStatus = 'pending' | 'delivered' | 'failed'

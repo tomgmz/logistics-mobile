@@ -48,7 +48,6 @@ export default function ReusableModal({
   const { width } = useWindowDimensions()
   const isTablet   = width >= 640
 
-  // Android back button
   useEffect(() => {
     if (!open) return
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {

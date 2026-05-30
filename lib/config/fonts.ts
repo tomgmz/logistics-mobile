@@ -1,8 +1,6 @@
 export const APP_FONTS = {
-  // ── Aboreto ────────────────────────────────────────────────────────────────
   'Aboreto-Regular':           require('../../assets/fonts/Aboreto/Aboreto-Regular.ttf'),
 
-  // ── Alegreya SC ───────────────────────────────────────────────────────────
   'AlegreyaSC-Regular':        require('../../assets/fonts/Alegreya_SC/AlegreyaSC-Regular.ttf'),
   'AlegreyaSC-Italic':         require('../../assets/fonts/Alegreya_SC/AlegreyaSC-Italic.ttf'),
   'AlegreyaSC-Medium':         require('../../assets/fonts/Alegreya_SC/AlegreyaSC-Medium.ttf'),
@@ -12,14 +10,12 @@ export const APP_FONTS = {
   'AlegreyaSC-ExtraBold':      require('../../assets/fonts/Alegreya_SC/AlegreyaSC-ExtraBold.ttf'),
   'AlegreyaSC-Black':          require('../../assets/fonts/Alegreya_SC/AlegreyaSC-Black.ttf'),
 
-  // ── Fredoka ───────────────────────────────────────────────────────────────
   'Fredoka-Light':             require('../../assets/fonts/Fredoka/static/Fredoka-Light.ttf'),
   'Fredoka-Regular':           require('../../assets/fonts/Fredoka/static/Fredoka-Regular.ttf'),
   'Fredoka-Medium':            require('../../assets/fonts/Fredoka/static/Fredoka-Medium.ttf'),
   'Fredoka-SemiBold':          require('../../assets/fonts/Fredoka/static/Fredoka-SemiBold.ttf'),
   'Fredoka-Bold':              require('../../assets/fonts/Fredoka/static/Fredoka-Bold.ttf'),
 
-  // ── League Spartan ────────────────────────────────────────────────────────
   'LeagueSpartan-Regular':     require('../../assets/fonts/League_Spartan/static/LeagueSpartan-Regular.ttf'),
   'LeagueSpartan-Medium':      require('../../assets/fonts/League_Spartan/static/LeagueSpartan-Medium.ttf'),
   'LeagueSpartan-SemiBold':    require('../../assets/fonts/League_Spartan/static/LeagueSpartan-SemiBold.ttf'),
@@ -27,7 +23,6 @@ export const APP_FONTS = {
   'LeagueSpartan-ExtraBold':   require('../../assets/fonts/League_Spartan/static/LeagueSpartan-ExtraBold.ttf'),
   'LeagueSpartan-Black':       require('../../assets/fonts/League_Spartan/static/LeagueSpartan-Black.ttf'),
 
-  // ── Eurostile ─────────────────────────────────────────────────────────────
   'Eurostile-ExtdBlackItalic': require('../../assets/fonts/Eurostile/Eurostile_Extd_Black_Italic.otf'),
 } as const
 

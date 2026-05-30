@@ -13,24 +13,20 @@ import { router } from 'expo-router'
 import { useAuthStore, useAuthHydrated } from '../../lib/store/auth.store'
 import { changePassword, getMe } from '../../lib/api/auth.api'
 
-// ── Constants ─────────────────────────────────────────────────────────────────
-
-const CYAN    = '#4DF9ED'
+const CYAN = '#4DF9ED'
 const BG_MAIN = '#0a0a0a'
 const BG_CARD = 'rgba(20,20,20,0.85)'
-const ERROR   = '#f87171'
-const MUTED   = 'rgba(255,255,255,0.35)'
+const ERROR = '#f87171'
+const MUTED = 'rgba(255,255,255,0.35)'
 
 const ROLE_ROUTES: Record<string, string> = {
   admin: '/admin',
-  driver:      '/driver',
+  driver: '/driver',
 }
 
 function getMobileRoute(role: string): string {
   return ROLE_ROUTES[role] ?? '/sign-in'
 }
-
-// ── Requirement definitions ────────────────────────────────────────────────────
 
 interface Requirement {
   label: string
@@ -38,18 +34,16 @@ interface Requirement {
 }
 
 const REQUIREMENTS: Requirement[] = [
-  { label: 'At least 8 characters',        test: v => v.length >= 8 },
-  { label: 'One uppercase letter (A–Z)',    test: v => /[A-Z]/.test(v) },
-  { label: 'One lowercase letter (a–z)',    test: v => /[a-z]/.test(v) },
-  { label: 'One number (0–9)',              test: v => /\d/.test(v) },
+  { label: 'At least 8 characters', test: v => v.length >= 8 },
+  { label: 'One uppercase letter (A–Z)', test: v => /[A-Z]/.test(v) },
+  { label: 'One lowercase letter (a–z)', test: v => /[a-z]/.test(v) },
+  { label: 'One number (0–9)', test: v => /\d/.test(v) },
   { label: 'One special character (!@#…)', test: v => /[^A-Za-z0-9]/.test(v) },
 ]
 
 function getStrength(password: string): number {
   return REQUIREMENTS.filter(r => r.test(password)).length
 }
-
-// ── Strength bar ───────────────────────────────────────────────────────────────
 
 const STRENGTH_COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#4df9ed']
 const STRENGTH_LABELS = ['', 'Weak', 'Fair', 'Good', 'Strong', 'Excellent']
@@ -87,8 +81,6 @@ function StrengthBar({ strength }: { strength: number }) {
   )
 }
 
-// ── Requirement row ────────────────────────────────────────────────────────────
-
 function RequirementRow({ label, met }: { label: string; met: boolean }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 2 }}>
@@ -123,8 +115,6 @@ function RequirementRow({ label, met }: { label: string; met: boolean }) {
   )
 }
 
-// ── Password field ─────────────────────────────────────────────────────────────
-
 function PasswordField({
   label,
   value,
@@ -135,14 +125,14 @@ function PasswordField({
   borderColor,
   autoFocus,
 }: {
-  label:          string
-  value:          string
-  onChange:       (v: string) => void
-  placeholder:    string
-  showPassword:   boolean
-  onToggleShow:   () => void
-  borderColor?:   string
-  autoFocus?:     boolean
+  label: string
+  value: string
+  onChange: (v: string) => void
+  placeholder: string
+  showPassword: boolean
+  onToggleShow: () => void
+  borderColor?: string
+  autoFocus?: boolean
 }) {
   const [focused, setFocused] = useState(false)
 
@@ -204,8 +194,6 @@ function PasswordField({
   )
 }
 
-// ── Success view ───────────────────────────────────────────────────────────────
-
 function SuccessView() {
   return (
     <View style={{
@@ -259,54 +247,50 @@ function SuccessView() {
   )
 }
 
-// ── Main page ──────────────────────────────────────────────────────────────────
-
 export default function ChangePasswordPage() {
   const authReady = useAuthHydrated()
-  const user      = useAuthStore(s => s.user)
-  const setUser   = useAuthStore(s => s.setUser)
+  const user = useAuthStore(s => s.user)
+  const setUser = useAuthStore(s => s.setUser)
 
-  const [password,     setPassword]     = useState('')
-  const [confirmPw,    setConfirmPw]    = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPw, setConfirmPw] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [showConfirm,  setShowConfirm]  = useState(false)
-  const [error,        setError]        = useState<string | null>(null)
-  const [loading,      setLoading]      = useState(false)
-  const [done,         setDone]         = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [done, setDone] = useState(false)
 
   const { width, height } = useWindowDimensions()
 
   // Breakpoints
-  const isSmall   = width < 360   // tiny phones
+  const isSmall = width < 360   // tiny phones
   const isCompact = width < 420   // most phones
-  const isTablet  = width >= 600  // tablets / landscape
+  const isTablet = width >= 600  // tablets / landscape
 
-  // Responsive sizing
-  const cardMaxWidth      = isTablet ? 480 : '100%'
-  const cardPadding       = isSmall ? 12 : isCompact ? 14 : 18
+  const cardMaxWidth = isTablet ? 480 : '100%'
+  const cardPadding = isSmall ? 12 : isCompact ? 14 : 18
   const contentHorizontal = isSmall ? 12 : isCompact ? 16 : isTablet ? 48 : 24
-  const headerIconSize    = isSmall ? 30 : isCompact ? 34 : 38
-  const headerTitleSize   = isSmall ? 14 : isCompact ? 16 : 18
-  const bodyTextSize      = isSmall ? 10 : 11
-  const requirePadding    = isSmall ? 10 : isCompact ? 12 : 14
-  const buttonPadding     = isSmall ? 11 : isCompact ? 13 : 15
-  const cardGap           = isSmall ? 12 : 14
+  const headerIconSize = isSmall ? 30 : isCompact ? 34 : 38
+  const headerTitleSize = isSmall ? 14 : isCompact ? 16 : 18
+  const bodyTextSize = isSmall ? 10 : 11
+  const requirePadding = isSmall ? 10 : isCompact ? 12 : 14
+  const buttonPadding = isSmall ? 11 : isCompact ? 13 : 15
+  const cardGap = isSmall ? 12 : 14
 
-  // On very small screens collapse requirements to single column
   const reqColumns = isSmall ? 1 : 2
 
-  const strength       = getStrength(password)
-  const allMet         = strength === REQUIREMENTS.length
+  const strength = getStrength(password)
+  const allMet = strength === REQUIREMENTS.length
   const passwordsMatch = password === confirmPw && confirmPw.length > 0
-  const canSubmit      = allMet && passwordsMatch && !loading
+  const canSubmit = allMet && passwordsMatch && !loading
 
   useEffect(() => {
-    if (!authReady) return
+    if (!authReady || done) return
     if (!user) { router.replace('/sign-in'); return }
     if (!user.must_change_password) {
       router.replace(getMobileRoute(user.role) as any)
     }
-  }, [authReady, user])
+  }, [authReady, user, done])
 
   const handleSubmit = useCallback(async () => {
     if (!canSubmit) return
@@ -331,8 +315,6 @@ export default function ChangePasswordPage() {
     }
   }, [canSubmit, password, setUser])
 
-  // ── Guards ───────────────────────────────────────────────────────────────────
-
   if (!authReady || !user) {
     return (
       <View style={{ flex: 1, backgroundColor: BG_MAIN, alignItems: 'center', justifyContent: 'center' }}>
@@ -356,18 +338,12 @@ export default function ChangePasswordPage() {
         : 'rgba(239,68,68,0.35)'
       : undefined
 
-  // ── Layout ───────────────────────────────────────────────────────────────────
-
   return (
     <View style={{ flex: 1, backgroundColor: BG_MAIN }}>
 
       {/* Top cyan accent line */}
       <View style={{ height: 1, backgroundColor: CYAN, opacity: 0.35 }} />
 
-      {/*
-        KeyboardAvoidingView keeps the card visible when the keyboard opens.
-        The inner View is flex:1 + justifyContent:'center' to vertically center.
-      */}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -511,14 +487,12 @@ export default function ChangePasswordPage() {
               </Text>
 
               {reqColumns === 1 ? (
-                // Single column for tiny screens
                 <View style={{ gap: 1 }}>
                   {REQUIREMENTS.map((req, i) => (
                     <RequirementRow key={i} label={req.label} met={req.test(password)} />
                   ))}
                 </View>
               ) : (
-                // Two columns for normal phones+
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   <View style={{ flex: 1, gap: 1, minWidth: 0 }}>
                     {REQUIREMENTS.slice(0, 3).map((req, i) => (
