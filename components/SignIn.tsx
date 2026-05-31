@@ -587,11 +587,9 @@ export default function SignInScreen() {
   const isLocked    = lockState !== 'none'
 
   return (
-    <KeyboardAvoidingView
+    <View
       className="flex-1 bg-surface-bg"
       style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
     >
       <View className="absolute inset-0" pointerEvents="none">
         {[...Array(8)].map((_, i) => (
@@ -606,7 +604,12 @@ export default function SignInScreen() {
       <View className="absolute top-0 left-0 w-[120px] h-[120px] border-t border-l border-cyan-accent" pointerEvents="none" />
       <View className="absolute bottom-0 right-0 w-[120px] h-[120px] border-b border-r border-cyan-accent" pointerEvents="none" />
 
-      <View className="flex-1 justify-center px-6">
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      >
+        <View className="flex-1 justify-center px-6">
 
         <MotiView
           from={{ opacity: 0, translateY: -16 }}
@@ -891,7 +894,8 @@ export default function SignInScreen() {
           <View className="w-[3px] h-[3px] rounded-sm bg-ink-faint" />
         </MotiView>
 
-      </View>
-    </KeyboardAvoidingView>
+        </View>
+      </KeyboardAvoidingView>
+    </View>
   )
 }

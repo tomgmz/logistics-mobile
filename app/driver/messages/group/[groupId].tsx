@@ -1,17 +1,19 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import {
   View, Text, FlatList, TouchableOpacity, TextInput,
-  KeyboardAvoidingView, Platform, StyleSheet, ActivityIndicator,
-  Animated, Modal,
+  StyleSheet, ActivityIndicator,
+  Animated, Modal, Keyboard,
 } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { ArrowLeft, Send, CornerUpLeft, X, Users, Check, X as XIcon } from 'lucide-react-native'
+import { ArrowLeft, Send, CornerUpLeft, X, Users, Check, X as XIcon, Smile } from 'lucide-react-native'
 import Reanimated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated'
+import { useKeyboardHandler } from 'react-native-keyboard-controller'
 import { GestureDetector, Gesture } from 'react-native-gesture-handler'
 import { useAuthStore } from '../../../../lib/store/auth.store'
 import { messagingApi } from '../../../../lib/api/messaging.api'
 import { useMessagingRealtime } from '../../../../hooks/useMessagingRealtime'
+import EmojiSheet from '../../../../components/messaging/EmojiSheet'
 import type { GroupMessageRaw, ReactionTogglePayload } from '../../../../types/messaging.types'
 
 const C = {
@@ -373,11 +375,35 @@ export default function GroupChatScreen() {
   const [myStatus,    setMyStatus]    = useState(initialStatus ?? 'accepted')
   const [typingUsers, setTyping]      = useState<string[]>([])
   const [pickerMsgId, setPickerMsgId] = useState<string | null>(null)
+  const [emojiOpen,   setEmojiOpen]   = useState(false)
   const [membersMap,  setMembersMap]  = useState<Record<string, string>>({})
 
   const listRef      = useRef<FlatList>(null)
   const pendingIds   = useRef<Set<string>>(new Set())
   const typingTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+
+  const scrollToEnd = useCallback(() => {
+    listRef.current?.scrollToEnd({ animated: true })
+  }, [])
+
+  // Track the keyboard frame on the UI thread; the kbSpacer below lifts the input
+  // bar above it while the header stays pinned (see DM screen).
+  const kbHeight = useSharedValue(0)
+  useKeyboardHandler({
+    onMove: (e) => {
+      'worklet'
+      kbHeight.value = e.height
+    },
+    onEnd: (e) => {
+      'worklet'
+      kbHeight.value = e.height
+      if (e.height > 0) runOnJS(scrollToEnd)()
+    },
+  }, [scrollToEnd])
+
+  const kbSpacerStyle = useAnimatedStyle(() => ({
+    height: Math.max(kbHeight.value, insets.bottom),
+  }))
 
   const memberName = useCallback((uid: string): string => {
     if (uid === currentUserId) return 'You'
@@ -421,6 +447,7 @@ export default function GroupChatScreen() {
     messagingApi.markGroupRead(groupId).catch(() => {})
   }, [groupId, myStatus])
 
+
   const applyReaction = useCallback((payload: ReactionTogglePayload) => {
     setMessages(prev => prev.map(m => {
       if (m.id !== payload.message_id) return m
@@ -439,7 +466,7 @@ export default function GroupChatScreen() {
         const match = [...pendingIds.current].find(id => prev.some(m => m.id === id && m.content === inc.content))
         if (match) { pendingIds.current.delete(match); return prev.map(m => m.id === match ? inc : m) }
         if (prev.some(m => m.id === inc.id)) return prev
-        if (raw.sender_id !== currentUserId) messagingApi.markGroupRead(groupId, [inc.id]).catch(() => {})
+        if (raw.sender_id !== currentUserId) messagingApi.markGroupRead(groupId).catch(() => {})
         return [...prev, inc]
       })
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80)
@@ -515,6 +542,8 @@ export default function GroupChatScreen() {
   const typingLabel = typingUsers.length === 1 ? 'Someone is typing…' : typingUsers.length > 1 ? 'Several people are typing…' : null
 
   return (
+    // Header stays pinned at the top; reserving kbHeight at the bottom compresses
+    // the list + input above the keyboard without ever shifting the header.
     <View style={[styles.root, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={styles.header}>
@@ -534,11 +563,6 @@ export default function GroupChatScreen() {
         </View>
       </View>
 
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior="padding"
-        keyboardVerticalOffset={0}
-      >
         {myStatus === 'pending' && (
           <InviteBanner
             groupId={groupId ?? ''}
@@ -558,6 +582,7 @@ export default function GroupChatScreen() {
         ) : (
           <FlatList
             ref={listRef}
+            style={styles.flex}
             data={entries}
             keyExtractor={e => e.key}
             contentContainerStyle={styles.listContent}
@@ -609,10 +634,19 @@ export default function GroupChatScreen() {
         )}
 
         {myStatus === 'accepted' && (
-          <View style={[styles.inputBar, { paddingBottom: insets.bottom > 0 ? insets.bottom : 8 }]}>
+          <View style={styles.inputBar}>
+            <TouchableOpacity
+              onPress={() => { Keyboard.dismiss(); setEmojiOpen(o => !o) }}
+              activeOpacity={0.7}
+              style={styles.emojiToggle}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Smile size={22} color={emojiOpen ? C.cyan : C.muted} />
+            </TouchableOpacity>
             <TextInput
               value={text}
               onChangeText={setText}
+              onFocus={() => setEmojiOpen(false)}
               placeholder="Type a message…"
               placeholderTextColor="rgba(255,255,255,0.22)"
               style={styles.input}
@@ -629,7 +663,18 @@ export default function GroupChatScreen() {
             </TouchableOpacity>
           </View>
         )}
-      </KeyboardAvoidingView>
+
+        {/* Emoji panel takes the keyboard's place; the input bar stays above it
+            so you can always see what you're composing. */}
+        <EmojiSheet
+          visible={emojiOpen}
+          onClose={() => setEmojiOpen(false)}
+          onSelect={(emoji) => setText(t => t + emoji)}
+        />
+
+        {/* Animated gap: safe-area inset when closed, keyboard height when open.
+            With the emoji panel open this also lifts it above the search keyboard. */}
+        <Reanimated.View style={kbSpacerStyle} />
 
       <EmojiPicker
         visible={!!pickerMsgId}
@@ -669,7 +714,8 @@ const styles = StyleSheet.create({
   replyPreview:     { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: C.raised, borderTopWidth: 1, borderTopColor: C.border },
   replyPreviewText: { flex: 1, color: C.dimText, fontSize: 13 },
 
-  inputBar:       { flexDirection: 'row', alignItems: 'flex-end', gap: 10, paddingHorizontal: 12, paddingTop: 10, backgroundColor: C.bg, borderTopWidth: 1, borderTopColor: C.border },
+  inputBar:       { flexDirection: 'row', alignItems: 'flex-end', gap: 10, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 10, backgroundColor: C.bg, borderTopWidth: 1, borderTopColor: C.border },
+  emojiToggle:    { width: 38, height: 42, alignItems: 'center', justifyContent: 'center' },
   input:          { flex: 1, backgroundColor: C.raised, borderRadius: 20, borderWidth: 1, borderColor: C.border, paddingHorizontal: 16, paddingVertical: 10, color: C.white, fontSize: 14, maxHeight: 120 },
   sendBtn:        { width: 42, height: 42, borderRadius: 21, backgroundColor: C.cyan, alignItems: 'center', justifyContent: 'center' },
   sendBtnDisabled:{ backgroundColor: C.raised, borderWidth: 1, borderColor: C.border },

@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar'
 import { useEffect } from 'react'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
+import { KeyboardProvider } from 'react-native-keyboard-controller'
 import '../global.css'
 import { useAuthStore, useAuthHydrated } from '../lib/store/auth.store'
 import { getMe, setSessionExpiredHandler, TokenStore } from '../lib/api/auth.api'
@@ -58,16 +59,18 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider style={{ flex: 1, backgroundColor: '#080808' }}>
-        <StatusBar style="light" />
-        <Stack
-          screenOptions={{
-            headerShown:  false,
-            contentStyle: { backgroundColor: '#080808' },
-            animation:    'none',
-          }}
-        />
-      </SafeAreaProvider>
+      <KeyboardProvider>
+        <SafeAreaProvider style={{ flex: 1, backgroundColor: '#080808' }}>
+          <StatusBar style="light" />
+          <Stack
+            screenOptions={{
+              headerShown:  false,
+              contentStyle: { backgroundColor: '#080808' },
+              animation:    'none',
+            }}
+          />
+        </SafeAreaProvider>
+      </KeyboardProvider>
     </GestureHandlerRootView>
   )
 }

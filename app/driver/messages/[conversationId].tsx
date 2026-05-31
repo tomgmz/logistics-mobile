@@ -1,17 +1,19 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   View, Text, FlatList, TouchableOpacity, TextInput,
-  KeyboardAvoidingView, Platform, StyleSheet, ActivityIndicator,
-  Animated, Modal,
+  StyleSheet, ActivityIndicator,
+  Animated, Modal, Keyboard,
 } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { ArrowLeft, Send, CornerUpLeft, X } from 'lucide-react-native'
+import { ArrowLeft, Send, CornerUpLeft, X, Smile } from 'lucide-react-native'
 import Reanimated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated'
+import { useKeyboardHandler } from 'react-native-keyboard-controller'
 import { GestureDetector, Gesture } from 'react-native-gesture-handler'
 import { useAuthStore } from '../../../lib/store/auth.store'
 import { messagingApi } from '../../../lib/api/messaging.api'
 import { useMessagingRealtime } from '../../../hooks/useMessagingRealtime'
+import EmojiSheet from '../../../components/messaging/EmojiSheet'
 import type { MessageRow, ReactionTogglePayload } from '../../../types/messaging.types'
 
 const C = {
@@ -77,7 +79,6 @@ interface MsgItem {
   sender_id:       string
   content:         string
   sent_at:         string
-  read_at:         string | null
   reply_to:        { message_id: string; content: string; sender_id: string } | null
   reactions:       { emoji: string; user_id: string }[]
 }
@@ -184,9 +185,10 @@ const epS = StyleSheet.create({
 
 // ─── Message bubble ───────────────────────────────────────────────────────────
 
-function Bubble({ msg, isMine, participantName, currentUserId, onLongPress, onReact, onReply }: {
+function Bubble({ msg, isMine, showSeen, participantName, currentUserId, onLongPress, onReact, onReply }: {
   msg:             MsgItem
   isMine:          boolean
+  showSeen:        boolean
   participantName: string
   currentUserId:   string
   onLongPress:     (id: string) => void
@@ -287,7 +289,7 @@ function Bubble({ msg, isMine, participantName, currentUserId, onLongPress, onRe
 
           <View style={[bS.meta, isMine && { alignSelf: 'flex-end' }]}>
             <Text style={bS.time}>{formatMsgTime(msg.sent_at)}</Text>
-            {isMine && msg.read_at && <Text style={bS.seen}> · Seen</Text>}
+            {isMine && showSeen && <Text style={bS.seen}> · Seen</Text>}
           </View>
         </Reanimated.View>
 
@@ -342,24 +344,59 @@ export default function DmChatScreen() {
   const { user }      = useAuthStore()
   const currentUserId = user?.user_id ?? ''
 
-  const { conversationId, participantName, participantId } = useLocalSearchParams<{
+  const { conversationId, participantName, participantId, bookingId } = useLocalSearchParams<{
     conversationId:  string
     participantName: string
     participantId:   string
+    bookingId?:      string
   }>()
 
-  const [messages,    setMessages]    = useState<MsgItem[]>([])
-  const [loading,     setLoading]     = useState(true)
-  const [sending,     setSending]     = useState(false)
-  const [text,        setText]        = useState('')
-  const [replyTo,     setReplyTo]     = useState<MsgItem | null>(null)
-  const [isTyping,    setIsTyping]    = useState(false)
-  const [isOnline,    setIsOnline]    = useState(false)
-  const [pickerMsgId, setPickerMsgId] = useState<string | null>(null)
+  // 'new' (or empty) means this chat is a draft — no conversation row exists yet.
+  // Once the first message creates it, activeConvId holds the real id.
+  const [activeConvId, setActiveConvId] = useState(conversationId)
+  const isDraft = !activeConvId || activeConvId === 'new'
+
+  const [messages,        setMessages]        = useState<MsgItem[]>([])
+  const [loading,         setLoading]         = useState(true)
+  const [sending,         setSending]         = useState(false)
+  const [text,            setText]            = useState('')
+  const [replyTo,         setReplyTo]         = useState<MsgItem | null>(null)
+  const [isTyping,        setIsTyping]        = useState(false)
+  const [isOnline,        setIsOnline]        = useState(false)
+  const [pickerMsgId,     setPickerMsgId]     = useState<string | null>(null)
+  const [emojiOpen,       setEmojiOpen]       = useState(false)
+  const [otherLastReadAt, setOtherLastReadAt] = useState<string | null>(null)
 
   const listRef     = useRef<FlatList>(null)
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingIds  = useRef<Set<string>>(new Set())
+
+  const scrollToEnd = useCallback(() => {
+    listRef.current?.scrollToEnd({ animated: true })
+  }, [])
+
+  // Track the keyboard frame on the UI thread. A bottom spacer (kbSpacer) binds its
+  // height to this, lifting the input bar above the keyboard while the FlatList
+  // shrinks and the header stays pinned. The KeyboardProvider in the root layout +
+  // adjustResize make this consistent across iOS/Android under edge-to-edge.
+  const kbHeight = useSharedValue(0)
+  useKeyboardHandler({
+    onMove: (e) => {
+      'worklet'
+      kbHeight.value = e.height
+    },
+    onEnd: (e) => {
+      'worklet'
+      kbHeight.value = e.height
+      if (e.height > 0) runOnJS(scrollToEnd)()
+    },
+  }, [scrollToEnd])
+
+  const kbSpacerStyle = useAnimatedStyle(() => ({
+    // When closed (height 0) fall back to the safe-area inset so the input keeps
+    // its bottom gap above the gesture/nav bar.
+    height: Math.max(kbHeight.value, insets.bottom),
+  }))
 
   const toItem = useCallback((raw: MessageRow): MsgItem => ({
     id:              raw.message_id,
@@ -367,26 +404,37 @@ export default function DmChatScreen() {
     sender_id:       raw.sender_id,
     content:         raw.content,
     sent_at:         raw.sent_at,
-    read_at:         raw.read_at,
     reply_to:        raw.reply_to,
     reactions:       raw.reactions ?? [],
   }), [])
 
   const fetchMessages = useCallback(async () => {
-    if (!conversationId) return
+    // A draft has no conversation yet — nothing to load.
+    if (isDraft) { setLoading(false); return }
     try {
-      const raw = await messagingApi.getMessages(conversationId, { limit: 60 })
+      const raw = await messagingApi.getMessages(activeConvId, { limit: 60 })
       setMessages(raw.map(toItem))
     } catch { /* silent */ }
     finally { setLoading(false) }
-  }, [conversationId, toItem])
+  }, [activeConvId, isDraft, toItem])
 
   useEffect(() => { fetchMessages() }, [fetchMessages])
 
   useEffect(() => {
-    if (!conversationId) return
-    messagingApi.markAsRead(conversationId).catch(() => {})
-  }, [conversationId])
+    if (isDraft) return
+    messagingApi.markAsRead(activeConvId).catch(() => {})
+    // Initialise other participant's last_read_at for the "Seen" indicator
+    messagingApi.getConversations().then(convs => {
+      const conv = convs.find(c => c.conversation_id === activeConvId)
+      if (conv) {
+        setOtherLastReadAt(
+          conv.participant_a_id === currentUserId
+            ? conv.participant_b_last_read_at
+            : conv.participant_a_last_read_at
+        )
+      }
+    }).catch(() => {})
+  }, [activeConvId, isDraft, currentUserId])
 
   const applyReaction = useCallback((payload: ReactionTogglePayload) => {
     setMessages(prev => prev.map(m => {
@@ -403,21 +451,24 @@ export default function DmChatScreen() {
 
   useMessagingRealtime({
     currentUserId,
-    conversationId,
+    // Unique non-conversation channel for drafts so we don't double-subscribe the user channel.
+    conversationId: isDraft ? `draft:${participantId}` : activeConvId,
     onNewMessage: (raw) => {
       const inc = toItem(raw)
       setMessages(prev => {
         const match = [...pendingIds.current].find(id => prev.some(m => m.id === id && m.content === inc.content))
         if (match) { pendingIds.current.delete(match); return prev.map(m => m.id === match ? inc : m) }
         if (prev.some(m => m.id === inc.id)) return prev
-        if (raw.sender_id !== currentUserId) messagingApi.markAsRead(conversationId).catch(() => {})
         return [...prev, inc]
       })
+      // markAsRead must be outside the state updater — updaters run as pure functions
+      // and may execute multiple times in React 18 concurrent mode.
+      if (raw.sender_id !== currentUserId && !isDraft) messagingApi.markAsRead(activeConvId).catch(() => {})
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80)
     },
-    onReadReceipt: ({ conversation_id, read_at }) => {
-      if (conversation_id !== conversationId) return
-      setMessages(prev => prev.map(m => m.sender_id === currentUserId && !m.read_at ? { ...m, read_at } : m))
+    onReadReceipt: ({ conversation_id, reader_id, last_read_at }) => {
+      if (conversation_id !== activeConvId) return
+      if (reader_id !== currentUserId) setOtherLastReadAt(last_read_at)
     },
     onReactionToggle: applyReaction,
     onTyping: (uid, isTypingNow) => {
@@ -437,17 +488,17 @@ export default function DmChatScreen() {
 
   const handleSend = async () => {
     const body = text.trim()
-    if (!body || !conversationId) return
+    if (!body) return
 
     const oid = `optimistic-${Date.now()}`
+    const replyToId = replyTo?.id
     pendingIds.current.add(oid)
     const optimistic: MsgItem = {
       id:              oid,
-      conversation_id: conversationId,
+      conversation_id: isDraft ? '' : activeConvId,
       sender_id:       currentUserId,
       content:         body,
       sent_at:         new Date().toISOString(),
-      read_at:         null,
       reply_to:        replyTo ? { message_id: replyTo.id, content: replyTo.content, sender_id: replyTo.sender_id } : null,
       reactions:       [],
     }
@@ -458,10 +509,19 @@ export default function DmChatScreen() {
 
     try {
       setSending(true)
-      const saved = await messagingApi.sendMessage(conversationId, {
-        content:             body,
-        reply_to_message_id: replyTo?.id,
-      })
+      // Draft: the first message lazily creates the conversation server-side.
+      const saved = isDraft
+        ? await messagingApi.sendDirectMessage({
+            target_user_id:      participantId,
+            content:             body,
+            reply_to_message_id: replyToId,
+            booking_id:          bookingId || undefined,
+          })
+        : await messagingApi.sendMessage(activeConvId, {
+            content:             body,
+            reply_to_message_id: replyToId,
+          })
+      if (isDraft) setActiveConvId(saved.conversation_id)
       setMessages(prev => prev.map(m => m.id === oid ? toItem(saved) : m))
       pendingIds.current.delete(oid)
     } catch {
@@ -484,7 +544,7 @@ export default function DmChatScreen() {
       }
     }))
     try {
-      await messagingApi.reactToMessage(conversationId, messageId, emoji)
+      await messagingApi.reactToMessage(activeConvId, messageId, emoji)
     } catch {
       fetchMessages()
     }
@@ -503,9 +563,20 @@ export default function DmChatScreen() {
     entries.push({ type: 'msg', key: msg.id, msg })
   }
 
+  // Memoised so FlatList + extraData re-renders only when messages or otherLastReadAt change.
+  const lastSeenId = useMemo(() => {
+    if (!otherLastReadAt) return null
+    const readMs = parsePHT(otherLastReadAt).getTime()
+    return messages
+      .filter(m => m.sender_id === currentUserId && !m.id.startsWith('optimistic-') && parsePHT(m.sent_at).getTime() <= readMs)
+      .at(-1)?.id ?? null
+  }, [messages, otherLastReadAt, currentUserId])
+
   const name = participantName ?? 'Chat'
 
   return (
+    // Header stays pinned at the top; the animated kbSpacer at the bottom lifts the
+    // input bar above the keyboard while the FlatList shrinks — header never moves.
     <View style={[styles.root, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={styles.header}>
@@ -526,11 +597,6 @@ export default function DmChatScreen() {
         </View>
       </View>
 
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior="padding"
-        keyboardVerticalOffset={0}
-      >
         {loading ? (
           <View style={styles.center}>
             <ActivityIndicator size="small" color={C.cyan} />
@@ -538,8 +604,10 @@ export default function DmChatScreen() {
         ) : (
           <FlatList
             ref={listRef}
+            style={styles.flex}
             data={entries}
             keyExtractor={e => e.key}
+            extraData={lastSeenId}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
@@ -563,13 +631,14 @@ export default function DmChatScreen() {
                   </View>
                 )
               }
-              const isMine   = item.msg.sender_id === currentUserId
+              const isMine       = item.msg.sender_id === currentUserId
               const isOptimistic = item.msg.id.startsWith('optimistic-')
               return (
                 <View style={isOptimistic ? styles.optimistic : undefined}>
                   <Bubble
                     msg={item.msg}
                     isMine={isMine}
+                    showSeen={item.msg.id === lastSeenId}
                     participantName={name}
                     currentUserId={currentUserId}
                     onLongPress={setPickerMsgId}
@@ -598,10 +667,19 @@ export default function DmChatScreen() {
           </View>
         )}
 
-        <View style={[styles.inputBar, { paddingBottom: insets.bottom > 0 ? insets.bottom : 8 }]}>
+        <View style={styles.inputBar}>
+          <TouchableOpacity
+            onPress={() => { Keyboard.dismiss(); setEmojiOpen(o => !o) }}
+            activeOpacity={0.7}
+            style={styles.emojiToggle}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Smile size={22} color={emojiOpen ? C.cyan : C.muted} />
+          </TouchableOpacity>
           <TextInput
             value={text}
             onChangeText={setText}
+            onFocus={() => setEmojiOpen(false)}
             placeholder="Type a message…"
             placeholderTextColor="rgba(255,255,255,0.22)"
             style={styles.input}
@@ -617,9 +695,20 @@ export default function DmChatScreen() {
             <Send size={17} color={text.trim() ? C.cyanText : C.muted} />
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
 
-      {/* Emoji picker modal */}
+        {/* Emoji panel takes the keyboard's place; the input bar stays above it
+            so you can always see what you're composing. */}
+        <EmojiSheet
+          visible={emojiOpen}
+          onClose={() => setEmojiOpen(false)}
+          onSelect={(emoji) => setText(t => t + emoji)}
+        />
+
+        {/* Animated gap: safe-area inset when closed, keyboard height when open.
+            With the emoji panel open this also lifts it above the search keyboard. */}
+        <Reanimated.View style={kbSpacerStyle} />
+
+      {/* Reaction picker (long-press a message) */}
       <EmojiPicker
         visible={!!pickerMsgId}
         onClose={() => setPickerMsgId(null)}
@@ -662,7 +751,8 @@ const styles = StyleSheet.create({
   replyPreview: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: C.raised, borderTopWidth: 1, borderTopColor: C.border },
   replyPreviewText: { flex: 1, color: C.dimText, fontSize: 13 },
 
-  inputBar: { flexDirection: 'row', alignItems: 'flex-end', gap: 10, paddingHorizontal: 12, paddingTop: 10, backgroundColor: C.bg, borderTopWidth: 1, borderTopColor: C.border },
+  inputBar: { flexDirection: 'row', alignItems: 'flex-end', gap: 10, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 10, backgroundColor: C.bg, borderTopWidth: 1, borderTopColor: C.border },
+  emojiToggle: { width: 38, height: 42, alignItems: 'center', justifyContent: 'center' },
   input:    { flex: 1, backgroundColor: C.raised, borderRadius: 20, borderWidth: 1, borderColor: C.border, paddingHorizontal: 16, paddingVertical: 10, color: C.white, fontSize: 14, maxHeight: 120 },
   sendBtn:  { width: 42, height: 42, borderRadius: 21, backgroundColor: C.cyan, alignItems: 'center', justifyContent: 'center' },
   sendBtnDisabled: { backgroundColor: C.raised, borderWidth: 1, borderColor: C.border },

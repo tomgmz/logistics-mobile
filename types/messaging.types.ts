@@ -3,17 +3,29 @@
 export interface MessageReaction { emoji: string; user_id: string }
 export interface MessageReplyTo  { message_id: string; content: string; sender_id: string }
 
+// A user the current user is allowed to message (mirrors backend MessagableUser)
+export interface MessagableUser {
+  user_id:    string
+  first_name: string | null
+  last_name:  string | null
+  role:       string
+  email:      string
+  booking_id?: string
+}
+
 // ─── DM raw (mirrors backend API) ────────────────────────────────────────────
 
 export interface ConversationWithDetails {
-  conversation_id:  string
-  participant_a_id: string
-  participant_b_id: string
-  context_type:     'direct' | 'booking_transit'
-  booking_id:       string | null
-  created_at:       string
-  updated_at:       string
-  last_message_at:  string | null
+  conversation_id:             string
+  participant_a_id:            string
+  participant_b_id:            string
+  context_type:                'direct' | 'booking_transit'
+  booking_id:                  string | null
+  created_at:                  string
+  updated_at:                  string
+  last_message_at:             string | null
+  participant_a_last_read_at:  string | null
+  participant_b_last_read_at:  string | null
   other_user: {
     user_id:    string
     first_name: string | null
@@ -31,9 +43,7 @@ export interface MessageRow {
   sender_id:            string
   receiver_id:          string
   content:              string
-  is_read:              boolean
   sent_at:              string
-  read_at:              string | null
   deleted_by_sender:    boolean
   deleted_by_receiver:  boolean
   reply_to_message_id:  string | null
@@ -81,7 +91,7 @@ export interface GroupRaw {
 // ─── Realtime payloads ────────────────────────────────────────────────────────
 
 export interface GroupInvitePayload      { group_id: string; group_name: string }
-export interface ReadReceiptPayload      { conversation_id: string; read_at: string }
+export interface ReadReceiptPayload      { conversation_id: string; reader_id: string; last_read_at: string }
 export interface GroupReadReceiptPayload { group_id: string; user_id: string; read_at: string }
 export interface ReactionTogglePayload   {
   message_id: string

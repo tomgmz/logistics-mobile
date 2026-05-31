@@ -6,13 +6,14 @@ import {
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { Search, Users, MessageCircle } from 'lucide-react-native'
+import { Search, Users, MessageCircle, Plus } from 'lucide-react-native'
 import { useAuthStore } from '../../../lib/store/auth.store'
 import { messagingApi } from '../../../lib/api/messaging.api'
 import { useMessagingRealtime } from '../../../hooks/useMessagingRealtime'
 import { useMessagingStore } from '../../../lib/store/messaging.store'
+import ComposeModal from '../../../components/messaging/ComposeModal'
 import type {
-  ConversationWithDetails, GroupRaw, MessageRow, GroupMessageRaw,
+  ConversationWithDetails, GroupRaw, MessageRow, GroupMessageRaw, MessagableUser,
 } from '../../../types/messaging.types'
 
 const C = {
@@ -191,6 +192,7 @@ export default function MessagesScreen() {
   const [loading,       setLoading]       = useState(true)
   const [refreshing,    setRefreshing]    = useState(false)
   const [search,        setSearch]        = useState('')
+  const [composeOpen,   setComposeOpen]   = useState(false)
 
   const fetchAll = useCallback(async () => {
     try {
@@ -214,29 +216,40 @@ export default function MessagesScreen() {
     currentUserId,
     onNewMessage: (raw: MessageRow) => {
       const isMyMsg = raw.sender_id === currentUserId
-      setConversations(prev => prev.map(c => {
-        if (c.conversation_id !== raw.conversation_id) return c
-        if (isMyMsg && c.unread_count > 0) decrementUnread(c.unread_count)
-        else if (!isMyMsg) incrementUnread()
-        return {
-          ...c,
-          last_message: { message_id: raw.message_id, content: raw.content, sent_at: raw.sent_at, sender_id: raw.sender_id },
-          unread_count: isMyMsg ? 0 : c.unread_count + 1,
-        }
-      }))
+      let known = false
+      setConversations(prev => {
+        known = prev.some(c => c.conversation_id === raw.conversation_id)
+        return prev.map(c => {
+          if (c.conversation_id !== raw.conversation_id) return c
+          if (isMyMsg && c.unread_count > 0) decrementUnread(c.unread_count)
+          else if (!isMyMsg) incrementUnread()
+          return {
+            ...c,
+            last_message: { message_id: raw.message_id, content: raw.content, sent_at: raw.sent_at, sender_id: raw.sender_id },
+            unread_count: isMyMsg ? 0 : c.unread_count + 1,
+          }
+        })
+      })
+      // Unknown conversation (brand-new DM): pull the list so it appears without a reload.
+      if (!known) fetchAll()
     },
     onGroupMessage: (raw: GroupMessageRaw) => {
       const isMyMsg = raw.sender_id === currentUserId
-      setGroups(prev => prev.map(g => {
-        if (g.group_id !== raw.group_id) return g
-        if (isMyMsg && g.unread_count > 0) decrementUnread(g.unread_count)
-        else if (!isMyMsg) incrementUnread()
-        return {
-          ...g,
-          last_message: { message_id: raw.message_id, content: raw.content, sent_at: raw.sent_at, sender_id: raw.sender_id },
-          unread_count: isMyMsg ? 0 : g.unread_count + 1,
-        }
-      }))
+      let known = false
+      setGroups(prev => {
+        known = prev.some(g => g.group_id === raw.group_id)
+        return prev.map(g => {
+          if (g.group_id !== raw.group_id) return g
+          if (isMyMsg && g.unread_count > 0) decrementUnread(g.unread_count)
+          else if (!isMyMsg) incrementUnread()
+          return {
+            ...g,
+            last_message: { message_id: raw.message_id, content: raw.content, sent_at: raw.sent_at, sender_id: raw.sender_id },
+            unread_count: isMyMsg ? 0 : g.unread_count + 1,
+          }
+        })
+      })
+      if (!known) fetchAll()
     },
     onGroupInvite: () => fetchAll(),
   })
@@ -359,6 +372,42 @@ export default function MessagesScreen() {
           }
         />
       )}
+
+      {/* Compose FAB */}
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={() => setComposeOpen(true)}
+        style={[styles.fab, { bottom: insets.bottom + 20 }]}
+      >
+        <Plus size={24} color={C.bg} />
+      </TouchableOpacity>
+
+      <ComposeModal
+        visible={composeOpen}
+        onClose={() => setComposeOpen(false)}
+        onConversationReady={(conversationId, u) => {
+          setComposeOpen(false)
+          fetchAll()
+          router.push({
+            pathname: '/driver/messages/[conversationId]',
+            params: {
+              // 'new' opens a draft chat — the conversation row is created on first send.
+              conversationId: conversationId ?? 'new',
+              participantName: `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim(),
+              participantId: u.user_id,
+              bookingId: u.booking_id ?? '',
+            },
+          })
+        }}
+        onGroupCreated={(groupId, name) => {
+          setComposeOpen(false)
+          fetchAll()
+          router.push({
+            pathname: '/driver/messages/group/[groupId]',
+            params: { groupId, groupName: name, myStatus: 'accepted' },
+          })
+        }}
+      />
     </View>
   )
 }
@@ -547,5 +596,22 @@ const styles = StyleSheet.create({
     fontSize:   10,
     fontWeight: '800',
     lineHeight: 12,
+  },
+
+  // FAB
+  fab: {
+    position:        'absolute',
+    right:           20,
+    width:           56,
+    height:          56,
+    borderRadius:    28,
+    backgroundColor: C.cyan,
+    alignItems:      'center',
+    justifyContent:  'center',
+    shadowColor:     C.cyan,
+    shadowOpacity:   0.4,
+    shadowRadius:    12,
+    shadowOffset:    { width: 0, height: 4 },
+    elevation:       8,
   },
 })

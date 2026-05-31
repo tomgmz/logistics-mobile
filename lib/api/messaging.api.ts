@@ -4,6 +4,7 @@ import type {
   MessageRow,
   GroupRaw,
   GroupMessageRaw,
+  MessagableUser,
 } from '../../types/messaging.types'
 
 interface ApiRes<T> { success: boolean; data: T }
@@ -26,6 +27,24 @@ async function patch<T>(url: string, payload?: unknown): Promise<T> {
 const B = '/messaging'
 
 export const messagingApi = {
+  // ── Compose ──────────────────────────────────────────────────────────────────
+  getMessagableUsers: () =>
+    get<MessagableUser[]>(`${B}/users`),
+
+  createOrGetConversation: (body: { target_user_id: string; booking_id?: string }) =>
+    post<{ conversation_id: string }>(`${B}/conversations`, body),
+
+  // Returns the existing conversation id for this pair, or null (no row is created).
+  resolveConversation: (target_user_id: string) =>
+    get<{ conversation_id: string | null }>(`${B}/conversations/resolve`, { target_user_id }),
+
+  // Sends the first message, lazily creating the conversation on the server.
+  sendDirectMessage: (body: { target_user_id: string; content: string; reply_to_message_id?: string; booking_id?: string }) =>
+    post<MessageRow>(`${B}/conversations/direct`, body),
+
+  createGroup: (body: { name: string; member_ids: string[] }) =>
+    post<{ group_id: string }>(`${B}/groups`, body),
+
   // ── DM ─────────────────────────────────────────────────────────────────────
   getConversations: () =>
     get<ConversationWithDetails[]>(`${B}/conversations`),
@@ -52,8 +71,8 @@ export const messagingApi = {
   sendGroupMessage: (groupId: string, body: { content: string; reply_to_message_id?: string }) =>
     post<GroupMessageRaw>(`${B}/groups/${groupId}/messages`, body),
 
-  markGroupRead: (groupId: string, messageIds: string[] = []) =>
-    patch<void>(`${B}/groups/${groupId}/read`, { message_ids: messageIds }),
+  markGroupRead: (groupId: string) =>
+    patch<void>(`${B}/groups/${groupId}/read`),
 
   reactToMessage: (conversationId: string, messageId: string, emoji: string) =>
     post<{ action: 'added' | 'removed' }>(`${B}/conversations/${conversationId}/messages/${messageId}/react`, { emoji }),

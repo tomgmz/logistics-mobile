@@ -2,6 +2,8 @@ import ReusableDashboardShell from '../../components/ui/ReusableDashboardShell'
 import { Slot } from 'expo-router'
 import { Toolbox, ClipboardList } from 'lucide-react-native'
 import { usePathname } from 'expo-router'
+import { useAuthStore } from '../../lib/store/auth.store'
+import { useMessagingBadgeSync } from '../../hooks/useMessagingBadgeSync'
 
 const DRIVER_NAV = [
   {
@@ -18,6 +20,11 @@ const DRIVER_NAV = [
 
 export default function DriverLayout() {
   const pathname = usePathname()
+  const currentUserId = useAuthStore(s => s.user?.user_id ?? '')
+
+  // Always-mounted across driver screens — keeps the header unread badge live
+  // even when the messaging module isn't open.
+  useMessagingBadgeSync(currentUserId)
 
   // Hide the shell for map screens and individual chat screens (not the list)
   const hideShell =
