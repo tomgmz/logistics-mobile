@@ -6,7 +6,7 @@ import {
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { Search, Users, MessageCircle, Plus } from 'lucide-react-native'
+import { Search, Users, MessageCircle, Plus, ArrowLeft } from 'lucide-react-native'
 import { useAuthStore } from '../../../lib/store/auth.store'
 import { messagingApi } from '../../../lib/api/messaging.api'
 import { useMessagingRealtime } from '../../../hooks/useMessagingRealtime'
@@ -29,11 +29,8 @@ const C = {
   overlay:   'rgba(255,255,255,0.07)',
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
 const PHT = 'Asia/Manila'
 
-// Parse postgres UTC timestamps (may lack Z suffix)
 function parsePHT(iso: string): Date {
   const utc = iso.endsWith('Z') || iso.includes('+') ? iso : `${iso}Z`
   return new Date(utc)
@@ -57,17 +54,14 @@ function initials(first: string | null, last: string | null): string {
   return `${first?.[0] ?? '?'}${last?.[0] ?? ''}`.toUpperCase()
 }
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
 type UnifiedItem =
   | { kind: 'dm';    data: ConversationWithDetails; lastAt: string }
   | { kind: 'group'; data: GroupRaw;                 lastAt: string }
 
-// ─── DM row ───────────────────────────────────────────────────────────────────
-
-function DmRow({ item, currentUserId, onPress, index }: {
+function DmRow({ item, currentUserId, isOnline, onPress, index }: {
   item: ConversationWithDetails
   currentUserId: string
+  isOnline: boolean
   onPress: () => void
   index: number
 }) {
@@ -91,6 +85,7 @@ function DmRow({ item, currentUserId, onPress, index }: {
       <TouchableOpacity onPress={onPress} activeOpacity={0.75} style={styles.row}>
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>{initials(u.first_name, u.last_name)}</Text>
+          {isOnline && <View style={styles.onlineDot} />}
         </View>
 
         <View style={styles.rowBody}>
@@ -120,8 +115,6 @@ function DmRow({ item, currentUserId, onPress, index }: {
     </Animated.View>
   )
 }
-
-// ─── Group row ────────────────────────────────────────────────────────────────
 
 function GroupRow({ item, onPress, index }: {
   item: GroupRaw
@@ -178,14 +171,13 @@ function GroupRow({ item, onPress, index }: {
   )
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
-
 export default function MessagesScreen() {
   const router        = useRouter()
   const insets        = useSafeAreaInsets()
   const { user }      = useAuthStore()
   const currentUserId = user?.user_id ?? ''
   const { setTotalUnread, incrementUnread, decrementUnread } = useMessagingStore()
+  const onlineUserIds = useMessagingStore(s => s.onlineUserIds)
 
   const [conversations, setConversations] = useState<ConversationWithDetails[]>([])
   const [groups,        setGroups]        = useState<GroupRaw[]>([])
@@ -193,6 +185,12 @@ export default function MessagesScreen() {
   const [refreshing,    setRefreshing]    = useState(false)
   const [search,        setSearch]        = useState('')
   const [composeOpen,   setComposeOpen]   = useState(false)
+  const [nowTick,       setNowTick]       = useState(0)
+
+  useEffect(() => {
+    const id = setInterval(() => setNowTick(t => t + 1), 60_000)
+    return () => clearInterval(id)
+  }, [])
 
   const fetchAll = useCallback(async () => {
     try {
@@ -230,7 +228,6 @@ export default function MessagesScreen() {
           }
         })
       })
-      // Unknown conversation (brand-new DM): pull the list so it appears without a reload.
       if (!known) fetchAll()
     },
     onGroupMessage: (raw: GroupMessageRaw) => {
@@ -254,7 +251,6 @@ export default function MessagesScreen() {
     onGroupInvite: () => fetchAll(),
   })
 
-  // ── Build unified sorted list ──────────────────────────────────────────────
   const q = search.toLowerCase()
 
   const unified: UnifiedItem[] = [
@@ -274,11 +270,13 @@ export default function MessagesScreen() {
     groups.reduce((s, g) => s + g.unread_count, 0)
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top > 0 ? 0 : 8 }]}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} activeOpacity={0.7} style={styles.backBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <ArrowLeft size={22} color={C.white} />
+        </TouchableOpacity>
         <View>
-          <Text style={styles.label}>Inbox</Text>
           <View style={styles.titleRow}>
             <Text style={styles.title}>Messages</Text>
             {totalUnread > 0 && (
@@ -314,6 +312,7 @@ export default function MessagesScreen() {
         <FlatList
           data={unified}
           keyExtractor={item => item.kind === 'dm' ? `dm-${item.data.conversation_id}` : `g-${item.data.group_id}`}
+          extraData={`${nowTick}-${onlineUserIds.join(',')}`}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAll() }} tintColor={C.cyan} />
           }
@@ -331,6 +330,7 @@ export default function MessagesScreen() {
               <DmRow
                 item={item.data}
                 currentUserId={currentUserId}
+                isOnline={onlineUserIds.includes(item.data.other_user.user_id)}
                 index={index}
                 onPress={() => {
                   if (item.data.unread_count > 0) decrementUnread(item.data.unread_count)
@@ -391,7 +391,6 @@ export default function MessagesScreen() {
           router.push({
             pathname: '/driver/messages/[conversationId]',
             params: {
-              // 'new' opens a draft chat — the conversation row is created on first send.
               conversationId: conversationId ?? 'new',
               participantName: `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim(),
               participantId: u.user_id,
@@ -412,7 +411,6 @@ export default function MessagesScreen() {
   )
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   container: {
@@ -420,9 +418,16 @@ const styles = StyleSheet.create({
     backgroundColor: C.bg,
   },
   header: {
-    paddingHorizontal: 20,
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               6,
+    paddingHorizontal: 16,
     paddingTop:        12,
     paddingBottom:     12,
+  },
+  backBtn: {
+    padding:      4,
+    borderRadius: 8,
   },
   label: {
     color:         C.muted,
@@ -515,6 +520,18 @@ const styles = StyleSheet.create({
     alignItems:      'center',
     justifyContent:  'center',
     flexShrink:      0,
+    position:        'relative',
+  },
+  onlineDot: {
+    position:        'absolute',
+    bottom:          0,
+    right:           0,
+    width:           12,
+    height:          12,
+    borderRadius:    6,
+    backgroundColor: '#4ade80',
+    borderWidth:     2,
+    borderColor:     C.bg,
   },
   groupAvatar: {
     position: 'relative',

@@ -6,11 +6,12 @@ import {
 } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { ArrowLeft, Send, CornerUpLeft, X, Smile } from 'lucide-react-native'
+import { ArrowLeft, Send, CornerUpLeft, X, Smile, Trash2 } from 'lucide-react-native'
 import Reanimated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated'
 import { useKeyboardHandler } from 'react-native-keyboard-controller'
 import { GestureDetector, Gesture } from 'react-native-gesture-handler'
 import { useAuthStore } from '../../../lib/store/auth.store'
+import { useMessagingStore } from '../../../lib/store/messaging.store'
 import { messagingApi } from '../../../lib/api/messaging.api'
 import { useMessagingRealtime } from '../../../hooks/useMessagingRealtime'
 import EmojiSheet from '../../../components/messaging/EmojiSheet'
@@ -32,9 +33,6 @@ const C = {
 const QUICK_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '😡']
 const PHT = 'Asia/Manila'
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-// Parse postgres UTC timestamps (may lack Z suffix)
 function parsePHT(iso: string): Date {
   const utc = iso.endsWith('Z') || iso.includes('+') ? iso : `${iso}Z`
   return new Date(utc)
@@ -49,7 +47,6 @@ function formatMsgTime(iso: string): string {
 function formatDateSeparator(iso: string): string {
   const d   = parsePHT(iso)
   const now = new Date()
-  // Compare calendar days in PH timezone
   const dPHT   = new Date(d.toLocaleString('en-US', { timeZone: PHT }))
   const nowPHT = new Date(now.toLocaleString('en-US', { timeZone: PHT }))
   const dif = Math.floor((nowPHT.setHours(0,0,0,0) - dPHT.setHours(0,0,0,0)) / 86_400_000)
@@ -59,7 +56,7 @@ function formatDateSeparator(iso: string): string {
 }
 
 function dayKey(iso: string): string {
-  return parsePHT(iso).toLocaleDateString('en-CA', { timeZone: PHT }) // YYYY-MM-DD in PH
+  return parsePHT(iso).toLocaleDateString('en-CA', { timeZone: PHT })
 }
 
 interface ReactionGroup { emoji: string; count: number; reacted: boolean }
@@ -83,8 +80,6 @@ interface MsgItem {
   reactions:       { emoji: string; user_id: string }[]
 }
 
-// ─── Typing dots ──────────────────────────────────────────────────────────────
-
 function TypingDots() {
   const anim = useRef([new Animated.Value(0), new Animated.Value(0), new Animated.Value(0)]).current
   useEffect(() => {
@@ -107,8 +102,6 @@ const tdS = StyleSheet.create({
   wrap: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingVertical: 2 },
   dot:  { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(77,249,237,0.5)' },
 })
-
-// ─── Reaction strip ───────────────────────────────────────────────────────────
 
 function ReactionStrip({ reactions, currentUserId, isMine, onToggle }: {
   reactions: { emoji: string; user_id: string }[]
@@ -145,12 +138,11 @@ const rS = StyleSheet.create({
   countActive: { color: C.cyan },
 })
 
-// ─── Emoji picker modal ───────────────────────────────────────────────────────
-
-function EmojiPicker({ visible, onClose, onPick }: {
-  visible:  boolean
-  onClose:  () => void
-  onPick:   (emoji: string) => void
+function EmojiPicker({ visible, onClose, onPick, onDelete }: {
+  visible:   boolean
+  onClose:   () => void
+  onPick:    (emoji: string) => void
+  onDelete?: () => void
 }) {
   return (
     <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
@@ -169,6 +161,16 @@ function EmojiPicker({ visible, onClose, onPick }: {
               </TouchableOpacity>
             ))}
           </View>
+          {onDelete && (
+            <TouchableOpacity
+              style={epS.deleteRow}
+              onPress={() => { onDelete(); onClose() }}
+              activeOpacity={0.7}
+            >
+              <Trash2 size={16} color="#f87171" />
+              <Text style={epS.deleteText}>Delete for me</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </TouchableOpacity>
     </Modal>
@@ -181,9 +183,9 @@ const epS = StyleSheet.create({
   row:      { flexDirection: 'row', justifyContent: 'space-between' },
   emojiBtn: { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' },
   emoji:    { fontSize: 24 },
+  deleteRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 18, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(248,113,113,0.25)', backgroundColor: 'rgba(248,113,113,0.08)' },
+  deleteText: { color: '#f87171', fontSize: 14, fontWeight: '600' },
 })
-
-// ─── Message bubble ───────────────────────────────────────────────────────────
 
 function Bubble({ msg, isMine, showSeen, participantName, currentUserId, onLongPress, onReact, onReply }: {
   msg:             MsgItem
@@ -242,7 +244,6 @@ function Bubble({ msg, isMine, showSeen, participantName, currentUserId, onLongP
   return (
     <GestureDetector gesture={panGesture}>
       <View style={[bS.msgRow, isMine ? bS.msgRowMine : bS.msgRowTheirs]}>
-        {/* Reply icon — left of bubble for mine, fades in as bubble slides left */}
         {isMine && (
           <Reanimated.View style={[bS.swipeIcon, iconAnim]}>
             <CornerUpLeft size={16} color="rgba(255,255,255,0.5)" />
@@ -251,7 +252,6 @@ function Bubble({ msg, isMine, showSeen, participantName, currentUserId, onLongP
 
         <Reanimated.View style={[bS.wrap, isMine ? bS.wrapMine : bS.wrapTheirs, bubbleAnim]}>
 
-          {/* FB Messenger–style reply: attribution line + quote card above the bubble */}
           {hasReply && (
             <>
               <View style={[bS.attribution, isMine ? bS.attributionMine : bS.attributionTheirs]}>
@@ -293,7 +293,6 @@ function Bubble({ msg, isMine, showSeen, participantName, currentUserId, onLongP
           </View>
         </Reanimated.View>
 
-        {/* Reply icon — right of bubble for theirs, fades in as bubble slides right */}
         {!isMine && (
           <Reanimated.View style={[bS.swipeIcon, iconAnim]}>
             <CornerUpLeft size={16} color="rgba(255,255,255,0.5)" />
@@ -313,7 +312,6 @@ const bS = StyleSheet.create({
   wrapMine:     { alignItems: 'flex-end' },
   wrapTheirs:   { alignItems: 'flex-start' },
 
-  // FB Messenger-style reply
   attribution:      { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 },
   attributionMine:  { alignSelf: 'flex-end' },
   attributionTheirs:{ alignSelf: 'flex-start' },
@@ -336,8 +334,6 @@ const bS = StyleSheet.create({
   seen:         { color: C.cyan, fontSize: 10 },
 })
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
-
 export default function DmChatScreen() {
   const router        = useRouter()
   const insets        = useSafeAreaInsets()
@@ -351,8 +347,6 @@ export default function DmChatScreen() {
     bookingId?:      string
   }>()
 
-  // 'new' (or empty) means this chat is a draft — no conversation row exists yet.
-  // Once the first message creates it, activeConvId holds the real id.
   const [activeConvId, setActiveConvId] = useState(conversationId)
   const isDraft = !activeConvId || activeConvId === 'new'
 
@@ -362,7 +356,8 @@ export default function DmChatScreen() {
   const [text,            setText]            = useState('')
   const [replyTo,         setReplyTo]         = useState<MsgItem | null>(null)
   const [isTyping,        setIsTyping]        = useState(false)
-  const [isOnline,        setIsOnline]        = useState(false)
+  const onlineUserIds                         = useMessagingStore(s => s.onlineUserIds)
+  const isOnline                              = !!participantId && onlineUserIds.includes(participantId)
   const [pickerMsgId,     setPickerMsgId]     = useState<string | null>(null)
   const [emojiOpen,       setEmojiOpen]       = useState(false)
   const [otherLastReadAt, setOtherLastReadAt] = useState<string | null>(null)
@@ -370,15 +365,13 @@ export default function DmChatScreen() {
   const listRef     = useRef<FlatList>(null)
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingIds  = useRef<Set<string>>(new Set())
+  const meTypingRef    = useRef(false)
+  const meTypingTimer  = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const scrollToEnd = useCallback(() => {
     listRef.current?.scrollToEnd({ animated: true })
   }, [])
 
-  // Track the keyboard frame on the UI thread. A bottom spacer (kbSpacer) binds its
-  // height to this, lifting the input bar above the keyboard while the FlatList
-  // shrinks and the header stays pinned. The KeyboardProvider in the root layout +
-  // adjustResize make this consistent across iOS/Android under edge-to-edge.
   const kbHeight = useSharedValue(0)
   useKeyboardHandler({
     onMove: (e) => {
@@ -393,8 +386,6 @@ export default function DmChatScreen() {
   }, [scrollToEnd])
 
   const kbSpacerStyle = useAnimatedStyle(() => ({
-    // When closed (height 0) fall back to the safe-area inset so the input keeps
-    // its bottom gap above the gesture/nav bar.
     height: Math.max(kbHeight.value, insets.bottom),
   }))
 
@@ -409,7 +400,6 @@ export default function DmChatScreen() {
   }), [])
 
   const fetchMessages = useCallback(async () => {
-    // A draft has no conversation yet — nothing to load.
     if (isDraft) { setLoading(false); return }
     try {
       const raw = await messagingApi.getMessages(activeConvId, { limit: 60 })
@@ -423,7 +413,6 @@ export default function DmChatScreen() {
   useEffect(() => {
     if (isDraft) return
     messagingApi.markAsRead(activeConvId).catch(() => {})
-    // Initialise other participant's last_read_at for the "Seen" indicator
     messagingApi.getConversations().then(convs => {
       const conv = convs.find(c => c.conversation_id === activeConvId)
       if (conv) {
@@ -449,9 +438,8 @@ export default function DmChatScreen() {
     }))
   }, [])
 
-  useMessagingRealtime({
+  const { broadcastTyping } = useMessagingRealtime({
     currentUserId,
-    // Unique non-conversation channel for drafts so we don't double-subscribe the user channel.
     conversationId: isDraft ? `draft:${participantId}` : activeConvId,
     onNewMessage: (raw) => {
       const inc = toItem(raw)
@@ -461,8 +449,6 @@ export default function DmChatScreen() {
         if (prev.some(m => m.id === inc.id)) return prev
         return [...prev, inc]
       })
-      // markAsRead must be outside the state updater — updaters run as pure functions
-      // and may execute multiple times in React 18 concurrent mode.
       if (raw.sender_id !== currentUserId && !isDraft) messagingApi.markAsRead(activeConvId).catch(() => {})
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80)
     },
@@ -477,7 +463,6 @@ export default function DmChatScreen() {
       if (typingTimer.current) clearTimeout(typingTimer.current)
       if (isTypingNow) typingTimer.current = setTimeout(() => setIsTyping(false), 3000)
     },
-    onPresenceChange: (ids) => setIsOnline(ids.includes(participantId ?? '')),
   })
 
   useEffect(() => {
@@ -490,7 +475,7 @@ export default function DmChatScreen() {
     const body = text.trim()
     if (!body) return
 
-    const oid = `optimistic-${Date.now()}`
+    const oid = `optimistic-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const replyToId = replyTo?.id
     pendingIds.current.add(oid)
     const optimistic: MsgItem = {
@@ -505,11 +490,12 @@ export default function DmChatScreen() {
     setMessages(prev => [...prev, optimistic])
     setText('')
     setReplyTo(null)
+    if (meTypingTimer.current) clearTimeout(meTypingTimer.current)
+    stopMeTyping()
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80)
 
     try {
       setSending(true)
-      // Draft: the first message lazily creates the conversation server-side.
       const saved = isDraft
         ? await messagingApi.sendDirectMessage({
             target_user_id:      participantId,
@@ -550,7 +536,27 @@ export default function DmChatScreen() {
     }
   }
 
-  // ── Date-separated list entries ────────────────────────────────────────────
+  const handleDelete = async (messageId: string) => {
+    if (messageId.startsWith('optimistic-')) return
+    setMessages(prev => prev.filter(m => m.id !== messageId))
+    try { await messagingApi.deleteMessage(messageId) }
+    catch { fetchMessages() }
+  }
+
+  const stopMeTyping = useCallback(() => {
+    if (!meTypingRef.current) return
+    meTypingRef.current = false
+    broadcastTyping(false)
+  }, [broadcastTyping])
+
+  const handleChangeText = (val: string) => {
+    setText(val)
+    if (val.trim() && !meTypingRef.current) { meTypingRef.current = true; broadcastTyping(true) }
+    else if (!val.trim()) stopMeTyping()
+    if (meTypingTimer.current) clearTimeout(meTypingTimer.current)
+    meTypingTimer.current = setTimeout(stopMeTyping, 2500)
+  }
+
   type Entry =
     | { type: 'date'; key: string; label: string }
     | { type: 'msg';  key: string; msg: MsgItem }
@@ -563,7 +569,6 @@ export default function DmChatScreen() {
     entries.push({ type: 'msg', key: msg.id, msg })
   }
 
-  // Memoised so FlatList + extraData re-renders only when messages or otherLastReadAt change.
   const lastSeenId = useMemo(() => {
     if (!otherLastReadAt) return null
     const readMs = parsePHT(otherLastReadAt).getTime()
@@ -575,8 +580,6 @@ export default function DmChatScreen() {
   const name = participantName ?? 'Chat'
 
   return (
-    // Header stays pinned at the top; the animated kbSpacer at the bottom lifts the
-    // input bar above the keyboard while the FlatList shrinks — header never moves.
     <View style={[styles.root, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={styles.header}>
@@ -678,13 +681,13 @@ export default function DmChatScreen() {
           </TouchableOpacity>
           <TextInput
             value={text}
-            onChangeText={setText}
+            onChangeText={handleChangeText}
             onFocus={() => setEmojiOpen(false)}
             placeholder="Type a message…"
             placeholderTextColor="rgba(255,255,255,0.22)"
             style={styles.input}
             multiline
-            maxLength={2000}
+            maxLength={5000}
           />
           <TouchableOpacity
             onPress={handleSend}
@@ -696,29 +699,23 @@ export default function DmChatScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Emoji panel takes the keyboard's place; the input bar stays above it
-            so you can always see what you're composing. */}
         <EmojiSheet
           visible={emojiOpen}
           onClose={() => setEmojiOpen(false)}
           onSelect={(emoji) => setText(t => t + emoji)}
         />
 
-        {/* Animated gap: safe-area inset when closed, keyboard height when open.
-            With the emoji panel open this also lifts it above the search keyboard. */}
         <Reanimated.View style={kbSpacerStyle} />
 
-      {/* Reaction picker (long-press a message) */}
       <EmojiPicker
         visible={!!pickerMsgId}
         onClose={() => setPickerMsgId(null)}
         onPick={(emoji) => { if (pickerMsgId) handleReact(pickerMsgId, emoji) }}
+        onDelete={() => { if (pickerMsgId) handleDelete(pickerMsgId) }}
       />
     </View>
   )
 }
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   root:      { flex: 1, backgroundColor: C.bg },

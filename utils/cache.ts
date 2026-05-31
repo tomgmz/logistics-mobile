@@ -83,7 +83,6 @@ async function ensureStopPack(
 ): Promise<void> {
   const existingPacks = await MapboxGL.offlineManager.getPacks()
   if (existingPacks.some((p) => p.name === packName)) {
-    // Already downloaded — just refresh its timestamp in the registry
     await registerPack(packName)
     return
   }
@@ -131,7 +130,6 @@ async function ensureOverviewPack(
   const lngs = points.map((p) => p.longitude)
   const lats  = points.map((p) => p.latitude)
 
-  // Add a small padding so the overview doesn't clip the route edges
   const PAD = 0.05
   const ne: [number, number] = [Math.max(...lngs) + PAD, Math.max(...lats) + PAD]
   const sw: [number, number] = [Math.min(...lngs) - PAD, Math.min(...lats) - PAD]
@@ -170,18 +168,6 @@ export async function loadRouteCache(bookingId: string): Promise<BookingRoute | 
   }
 }
 
-/**
- * Downloads offline map tiles for a trip in a nationwide-safe way:
- *
- *  1. One small radial pack (~5km radius) around the pickup origin
- *  2. One small radial pack (~5km radius) around each dropoff stop
- *  3. One low-zoom (0–10) overview pack covering the full route bounding box
- *
- * This replaces the old single-bounding-box approach which would try to
- * download the entire area between stops (e.g. Manila → Davao = hundreds of MB).
- *
- * Called once after a successful route fetch, runs in the background.
- */
 export async function ensureOfflinePack(
   bookingId: string,
   origin:    LatLng,
@@ -189,12 +175,10 @@ export async function ensureOfflinePack(
   allPoints: LatLng[],
 ): Promise<void> {
   try {
-    // Evict old packs if we're approaching the 750 limit
     await evictOldPacksIfNeeded()
 
     const downloads: Promise<void>[] = []
 
-    // Origin (pickup)
     downloads.push(
       ensureStopPack(stopPackName(bookingId, 'origin'), origin)
         .catch((e) => console.warn('[offline] origin pack failed:', e))
@@ -208,13 +192,11 @@ export async function ensureOfflinePack(
       )
     })
 
-    // Low-zoom overview of the full route
     downloads.push(
       ensureOverviewPack(bookingId, allPoints)
         .catch((e) => console.warn('[offline] overview pack failed:', e))
     )
 
-    // Run all downloads in parallel — each is independent
     await Promise.all(downloads)
 
     if (__DEV__) {
@@ -225,12 +207,6 @@ export async function ensureOfflinePack(
   }
 }
 
-/**
- * Deletes all offline packs for a completed trip and removes them from
- * the registry. Call this when the driver taps "Done" on the trip complete screen.
- *
- * Keeps the device clean for long-running drivers doing many trips per day.
- */
 export async function cleanupTripPacks(
   bookingId: string,
   stopCount: number,

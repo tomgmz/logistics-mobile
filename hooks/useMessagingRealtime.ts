@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
 import type { MutableRefObject } from 'react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
@@ -29,14 +29,6 @@ interface ChannelEntry {
   subscribers: Set<OptsRef>
 }
 
-// Supabase dedupes realtime channels by topic, so two components listening on
-// the same topic (e.g. the always-mounted badge sync and the messages list,
-// both on `messaging:user:<id>`) can't each call `supabase.channel().on()` —
-// the second `.on()` after `subscribe()` throws. We instead keep one shared
-// channel per topic, fan every broadcast out to all registered subscribers, and
-// tear the channel down only once the last subscriber unmounts. This keeps the
-// header badge live across the whole driver area while still letting the
-// messages screen react to the same events.
 const registry = new Map<string, ChannelEntry>()
 
 function createEntry(
@@ -45,9 +37,6 @@ function createEntry(
   conversationId: string | undefined,
   isGroup:        boolean,
 ): ChannelEntry {
-  // Drop any orphaned channel left behind by a previous mount/Fast Refresh —
-  // `removeChannel` is async, so a fast remount can otherwise hand back a stale,
-  // already-subscribed channel and adding `.on()` to it would throw.
   const realtimeTopic = `realtime:${channelName}`
   supabase
     .getChannels()
@@ -115,6 +104,8 @@ export function useMessagingRealtime(opts: UseMessagingRealtimeOptions) {
 
   const { currentUserId, conversationId } = opts
 
+  const channelNameRef = useRef<string | null>(null)
+
   useEffect(() => {
     if (!currentUserId) return
 
@@ -124,6 +115,8 @@ export function useMessagingRealtime(opts: UseMessagingRealtimeOptions) {
       : conversationId
         ? `messaging:conv:${conversationId}`
         : `messaging:user:${currentUserId}`
+
+    channelNameRef.current = channelName
 
     let entry = registry.get(channelName)
     if (!entry) {
@@ -136,7 +129,6 @@ export function useMessagingRealtime(opts: UseMessagingRealtimeOptions) {
       const e = registry.get(channelName)
       if (!e) return
       e.subscribers.delete(optsRef)
-      // Last subscriber gone — actually tear the channel down.
       if (e.subscribers.size === 0) {
         registry.delete(channelName)
         e.channel.untrack()
@@ -144,4 +136,16 @@ export function useMessagingRealtime(opts: UseMessagingRealtimeOptions) {
       }
     }
   }, [currentUserId, conversationId])
+
+  const broadcastTyping = useCallback((isTyping: boolean) => {
+    const name = channelNameRef.current
+    if (!name) return
+    registry.get(name)?.channel.send({
+      type: 'broadcast',
+      event: 'typing',
+      payload: { user_id: currentUserId, is_typing: isTyping },
+    })
+  }, [currentUserId])
+
+  return { broadcastTyping }
 }

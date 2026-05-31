@@ -24,28 +24,29 @@ async function patch<T>(url: string, payload?: unknown): Promise<T> {
   return data.data
 }
 
+async function del<T>(url: string): Promise<T> {
+  const { data } = await api.delete<ApiRes<T>>(url)
+  return data.data
+}
+
 const B = '/messaging'
 
 export const messagingApi = {
-  // ── Compose ──────────────────────────────────────────────────────────────────
   getMessagableUsers: () =>
     get<MessagableUser[]>(`${B}/users`),
 
   createOrGetConversation: (body: { target_user_id: string; booking_id?: string }) =>
     post<{ conversation_id: string }>(`${B}/conversations`, body),
 
-  // Returns the existing conversation id for this pair, or null (no row is created).
   resolveConversation: (target_user_id: string) =>
     get<{ conversation_id: string | null }>(`${B}/conversations/resolve`, { target_user_id }),
 
-  // Sends the first message, lazily creating the conversation on the server.
   sendDirectMessage: (body: { target_user_id: string; content: string; reply_to_message_id?: string; booking_id?: string }) =>
     post<MessageRow>(`${B}/conversations/direct`, body),
 
   createGroup: (body: { name: string; member_ids: string[] }) =>
     post<{ group_id: string }>(`${B}/groups`, body),
 
-  // ── DM ─────────────────────────────────────────────────────────────────────
   getConversations: () =>
     get<ConversationWithDetails[]>(`${B}/conversations`),
 
@@ -58,7 +59,9 @@ export const messagingApi = {
   markAsRead: (conversationId: string) =>
     patch<void>(`${B}/conversations/${conversationId}/read`),
 
-  // ── Groups ──────────────────────────────────────────────────────────────────
+  deleteMessage: (messageId: string) =>
+    del<void>(`${B}/messages/${messageId}`),
+
   getGroups: () =>
     get<GroupRaw[]>(`${B}/groups`),
 

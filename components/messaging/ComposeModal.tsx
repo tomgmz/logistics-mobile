@@ -25,8 +25,6 @@ type Mode = 'dm' | 'group'
 interface ComposeModalProps {
   visible:             boolean
   onClose:             () => void
-  // conversationId is null when no conversation exists yet — the chat opens as a
-  // draft and the row is created on first send.
   onConversationReady: (conversationId: string | null, user: MessagableUser) => void
   onGroupCreated:      (groupId: string, name: string) => void
 }
@@ -49,7 +47,6 @@ export default function ComposeModal({
   const [selected,  setSelected]  = useState<Set<string>>(new Set())
   const [groupName, setGroupName] = useState('')
 
-  // Fetch contacts whenever the modal opens; reset transient state on close.
   useEffect(() => {
     if (!visible) {
       setMode('dm'); setSearch(''); setSelected(new Set()); setGroupName(''); setBusy(null); setError(null)

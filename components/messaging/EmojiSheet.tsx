@@ -5,8 +5,6 @@ import {
 } from 'react-native'
 import { Search } from 'lucide-react-native'
 
-// ─── Types ──────────────────────────────────────────────────────────────────
-
 interface EmojiSkin { unified: string; native: string }
 interface EmojiEntry {
   id: string
@@ -31,7 +29,6 @@ const C = {
   overlay:'rgba(0,0,0,0.6)',
 }
 
-// Category tab icons — mirrors the web picker's CATEGORY_META order
 const CATEGORY_ICON: Record<string, string> = {
   people:   '😀',
   nature:   '🐵',
@@ -46,23 +43,14 @@ const CATEGORY_ICON: Record<string, string> = {
 const COLS = 8
 const SCREEN_W = Dimensions.get('window').width
 const SCREEN_H = Dimensions.get('window').height
-// Panel takes roughly the same footprint a soft keyboard would.
 const PANEL_H = Math.round(SCREEN_H * 0.38)
-// Sheet has 12px horizontal padding each side
 const CELL = Math.floor((SCREEN_W - 24) / COLS)
-
-// ─── Lazy data + search index (parsed once, only when first needed) ───────────
-// The dataset is the same @emoji-mart set the web panel uses. The native field
-// is the raw OS-font emoji, so it renders natively on both iOS and Android.
-// We avoid parsing the ~430KB JSON until the sheet actually opens, so the chat
-// screen mount stays smooth.
 
 let _data: EmojiDataShape | null = null
 let _searchIndex: Record<string, string> | null = null
 
 function loadData(): EmojiDataShape {
   if (!_data) {
-    // `main` field of @emoji-mart/data resolves to sets/15/native.json
     _data = require('@emoji-mart/data') as unknown as EmojiDataShape
   }
   return _data
@@ -86,11 +74,6 @@ function nativeOf(d: EmojiDataShape, id: string): string {
   return d.emojis[id]?.skins[0]?.native ?? ''
 }
 
-// ─── Memoized cell ────────────────────────────────────────────────────────────
-// Memoized so the grid only re-renders cells whose props actually change.
-// `native` and `onPress` are both stable, so cells never re-render on scroll
-// or category switches — this is what keeps the large list smooth.
-
 interface CellProps { native: string; onPress: (e: string) => void }
 
 const EmojiCell = React.memo(function EmojiCell({ native, onPress }: CellProps) {
@@ -100,13 +83,6 @@ const EmojiCell = React.memo(function EmojiCell({ native, onPress }: CellProps) 
     </TouchableOpacity>
   )
 })
-
-// ─── Component ────────────────────────────────────────────────────────────────
-// Rendered inline (not in a Modal) as a keyboard-replacement panel: the host
-// chat screen places this directly below its input bar and above the animated
-// keyboard spacer. That keeps the message input — and whatever you're typing —
-// permanently visible above the emoji panel, and lets the spacer lift the whole
-// stack above the OS keyboard when the in-panel search field is focused.
 
 interface EmojiSheetProps {
   visible:  boolean
@@ -119,7 +95,6 @@ export default function EmojiSheet({ visible, onSelect }: EmojiSheetProps) {
   const [search, setSearch]     = useState('')
   const [catIndex, setCatIndex] = useState(0)
 
-  // Defer the heavy JSON parse to just after the panel mounts, so the open is
   // never blocked by it.
   useEffect(() => {
     if (visible && !data) {
@@ -128,7 +103,6 @@ export default function EmojiSheet({ visible, onSelect }: EmojiSheetProps) {
     }
   }, [visible, data])
 
-  // Resolve native chars in a memo (off the render path) so renderItem stays trivial.
   const items = useMemo(() => {
     if (!data) return []
     const q = search.trim().toLowerCase()
@@ -147,8 +121,6 @@ export default function EmojiSheet({ visible, onSelect }: EmojiSheetProps) {
     return out
   }, [data, search, catIndex])
 
-  // Stable press handler — keeps EmojiCell from re-rendering when the parent
-  // passes a fresh onSelect each render.
   const onSelectRef = useRef(onSelect)
   useEffect(() => { onSelectRef.current = onSelect }, [onSelect])
   const handlePress = useCallback((native: string) => onSelectRef.current(native), [])
@@ -183,7 +155,6 @@ export default function EmojiSheet({ visible, onSelect }: EmojiSheetProps) {
         />
       </View>
 
-      {/* category tabs (hidden while searching) */}
       {!search.trim() && (
         <View style={s.tabs}>
           {(data?.categories ?? []).map((cat, i) => (

@@ -6,16 +6,18 @@ interface MessagingStore {
   setTotalUnread:  (n: number) => void
   incrementUnread: () => void
   decrementUnread: (by: number) => void
-  // Recompute the badge from the server: unread messages + pending group invites.
-  // Absolute (not a delta), so it is safe to call from anywhere without drift.
+  onlineUserIds:    string[]
+  setOnlineUserIds: (ids: string[]) => void
   refresh:         () => Promise<void>
 }
 
 export const useMessagingStore = create<MessagingStore>((set) => ({
-  totalUnread:     0,
-  setTotalUnread:  (totalUnread) => set({ totalUnread }),
-  incrementUnread: () => set(s => ({ totalUnread: s.totalUnread + 1 })),
-  decrementUnread: (by) => set(s => ({ totalUnread: Math.max(0, s.totalUnread - by) })),
+  totalUnread:      0,
+  setTotalUnread:   (totalUnread) => set({ totalUnread }),
+  incrementUnread:  () => set(s => ({ totalUnread: s.totalUnread + 1 })),
+  decrementUnread:  (by) => set(s => ({ totalUnread: Math.max(0, s.totalUnread - by) })),
+  onlineUserIds:    [],
+  setOnlineUserIds: (onlineUserIds) => set({ onlineUserIds }),
   refresh: async () => {
     try {
       const [convs, groups] = await Promise.all([

@@ -14,7 +14,7 @@ import { useAuthStore } from '../../../../lib/store/auth.store'
 import { messagingApi } from '../../../../lib/api/messaging.api'
 import { useMessagingRealtime } from '../../../../hooks/useMessagingRealtime'
 import EmojiSheet from '../../../../components/messaging/EmojiSheet'
-import type { GroupMessageRaw, ReactionTogglePayload } from '../../../../types/messaging.types'
+import type { GroupMessageRaw, ReactionTogglePayload, GroupReadReceiptPayload } from '../../../../types/messaging.types'
 
 const C = {
   bg:       '#0a0a0a',
@@ -32,8 +32,6 @@ const C = {
 
 const QUICK_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '😡']
 const PHT = 'Asia/Manila'
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function parsePHT(iso: string): Date {
   const utc = iso.endsWith('Z') || iso.includes('+') ? iso : `${iso}Z`
@@ -82,8 +80,6 @@ function groupReactions(reactions: { emoji: string; user_id: string }[], userId:
   return [...map.entries()].map(([emoji, v]) => ({ emoji, ...v }))
 }
 
-// ─── Typing dots ──────────────────────────────────────────────────────────────
-
 function TypingDots() {
   const anim = useRef([new Animated.Value(0), new Animated.Value(0), new Animated.Value(0)]).current
   useEffect(() => {
@@ -106,8 +102,6 @@ const tdS = StyleSheet.create({
   wrap: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingVertical: 2 },
   dot:  { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(77,249,237,0.5)' },
 })
-
-// ─── Reaction strip ───────────────────────────────────────────────────────────
 
 function ReactionStrip({ reactions, currentUserId, isMine, onToggle }: {
   reactions:     { emoji: string; user_id: string }[]
@@ -139,8 +133,6 @@ const rS = StyleSheet.create({
   countActive: { color: C.cyan },
 })
 
-// ─── Emoji picker modal ───────────────────────────────────────────────────────
-
 function EmojiPicker({ visible, onClose, onPick }: { visible: boolean; onClose: () => void; onPick: (e: string) => void }) {
   return (
     <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
@@ -168,14 +160,13 @@ const epS = StyleSheet.create({
   emoji:    { fontSize: 24 },
 })
 
-// ─── Bubble ───────────────────────────────────────────────────────────────────
-
-function GroupBubble({ msg, isMine, senderName, currentUserId, onLongPress, onReact, memberName, onReply }: {
+function GroupBubble({ msg, isMine, senderName, currentUserId, seenBy, onLongPress, onReact, memberName, onReply }: {
   msg:           GMsg
   isMine:        boolean
   senderName:    string
   memberName:    (uid: string) => string
   currentUserId: string
+  seenBy:        { user_id: string; first_name: string }[]
   onLongPress:   (id: string) => void
   onReact:       (id: string, emoji: string) => void
   onReply:       (m: GMsg) => void
@@ -273,6 +264,17 @@ function GroupBubble({ msg, isMine, senderName, currentUserId, onLongPress, onRe
           />
 
           <Text style={[bS.time, isMine && { alignSelf: 'flex-end' }]}>{formatMsgTime(msg.sent_at)}</Text>
+
+          {isMine && seenBy.length > 0 && (
+            <View style={bS.seenRow}>
+              {seenBy.slice(0, 3).map(s => (
+                <View key={s.user_id} style={bS.seenAvatar}>
+                  <Text style={bS.seenAvatarText}>{s.first_name[0]?.toUpperCase() ?? '?'}</Text>
+                </View>
+              ))}
+              {seenBy.length > 3 && <Text style={bS.seenOverflow}>+{seenBy.length - 3}</Text>}
+            </View>
+          )}
         </Reanimated.View>
 
         {/* Reply icon — right of bubble for theirs, fades in as bubble slides right */}
@@ -296,7 +298,6 @@ const bS = StyleSheet.create({
   wrapTheirs:   { alignItems: 'flex-start' },
   senderName:   { color: C.cyan, fontSize: 11, fontWeight: '600', marginBottom: 2, marginLeft: 2 },
 
-  // FB Messenger-style reply
   attribution:      { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 },
   attributionMine:  { alignSelf: 'flex-end' },
   attributionTheirs:{ alignSelf: 'flex-start' },
@@ -315,9 +316,12 @@ const bS = StyleSheet.create({
   textTheirs:   { color: C.white,    fontSize: 14, lineHeight: 20 },
 
   time: { color: C.muted, fontSize: 10, marginTop: 3, marginHorizontal: 2 },
-})
 
-// ─── Invite banner ────────────────────────────────────────────────────────────
+  seenRow:        { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 3, alignSelf: 'flex-end' },
+  seenAvatar:     { width: 14, height: 14, borderRadius: 7, backgroundColor: C.raised, borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' },
+  seenAvatarText: { color: 'rgba(255,255,255,0.7)', fontSize: 7, fontWeight: '700' },
+  seenOverflow:   { color: 'rgba(255,255,255,0.4)', fontSize: 9, marginLeft: 1 },
+})
 
 function InviteBanner({ groupId, groupName, onResponded }: { groupId: string; groupName: string; onResponded: (a: boolean) => void }) {
   const [loading, setLoading] = useState(false)
@@ -355,8 +359,6 @@ const invS = StyleSheet.create({
   accept:  { backgroundColor: C.cyan },
 })
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
-
 export default function GroupChatScreen() {
   const router        = useRouter()
   const insets        = useSafeAreaInsets()
@@ -377,17 +379,18 @@ export default function GroupChatScreen() {
   const [pickerMsgId, setPickerMsgId] = useState<string | null>(null)
   const [emojiOpen,   setEmojiOpen]   = useState(false)
   const [membersMap,  setMembersMap]  = useState<Record<string, string>>({})
+  const [members,     setMembers]     = useState<{ user_id: string; first_name: string; status: string; last_read_at: string | null }[]>([])
 
   const listRef      = useRef<FlatList>(null)
   const pendingIds   = useRef<Set<string>>(new Set())
   const typingTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  const meTypingRef   = useRef(false)
+  const meTypingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const scrollToEnd = useCallback(() => {
     listRef.current?.scrollToEnd({ animated: true })
   }, [])
 
-  // Track the keyboard frame on the UI thread; the kbSpacer below lifts the input
-  // bar above it while the header stays pinned (see DM screen).
   const kbHeight = useSharedValue(0)
   useKeyboardHandler({
     onMove: (e) => {
@@ -409,6 +412,17 @@ export default function GroupChatScreen() {
     if (uid === currentUserId) return 'You'
     return membersMap[uid] ?? 'Member'
   }, [membersMap, currentUserId])
+
+  const seenByFor = useCallback((msg: GMsg, isMine: boolean): { user_id: string; first_name: string }[] => {
+    if (!isMine || msg.id.startsWith('optimistic-')) return []
+    const sentMs = parsePHT(msg.sent_at).getTime()
+    return members.filter(m =>
+      m.status === 'accepted' &&
+      m.user_id !== currentUserId &&
+      m.last_read_at !== null &&
+      parsePHT(m.last_read_at).getTime() >= sentMs
+    )
+  }, [members, currentUserId])
 
   const toItem = useCallback((raw: GroupMessageRaw): GMsg => ({
     id:       raw.message_id,
@@ -435,6 +449,12 @@ export default function GroupChatScreen() {
           map[m.user.user_id] = `${m.user.first_name ?? ''} ${m.user.last_name ?? ''}`.trim()
         }
         setMembersMap(map)
+        setMembers(found.members.map(m => ({
+          user_id:      m.user.user_id,
+          first_name:   m.user.first_name ?? '',
+          status:       m.status,
+          last_read_at: m.last_read_at ?? null,
+        })))
       }
     } catch { /* silent */ }
     finally { setLoading(false) }
@@ -456,7 +476,7 @@ export default function GroupChatScreen() {
     }))
   }, [])
 
-  useMessagingRealtime({
+  const { broadcastTyping } = useMessagingRealtime({
     currentUserId,
     conversationId: `group:${groupId}`,
     onGroupMessage: (raw) => {
@@ -472,6 +492,9 @@ export default function GroupChatScreen() {
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80)
     },
     onReactionToggle: applyReaction,
+    onGroupReadReceipt: ({ user_id, read_at }: GroupReadReceiptPayload) => {
+      setMembers(prev => prev.map(m => m.user_id === user_id ? { ...m, last_read_at: read_at } : m))
+    },
     onTyping: (uid, isTypingNow) => {
       if (uid === currentUserId) return
       if (typingTimers.current[uid]) clearTimeout(typingTimers.current[uid])
@@ -492,7 +515,7 @@ export default function GroupChatScreen() {
     const body = text.trim()
     if (!body || !groupId || myStatus !== 'accepted') return
 
-    const oid = `optimistic-${Date.now()}`
+    const oid = `optimistic-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     pendingIds.current.add(oid)
     setMessages(prev => [...prev, {
       id: oid, group_id: groupId, sender_id: currentUserId, content: body,
@@ -502,6 +525,8 @@ export default function GroupChatScreen() {
     }])
     setText('')
     setReplyTo(null)
+    if (meTypingTimer.current) clearTimeout(meTypingTimer.current)
+    stopMeTyping()
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80)
 
     try {
@@ -526,6 +551,20 @@ export default function GroupChatScreen() {
     catch { fetchMessages() }
   }
 
+  const stopMeTyping = useCallback(() => {
+    if (!meTypingRef.current) return
+    meTypingRef.current = false
+    broadcastTyping(false)
+  }, [broadcastTyping])
+
+  const handleChangeText = (val: string) => {
+    setText(val)
+    if (val.trim() && !meTypingRef.current) { meTypingRef.current = true; broadcastTyping(true) }
+    else if (!val.trim()) stopMeTyping()
+    if (meTypingTimer.current) clearTimeout(meTypingTimer.current)
+    meTypingTimer.current = setTimeout(stopMeTyping, 2500)
+  }
+
   type Entry =
     | { type: 'date'; key: string; label: string }
     | { type: 'msg';  key: string; msg: GMsg }
@@ -542,8 +581,6 @@ export default function GroupChatScreen() {
   const typingLabel = typingUsers.length === 1 ? 'Someone is typing…' : typingUsers.length > 1 ? 'Several people are typing…' : null
 
   return (
-    // Header stays pinned at the top; reserving kbHeight at the bottom compresses
-    // the list + input above the keyboard without ever shifting the header.
     <View style={[styles.root, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={styles.header}>
@@ -585,6 +622,7 @@ export default function GroupChatScreen() {
             style={styles.flex}
             data={entries}
             keyExtractor={e => e.key}
+            extraData={members}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
@@ -606,6 +644,7 @@ export default function GroupChatScreen() {
                     senderName={isMine ? 'You' : memberName(item.msg.sender_id)}
                     memberName={memberName}
                     currentUserId={currentUserId}
+                    seenBy={seenByFor(item.msg, isMine)}
                     onLongPress={setPickerMsgId}
                     onReact={handleReact}
                     onReply={setReplyTo}
@@ -645,13 +684,13 @@ export default function GroupChatScreen() {
             </TouchableOpacity>
             <TextInput
               value={text}
-              onChangeText={setText}
+              onChangeText={handleChangeText}
               onFocus={() => setEmojiOpen(false)}
               placeholder="Type a message…"
               placeholderTextColor="rgba(255,255,255,0.22)"
               style={styles.input}
               multiline
-              maxLength={2000}
+              maxLength={5000}
             />
             <TouchableOpacity
               onPress={handleSend}
@@ -664,16 +703,11 @@ export default function GroupChatScreen() {
           </View>
         )}
 
-        {/* Emoji panel takes the keyboard's place; the input bar stays above it
-            so you can always see what you're composing. */}
         <EmojiSheet
           visible={emojiOpen}
           onClose={() => setEmojiOpen(false)}
           onSelect={(emoji) => setText(t => t + emoji)}
         />
-
-        {/* Animated gap: safe-area inset when closed, keyboard height when open.
-            With the emoji panel open this also lifts it above the search keyboard. */}
         <Reanimated.View style={kbSpacerStyle} />
 
       <EmojiPicker
@@ -684,8 +718,6 @@ export default function GroupChatScreen() {
     </View>
   )
 }
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   root:     { flex: 1, backgroundColor: C.bg },

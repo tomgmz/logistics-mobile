@@ -142,8 +142,6 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
       completedCount === routeData.stops.length
     ) {
       setTripComplete(true)
-      // Clean up offline tile packs now that the trip is done.
-      // Runs in background — non-blocking.
       cleanupTripPacks(bookingId, routeData.stops.length).catch((e) =>
         console.warn('[offline] cleanup failed:', e),
       )

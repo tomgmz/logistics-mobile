@@ -21,8 +21,6 @@ import {
 const ARRIVAL_PROXIMITY_M = 50
 const MANUAL_BUTTON_M     = 200
 
-// How far back (in meters) the driver must be from a step's startLocation
-// before we consider reverting to the previous step.
 const STEP_REGRESS_M = 80
 
 interface UseRouteOptions {

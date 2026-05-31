@@ -1,9 +1,6 @@
-// ─── Shared ───────────────────────────────────────────────────────────────────
-
 export interface MessageReaction { emoji: string; user_id: string }
 export interface MessageReplyTo  { message_id: string; content: string; sender_id: string }
 
-// A user the current user is allowed to message (mirrors backend MessagableUser)
 export interface MessagableUser {
   user_id:    string
   first_name: string | null
@@ -12,8 +9,6 @@ export interface MessagableUser {
   email:      string
   booking_id?: string
 }
-
-// ─── DM raw (mirrors backend API) ────────────────────────────────────────────
 
 export interface ConversationWithDetails {
   conversation_id:             string
@@ -51,7 +46,6 @@ export interface MessageRow {
   reactions:            MessageReaction[]
 }
 
-// ─── Group raw (mirrors backend API) ─────────────────────────────────────────
 
 export interface GroupMessageRaw {
   message_id:           string
@@ -87,8 +81,6 @@ export interface GroupRaw {
   unread_count: number
   my_status:    'pending' | 'accepted' | 'declined'
 }
-
-// ─── Realtime payloads ────────────────────────────────────────────────────────
 
 export interface GroupInvitePayload      { group_id: string; group_name: string }
 export interface ReadReceiptPayload      { conversation_id: string; reader_id: string; last_read_at: string }
