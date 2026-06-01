@@ -7,6 +7,7 @@ import {
   NavigationView,
   useNavigation,
   type ArrivalEvent,
+  type MapViewController,
   type Waypoint,
 } from '@googlemaps/react-native-navigation-sdk'
 
@@ -67,7 +68,9 @@ function GoogleNavInner({ bookingId }: Props) {
   const [stops,        setStops]        = useState<Stop[]>([])
   const [origin,       setOrigin]       = useState<{ latitude: number; longitude: number; address: string } | null>(null)
   const [tripComplete, setTripComplete] = useState(false)
+  const [mapCtrl, setMapCtrl] = useState<MapViewController | null>(null)
 
+  const markersAddedRef = useRef(false)
   const legsRef      = useRef<Leg[]>([])
   const legIndexRef  = useRef(0)
   const processedRef = useRef<Set<number>>(new Set())
@@ -112,7 +115,7 @@ function GoogleNavInner({ bookingId }: Props) {
       started = true
       try {
         await navigationController.setDestinations(waypointsRef.current, {
-          displayOptions: { showDestinationMarkers: true },
+          displayOptions: { showDestinationMarkers: false },
         })
         await navigationController.startGuidance()
       } catch (e: any) {
@@ -257,6 +260,22 @@ function GoogleNavInner({ bookingId }: Props) {
     }
   }, [stops])
 
+  // Drop a pin on every dropoff point (once the map controller + stops exist).
+  useEffect(() => {
+    if (!mapCtrl || stops.length === 0 || markersAddedRef.current) return
+    markersAddedRef.current = true
+    for (const s of stops) {
+      mapCtrl
+        .addMarker({ position: { lat: s.latitude, lng: s.longitude }, title: s.address, snippet: `Stop ${s.optimized_sequence_order}` })
+        .catch(() => {})
+    }
+    if (origin) {
+      mapCtrl
+        .addMarker({ position: { lat: origin.latitude, lng: origin.longitude }, title: origin.address, snippet: 'Pickup' })
+        .catch(() => {})
+    }
+  }, [mapCtrl, stops, origin])
+
   if (error) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#0a0a0a' }}>
@@ -270,6 +289,7 @@ function GoogleNavInner({ bookingId }: Props) {
       <NavigationView
         style={StyleSheet.absoluteFill}
         mapId={process.env.EXPO_PUBLIC_GOOGLE_MAPS_MAP_ID}
+        onMapViewControllerCreated={setMapCtrl}
         // Hide Google's built-in chrome but keep its guidance camera + route.
         headerEnabled={false}
         footerEnabled={false}
