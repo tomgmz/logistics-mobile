@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { ActivityIndicator, Text, View } from 'react-native'
+import * as Location from 'expo-location'
 import {
   NavigationProvider,
   NavigationView,
@@ -82,6 +83,14 @@ function GoogleNavInner({ bookingId }: Props) {
 
     ;(async () => {
       try {
+        // The Navigation SDK requires location permission to render/guide.
+        // On the Google path useGps isn't mounted, so request it here.
+        const { status } = await Location.requestForegroundPermissionsAsync()
+        if (status !== 'granted') {
+          if (!cancelled) setError('Location permission is required for navigation. Enable it in Settings, then reopen.')
+          return
+        }
+
         const { data } = await api.get(`/booking/${bookingId}`)
         const booking = data.data
 
