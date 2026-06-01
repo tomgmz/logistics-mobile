@@ -199,5 +199,10 @@ function GoogleNavInner({ bookingId }: Props) {
     )
   }
 
-  return <NavigationView style={{ flex: 1 }} />
+  return (
+    <NavigationView
+      style={{ flex: 1 }}
+      mapId={process.env.EXPO_PUBLIC_GOOGLE_MAPS_MAP_ID}
+    />
+  )
 }
