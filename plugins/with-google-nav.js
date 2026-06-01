@@ -20,13 +20,23 @@ const DESUGAR_DEP = "com.android.tools:desugar_jdk_libs_nio:2.0.4"
 function addDesugaring(contents) {
   let next = contents
 
+  // Enable desugaring. The Expo template has NO compileOptions block, so when
+  // it's absent we inject a fresh one right inside `android { ... }`.
   if (!next.includes('coreLibraryDesugaringEnabled')) {
-    next = next.replace(
-      /compileOptions\s*\{/,
-      'compileOptions {\n        coreLibraryDesugaringEnabled true',
-    )
+    if (/compileOptions\s*\{/.test(next)) {
+      next = next.replace(
+        /compileOptions\s*\{/,
+        'compileOptions {\n        coreLibraryDesugaringEnabled true',
+      )
+    } else {
+      next = next.replace(
+        /android\s*\{/,
+        'android {\n    compileOptions {\n        coreLibraryDesugaringEnabled true\n    }',
+      )
+    }
   }
 
+  // Add the desugaring dependency.
   if (!next.includes('desugar_jdk_libs')) {
     next = next.replace(
       /dependencies\s*\{/,
