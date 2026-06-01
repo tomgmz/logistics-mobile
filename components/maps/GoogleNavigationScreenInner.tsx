@@ -91,7 +91,9 @@ function GoogleNavInner({ bookingId }: Props) {
       if (cancelled || started || !navReady || waypointsRef.current.length === 0) return
       started = true
       try {
-        await navigationController.setDestinations(waypointsRef.current)
+        await navigationController.setDestinations(waypointsRef.current, {
+          displayOptions: { showDestinationMarkers: true },
+        })
         await navigationController.startGuidance()
       } catch (e: any) {
         if (!cancelled) setError(e?.message ?? 'Failed to start guidance.')
@@ -121,6 +123,16 @@ function GoogleNavInner({ bookingId }: Props) {
           waypoints.push({ title: s.address ?? 'Stop', position: { lat: s.latitude, lng: s.longitude } })
           legs.push({ type: 'dropoff', destinationId: s.destination_id })
         }
+        if (__DEV__) {
+          console.log('[gnav] booking status:', booking.status, 'pickedUp:', pickedUp)
+          console.log('[gnav] raw destinations:', JSON.stringify(
+            (booking.booking_destinations ?? []).map((d: any) => ({
+              seq: d.sequence_order, status: d.status, lat: d.latitude, lng: d.longitude,
+            })),
+          ))
+          console.log('[gnav] waypoints sent:', waypoints.length, JSON.stringify(waypoints.map((w) => w.title)))
+        }
+
         if (waypoints.length === 0) {
           bookingError = new Error('No stops with coordinates to navigate. Run route optimization first.')
           return
