@@ -41,6 +41,9 @@ export interface BookingRoute {
   polyline:        LatLng[]
   trafficSegments: TrafficSegment[]
   steps:           RouteStep[]
+  // Persisted in the offline cache so an offline restart mid-trip remembers
+  // that pickup already happened and doesn't re-fire the arrival.
+  arrivedPickup?:  boolean
 }
 
 export interface SpeedInterval {

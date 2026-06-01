@@ -62,11 +62,14 @@ export function buildTrafficSegments(
 ): TrafficSegment[] {
   if (!intervals?.length) return [{ coords: points, speed: 'fast' }]
 
+  const lastIdx = points.length - 1
   const segments: TrafficSegment[] = []
   for (const iv of intervals) {
-    const start  = iv.startPolylinePointIndex ?? 0
-    const end    = iv.endPolylinePointIndex   ?? points.length - 1
-    const coords = points.slice(start, end + 2)
+    const start = Math.max(0, Math.min(lastIdx, iv.startPolylinePointIndex ?? 0))
+    const end   = Math.max(start, Math.min(lastIdx, iv.endPolylinePointIndex ?? lastIdx))
+    // slice end is exclusive: end + 1 includes the segment's final point
+    // without overlapping into the next interval.
+    const coords = points.slice(start, end + 1)
     if (coords.length >= 2) {
       segments.push({ coords, speed: speedCategory(iv.speed) })
     }

@@ -55,6 +55,7 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
   const [sheetOpen,     setSheetOpen]     = useState(false)
   const [cameraBearing, setCameraBearing] = useState(0)
   const [tripComplete,  setTripComplete]  = useState(false)
+  const [gpsError,      setGpsError]      = useState<string | null>(null)
 
   const trackingModeRef = useRef(trackingMode)
   useEffect(() => { trackingModeRef.current = trackingMode }, [trackingMode])
@@ -88,7 +89,7 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
     cameraRef,
     trackingModeRef,
     onLocationUpdateRef,
-    onError: (msg) => { console.warn('[GPS]', msg) },
+    onError: (msg) => { console.warn('[GPS]', msg); setGpsError(msg) },
   })
 
 
@@ -116,6 +117,8 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
     distanceToTarget,
     markPickupArrived,
     markStopArrived,
+    deliveryError,
+    clearDeliveryError,
   } = useRoute({
     bookingId,
     userLocation,
@@ -147,6 +150,12 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
       )
     }
   }, [completedCount, routeData, bookingId])
+
+  useEffect(() => {
+    if (!deliveryError) return
+    const t = setTimeout(() => clearDeliveryError(), 4000)
+    return () => clearTimeout(t)
+  }, [deliveryError, clearDeliveryError])
 
   const handleMapReady = useCallback(() => setMapReady(true), [])
 
@@ -201,8 +210,11 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
   }, [nearbyTarget, nextStop, markPickupArrived, markStopArrived])
 
   const showOffline = isOffline
+  const screenError = error ?? gpsError
 
-  if (loading) {
+  // Don't hold the loading spinner while a GPS/route error is pending — show
+  // the actionable error screen instead of an indefinite "Loading route…".
+  if (loading && !screenError) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bg, gap: 12 }}>
         <ActivityIndicator size="large" color={C.cyan} />
@@ -211,7 +223,7 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
     )
   }
 
-  if (error) {
+  if (screenError && !routeData) {
     return (
       <View
         style={{
@@ -221,9 +233,9 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
         }}
       >
         <AlertCircle size={40} color={C.red} />
-        <Text style={{ color: C.red, fontSize: 14, textAlign: 'center', lineHeight: 22 }}>{error}</Text>
+        <Text style={{ color: C.red, fontSize: 14, textAlign: 'center', lineHeight: 22 }}>{screenError}</Text>
         <TouchableOpacity
-          onPress={() => fetchRoute(false, false)}
+          onPress={() => { setGpsError(null); fetchRoute(false, false) }}
           style={{
             marginTop: 12, paddingVertical: 10, paddingHorizontal: 28,
             borderRadius: 14, backgroundColor: C.surfaceHi,
@@ -315,6 +327,31 @@ export default function NavigationScreenMapInner({ bookingId }: NavigationScreen
             <WifiOff size={13} color={C.orange} />
             <Text style={{ fontSize: 12, fontWeight: '600', color: C.orange }}>
               {usingCache ? 'Offline — showing cached route' : 'No internet connection'}
+            </Text>
+          </MotiView>
+        )}
+      </AnimatePresence>
+
+      {/* ── Delivery / pickup sync error banner ── */}
+      <AnimatePresence>
+        {deliveryError && !tripComplete && (
+          <MotiView
+            from={{ opacity: 0, translateY: -30 }}
+            animate={{ opacity: 1, translateY: 0 }}
+            exit={{ opacity: 0, translateY: -30 }}
+            transition={{ type: 'spring', damping: 20, stiffness: 220 }}
+            style={{
+              position: 'absolute', top: insets.top + 56,
+              left: 12, right: 12, zIndex: 30,
+              flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+              gap: 6, paddingVertical: 9, paddingHorizontal: 12, borderRadius: 12,
+              backgroundColor: C.redDim,
+              borderWidth: 1, borderColor: C.red,
+            }}
+          >
+            <AlertCircle size={13} color={C.red} />
+            <Text style={{ fontSize: 12, fontWeight: '600', color: C.red, flexShrink: 1 }}>
+              {deliveryError}
             </Text>
           </MotiView>
         )}

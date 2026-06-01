@@ -34,6 +34,12 @@ export function useGPS({
   const smoothHeading   = useRef(0)
 
   const applyHeading = useCallback((raw: number) => {
+    // Devices report heading as -1 (and occasionally NaN) when stationary or
+    // when the value is unavailable. Ignore those so the map doesn't spin to a
+    // bogus bearing when the driver stops.
+    if (raw == null || isNaN(raw) || raw < 0) {
+      return smoothHeading.current
+    }
     const delta       = ((raw - smoothHeading.current + 540) % 360) - 180
     smoothHeading.current = (smoothHeading.current + delta * HEADING_SMOOTH + 360) % 360
     setHeading(smoothHeading.current)
