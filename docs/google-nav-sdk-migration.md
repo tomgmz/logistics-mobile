@@ -1,7 +1,15 @@
 # Google Navigation SDK — Migration Guide
 
-Status: **scaffolded, behind a feature flag, not yet active.**
-Default navigation remains the existing custom Mapbox + Google Routes stack.
+Status: **SDK installed + screen implemented, behind a feature flag. Pending a
+native dev build (and on-device verification).**
+Default navigation remains the existing custom Mapbox + Google Routes stack
+(flag defaults to `mapbox`).
+
+Installed: `@googlemaps/react-native-navigation-sdk@0.16.1`,
+`expo-build-properties`. Wired in `app.config.ts` (build properties + the custom
+`plugins/with-google-nav.js` desugaring plugin). Screen:
+`components/maps/GoogleNavigationScreenInner.tsx` (lazy-loaded by
+`GoogleNavigationScreen.tsx`). **Not yet built/run natively** — see §6/§10.
 
 This guide is the single source of truth for trialing the Google Navigation SDK
 for driver turn-by-turn navigation, and for rolling back cleanly if it doesn't
@@ -63,21 +71,23 @@ The Navigation SDK is **NOT** the same product as the Maps SDK
 
 ---
 
-## 3. Compatibility checklist (verify before installing)
+## 3. Compatibility — verified (wrapper v0.16.1)
 
-- [ ] `@googlemaps/react-native-navigation-sdk` supports **React Native 0.81**.
-- [ ] It supports the **New Architecture** (this app has
-      `newArchEnabled=true` in `android/gradle.properties`). If the wrapper does
-      not support New Arch, that is a blocker — do not disable New Arch app-wide
-      without checking the rest of the app (Reanimated 4, Mapbox, etc. depend on it).
-- [ ] It ships an **Expo config plugin** (or we write one) — this is a bare
-      native module; it cannot run in Expo Go and needs a prebuild/dev build.
-- [ ] **Three map libs coexisting** is acceptable for now: `@rnmapbox/maps`,
-      `react-native-maps`, and the Nav SDK. Watch app size + Android
-      `minSdk`/Play-services conflicts. Long term, consider dropping
-      `react-native-maps` if unused elsewhere.
-- [ ] **iOS builds require a Mac or EAS Build** — Windows cannot run
-      `expo run:ios`. Android can be built locally with `expo run:android`.
+- ✅ **React Native 0.81.5 is explicitly supported** (supported list:
+      0.83.1 / 0.82.1 / **0.81.5** / 0.80.3 / 0.79.6).
+- ✅ **New Architecture is *required*** (Fabric + TurboModules) — and this app
+      already has `newArchEnabled=true`. Do **not** disable New Arch.
+- ⚠️ **No Expo config plugin ships with it.** Handled here with
+      `expo-build-properties` (minSdk 24, iOS 16) + a custom
+      `plugins/with-google-nav.js` for the mandatory desugaring (§6).
+- ⚠️ **Native requirements:** Android `minSdkVersion 24`, **core-library
+      desugaring** (`com.android.tools:desugar_jdk_libs_nio:2.0.4`); iOS
+      **deployment target 16.0**; Google Play services on device.
+- ⚠️ **Three map libs coexist** (`@rnmapbox/maps`, `react-native-maps`, Nav
+      SDK). Watch app size / Play-services conflicts; consider dropping
+      `react-native-maps` later if unused.
+- ⚠️ **iOS builds need a Mac or EAS Build** — Windows can't run `expo run:ios`.
+      Android builds locally with `expo run:android`.
 
 ---
 
@@ -93,9 +103,11 @@ The scaffold is built so the **working nav never breaks** and rollback is a flag
   picks the screen from the flag. Custom stack is the default branch.
 - **Custom stack untouched**: `useRoute`, `useGps`, `geo`, `cache`,
   `NavigationScreenMapInner` are not modified by this migration.
-- **Placeholder**: [`GoogleNavigationScreen`](../components/maps/GoogleNavigationScreen.tsx)
-  renders guidance until the SDK + Inner screen are added, so the bundle keeps
-  building with the flag on but the SDK absent.
+- **Graceful load**: [`GoogleNavigationScreen`](../components/maps/GoogleNavigationScreen.tsx)
+  lazy-loads the real
+  [`GoogleNavigationScreenInner`](../components/maps/GoogleNavigationScreenInner.tsx);
+  if the native module isn't built yet, it shows setup guidance instead of
+  crashing — so the bundle builds even before a native dev build.
 
 **Git rollback (recommended baseline):**
 
@@ -108,171 +120,100 @@ git checkout develop                     # abandon = back to the proven stack
 
 ---
 
-## 5. Install
+## 5. Install — done
+
+Already installed on the `feat/google-nav-sdk` branch:
 
 ```sh
 # from logistics-mobile/
-npm install @googlemaps/react-native-navigation-sdk
-# verify the installed version's README for the exact API + native setup
+npm install @googlemaps/react-native-navigation-sdk   # v0.16.1
+npx expo install expo-build-properties                # native build config
 ```
+
+> These add to `package.json`/`package-lock.json` (left uncommitted alongside a
+> pre-existing `expo-updates` change). Commit them when you commit your own deps.
 
 ---
 
 ## 6. Native config
 
-### 6.1 API key (app.config.ts)
-
-You already inject `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` for the Maps SDK
-([app.config.ts](../app.config.ts)). The **same key must be authorized for the
-Navigation SDK** (or add a dedicated `EXPO_PUBLIC_GOOGLE_NAV_API_KEY`). Add the
-wrapper's config plugin to the `plugins` array, e.g.:
+Since the SDK ships **no Expo config plugin**, the native requirements are wired
+in [`app.config.ts`](../app.config.ts) as:
 
 ```ts
-plugins: [
-  // ...existing...
-  [
-    '@googlemaps/react-native-navigation-sdk',
-    {
-      androidApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
-      iosApiKey:     process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
-    },
-  ],
-],
+['expo-build-properties', { android: { minSdkVersion: 24 }, ios: { deploymentTarget: '16.0' } }],
+'./plugins/with-google-nav',   // adds Android core-library desugaring
 ```
 
-> Confirm the plugin name + option keys against the installed wrapper's README;
-> some versions require manual `AndroidManifest`/`Info.plist` edits instead of a
-> plugin. If no plugin is provided, a small custom Expo config plugin is needed.
+`plugins/with-google-nav.js` injects the mandatory desugaring into
+`android/app/build.gradle`:
+
+```groovy
+compileOptions { coreLibraryDesugaringEnabled true }
+dependencies   { coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs_nio:2.0.4' }
+```
+
+### 6.1 API keys
+
+- **Android:** already handled — your existing `android.config.googleMaps.apiKey`
+  injects `com.google.android.geo.API_KEY`, which the Nav SDK uses. Just ensure
+  that key has **Navigation SDK** enabled in the Cloud Console.
+- **iOS:** the Nav SDK needs `GMSServices.provideAPIKey(...)` in the AppDelegate.
+  Your `ios.config.googleMapsApiKey` + `react-native-maps` may already inject
+  this. **After prebuild, verify `GMSServices.provideAPIKey` exists exactly once
+  in `ios/.../AppDelegate`** — if missing, add it via a small `withAppDelegate`
+  mod in `plugins/with-google-nav.js` (guard against a double call).
 
 ### 6.2 Permissions
 
-The Nav SDK needs foreground (and for background guidance, background) location.
-You already request foreground location in [`useGps`](../hooks/useGps.ts) via
-`expo-location`. Ensure `Info.plist` has
-`NSLocationWhenInUseUsageDescription` (and `NSLocationAlwaysAndWhenInUseUsageDescription`
-if backgrounding) and Android has `ACCESS_FINE_LOCATION`.
+The Nav SDK needs foreground (and, for background guidance, background) location.
+You already request foreground location in [`useGps`](../hooks/useGps.ts). Ensure
+`Info.plist` has `NSLocationWhenInUseUsageDescription` (+
+`NSLocationAlwaysAndWhenInUseUsageDescription` if backgrounding) and Android has
+`ACCESS_FINE_LOCATION`.
 
-### 6.3 Prebuild
+### 6.3 Prebuild + build (⚠️ not yet run — do this on a build machine)
 
 ```sh
-npx expo prebuild --clean          # regenerate native projects with the plugin
+npx expo prebuild --clean          # regenerate native projects with the plugins
 npx expo run:android               # local Android dev build (Windows OK)
 # iOS: use a Mac (npx expo run:ios) or EAS Build (eas build -p ios)
 ```
 
+> The native config above has **not been build-verified** (no Android/iOS build
+> was run). Expect to iterate on `expo prebuild` errors — the desugaring plugin's
+> regex anchors assume the standard Expo-generated `app/build.gradle`.
+
 ---
 
-## 7. The Google nav screen
+## 7. The Google nav screen (implemented)
 
-> ⚠️ **API names below are representative.** The
-> `@googlemaps/react-native-navigation-sdk` API evolves between versions —
-> verify every component/hook/method name and event signature against the
-> README of the version you installed. The **shape** of the integration is what
-> matters here.
+The integration lives in two files (written + **tsc-verified** against the
+v0.16.1 type defs):
 
-Create `components/maps/GoogleNavigationScreenInner.tsx` with the real SDK, then
-update [`GoogleNavigationScreen`](../components/maps/GoogleNavigationScreen.tsx)
-to lazy-load it (mirroring the dynamic-import + native-link guard in
-[`NavigationScreen.tsx`](../components/maps/NavigationScreen.tsx)).
+- [`GoogleNavigationScreen`](../components/maps/GoogleNavigationScreen.tsx) —
+  lazy-loads the Inner; shows setup guidance if the native module is absent.
+- [`GoogleNavigationScreenInner`](../components/maps/GoogleNavigationScreenInner.tsx)
+  — the real SDK screen.
 
-```tsx
-// components/maps/GoogleNavigationScreenInner.tsx
-import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { View } from 'react-native'
-import {
-  NavigationView,
-  useNavigation,
-  type Waypoint,
-} from '@googlemaps/react-native-navigation-sdk'
+How it maps to the **verified** API:
 
-import api from '../../lib/api/auth.api'
+- Wrap in **`<NavigationProvider termsAndConditionsDialogOptions={{ title, companyName }}>`**;
+  call **`useNavigation()`** inside it for `navigationController` + listener setters.
+- Accept ToS (`areTermsAccepted()` → `showTermsAndConditionsDialog()`), then
+  **`init()`** → **`setDestinations(waypoints)`** → **`startGuidance()`**.
+- **`Waypoint`** is `{ position: { lat, lng }, title? }` — there is **no custom
+  metadata field**, so arrivals map to stops by **sequence index** (navigation is
+  strictly ordered via `continueToNextDestination()`).
+- Register **`setOnArrival(cb)`** (event carries `isFinalDestination`); on each
+  arrival, PATCH the matching leg (pickup → `in_transit`, dropoff → `delivered`),
+  then `continueToNextDestination()`.
+- Render **`<NavigationView style={{ flex: 1 }} />`**; on unmount call
+  `removeAllListeners()` + `stopGuidance()` + `cleanup()`.
 
-interface Props { bookingId: string }
-
-export default function GoogleNavigationScreenInner({ bookingId }: Props) {
-  const { navigationController, addListeners, removeListeners } = useNavigation()
-  const [ready, setReady] = useState(false)
-  const arrivedStops = useRef<Set<string>>(new Set())
-  const pickedUp = useRef(false)
-
-  // 1) Pull stop coordinates from YOUR backend (the SDK has no concept of bookings).
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      const { data } = await api.get(`/booking/${bookingId}`)
-      const booking = data.data
-
-      const pickedUpAlready = ['in_transit', 'completed'].includes(booking.status)
-      pickedUp.current = pickedUpAlready
-
-      const stops = (booking.booking_destinations ?? [])
-        .filter((d: any) => d.latitude != null && d.longitude != null && d.status === 'pending')
-        .sort((a: any, b: any) => a.sequence_order - b.sequence_order)
-
-      // Before pickup, route to origin first; after, straight to remaining stops.
-      const waypoints: Waypoint[] = [
-        ...(!pickedUpAlready
-          ? [{ title: 'Pickup', position: { lat: booking.origin_latitude, lng: booking.origin_longitude } }]
-          : []),
-        ...stops.map((s: any) => ({
-          title: s.address,
-          position: { lat: s.latitude, lng: s.longitude },
-          // carry your id so arrival events can be mapped back to the stop:
-          // some wrapper versions expose this via metadata/placeId — confirm.
-        })),
-      ]
-      if (cancelled || waypoints.length === 0) return
-
-      await navigationController.init()
-      await navigationController.setDestinations(waypoints)
-      await navigationController.startGuidance()
-      setReady(true)
-    })()
-    return () => { cancelled = true }
-  }, [bookingId, navigationController])
-
-  // 2) Map SDK arrival events back to YOUR backend status updates.
-  const onArrival = useCallback(async (event: any) => {
-    // Determine whether this arrival is the pickup or a dropoff (use the
-    // waypoint title/index/metadata you set above).
-    if (!pickedUp.current) {
-      pickedUp.current = true
-      await api.patch(`/booking/${bookingId}/status`, { status: 'in_transit' }).catch(() => {})
-      return
-    }
-    const stopId = event?.waypoint?.metadata?.destination_id // confirm shape
-    if (stopId && !arrivedStops.current.has(stopId)) {
-      arrivedStops.current.add(stopId)
-      await api
-        .patch(`/booking-destinations/${stopId}/status`, { status: 'delivered' })
-        .catch(() => { arrivedStops.current.delete(stopId) /* allow retry */ })
-    }
-    // Advance to the next waypoint if the wrapper doesn't auto-continue.
-    await navigationController.continueToNextDestination?.()
-  }, [bookingId, navigationController])
-
-  useEffect(() => {
-    const listeners = { onArrival }
-    addListeners(listeners)
-    return () => removeListeners(listeners)
-  }, [addListeners, removeListeners, onArrival])
-
-  return (
-    <View style={{ flex: 1 }}>
-      <NavigationView style={{ flex: 1 }} onMapReady={() => {}} />
-    </View>
-  )
-}
-```
-
-Then wire the lazy load in `GoogleNavigationScreen.tsx` (replace the placeholder
-body), following the `NavigationScreen.tsx` pattern:
-
-```tsx
-import('./GoogleNavigationScreenInner')
-  .then((m) => setInner(() => m.default))
-  .catch(() => setLoadErr('Could not load Google nav — is the SDK installed + prebuilt?'))
-```
+> On-device tuning to expect: duplicate arrival callbacks are guarded by a
+> processed-index set; failed PATCHes currently fire-and-forget — add
+> rollback/retry to match the custom stack if the field needs it.
 
 ---
 
@@ -333,12 +274,20 @@ The custom stack is never modified, so rollback always lands on a working app.
 
 ---
 
-## 12. Open items to confirm (don't skip)
+## 12. Open items
 
-1. **Navigation SDK access** approved for the Google project? (§2)
-2. Wrapper supports **RN 0.81 + New Architecture**? (§3)
-3. Exact wrapper **API names + config plugin** for the installed version. (§6–7)
-4. How the wrapper exposes **per-waypoint metadata** so arrivals map to your
-   `destination_id`. (§7)
-5. Does **web `/directions`** stay (other consumers)? (§8)
-6. **Pricing** confirmed for fleet size vs current per-request Routes+Mapbox cost.
+Resolved:
+- ✅ Navigation SDK **access enabled** on the Google project. (§2)
+- ✅ Wrapper supports **RN 0.81.5 + New Architecture** (required; already on). (§3)
+- ✅ **API verified** against v0.16.1 type defs; screen implemented. (§7)
+- ✅ Arrival→stop mapping resolved: **by sequence index** (no waypoint metadata). (§7)
+
+Still to confirm:
+1. **Run a native build** (`expo prebuild --clean` + `expo run:android`) — the
+   native config (desugaring plugin, iOS 16, API keys) is **not build-verified**. (§6)
+2. **iOS `GMSServices.provideAPIKey`** present exactly once after prebuild. (§6.1)
+3. Confirm the Android API key has **Navigation SDK** enabled (not just Maps). (§6.1)
+4. Does **web `/directions`** stay (other consumers)? (§8)
+5. **Pricing** confirmed for fleet size vs current per-request Routes+Mapbox cost.
+6. **On-device behavior:** offline gap handling, app size/cold-start, arrival
+   PATCH reliability. (§9–10)

@@ -67,7 +67,17 @@ export default {
           "RNMapboxMapsLibs":
             "com.mapbox.maps:android:11.18.2;com.mapbox.mapboxsdk:mapbox-sdk-turf:6.11.0;androidx.asynclayoutinflater:asynclayoutinflater:1.0.0",
         }
-      ]
+      ],
+      // Google Navigation SDK requirements (Android minSdk 24, iOS 16.0).
+      [
+        "expo-build-properties",
+        {
+          android: { minSdkVersion: 24 },
+          ios:     { deploymentTarget: "16.0" },
+        },
+      ],
+      // Mandatory Android core-library desugaring for the Navigation SDK.
+      "./plugins/with-google-nav",
     ],
     extra: {
       eas: {
