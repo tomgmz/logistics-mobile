@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { ActivityIndicator, Text, View } from 'react-native'
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native'
+import { useRouter } from 'expo-router'
 import * as Location from 'expo-location'
 import {
   NavigationProvider,
@@ -10,6 +11,7 @@ import {
 } from '@googlemaps/react-native-navigation-sdk'
 
 import api from '../../lib/api/auth.api'
+import GoogleNavOverlay from './GoogleNavOverlay'
 
 /**
  * Real Google Navigation SDK screen. Loaded lazily by GoogleNavigationScreen
@@ -46,9 +48,23 @@ export default function GoogleNavigationScreenInner({ bookingId }: Props) {
 }
 
 function GoogleNavInner({ bookingId }: Props) {
-  const { navigationController, setOnArrival, setOnNavigationReady, removeAllListeners } = useNavigation()
+  const router = useRouter()
+  const {
+    navigationController,
+    setOnArrival,
+    setOnNavigationReady,
+    setOnTurnByTurn,
+    setOnRouteChanged,
+    removeAllListeners,
+  } = useNavigation()
 
   const [error, setError] = useState<string | null>(null)
+  const [navInfo, setNavInfo] = useState<{
+    instruction: string; stepDistanceM: number; etaSeconds: number; destDistanceM: number
+  } | null>(null)
+  const [rerouting, setRerouting] = useState(false)
+  const [legIndex,  setLegIndex]  = useState(0)
+  const [totalLegs, setTotalLegs] = useState(0)
 
   const legsRef      = useRef<Leg[]>([])
   const legIndexRef  = useRef(0)
@@ -75,6 +91,7 @@ function GoogleNavInner({ bookingId }: Props) {
     }
 
     legIndexRef.current = idx + 1
+    setLegIndex(idx + 1)
     // Continue to the next waypoint (returns a null waypoint if this was last).
     try { await navigationController.continueToNextDestination() } catch {}
   }, [bookingId, navigationController])
@@ -142,6 +159,8 @@ function GoogleNavInner({ bookingId }: Props) {
         legsRef.current      = legs
         legIndexRef.current  = 0
         processedRef.current = new Set()
+        setTotalLegs(waypoints.length)
+        setLegIndex(0)
       } catch (e: any) {
         bookingError = e
       }
@@ -159,6 +178,21 @@ function GoogleNavInner({ bookingId }: Props) {
         // Register listeners BEFORE init so onNavigationReady isn't missed.
         setOnArrival(handleArrival)
         setOnNavigationReady(() => { navReady = true; maybeBegin() })
+        setOnTurnByTurn((events: any[]) => {
+          const e = events?.[0]
+          if (!e || cancelled) return
+          setNavInfo({
+            instruction:   e.currentStep?.instruction ?? '',
+            stepDistanceM: e.distanceToCurrentStepMeters ?? 0,
+            etaSeconds:    e.timeToFinalDestinationSeconds ?? 0,
+            destDistanceM: e.distanceToFinalDestinationMeters ?? 0,
+          })
+        })
+        setOnRouteChanged(() => {
+          if (cancelled) return
+          setRerouting(true)
+          setTimeout(() => { if (!cancelled) setRerouting(false) }, 2500)
+        })
 
         // Show Terms immediately — independent of the booking fetch.
         const accepted = await navigationController.areTermsAccepted()
@@ -200,9 +234,31 @@ function GoogleNavInner({ bookingId }: Props) {
   }
 
   return (
-    <NavigationView
-      style={{ flex: 1 }}
-      mapId={process.env.EXPO_PUBLIC_GOOGLE_MAPS_MAP_ID}
-    />
+    <View style={{ flex: 1, backgroundColor: '#0a0a0a' }}>
+      <NavigationView
+        style={StyleSheet.absoluteFill}
+        mapId={process.env.EXPO_PUBLIC_GOOGLE_MAPS_MAP_ID}
+        // Hide Google's built-in chrome but keep its guidance camera + route.
+        headerEnabled={false}
+        footerEnabled={false}
+        speedometerEnabled={false}
+        speedLimitIconEnabled={false}
+        recenterButtonEnabled={false}
+        reportIncidentButtonEnabled={false}
+        tripProgressBarEnabled={false}
+        trafficPromptsEnabled={false}
+        trafficIncidentCardsEnabled={false}
+      />
+      <GoogleNavOverlay
+        instruction={navInfo?.instruction}
+        stepDistanceM={navInfo?.stepDistanceM}
+        etaSeconds={navInfo?.etaSeconds}
+        destDistanceM={navInfo?.destDistanceM}
+        rerouting={rerouting}
+        current={legIndex + 1}
+        total={totalLegs}
+        onBack={() => router.back()}
+      />
+    </View>
   )
 }
