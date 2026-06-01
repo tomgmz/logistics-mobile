@@ -12,6 +12,7 @@ import {
 
 import api from '../../lib/api/auth.api'
 import GoogleNavOverlay from './GoogleNavOverlay'
+import type { Stop } from '../../types/navigation.types'
 
 /**
  * Real Google Navigation SDK screen. Loaded lazily by GoogleNavigationScreen
@@ -63,8 +64,9 @@ function GoogleNavInner({ bookingId }: Props) {
     instruction: string; stepDistanceM: number; etaSeconds: number; destDistanceM: number
   } | null>(null)
   const [rerouting, setRerouting] = useState(false)
-  const [legIndex,  setLegIndex]  = useState(0)
-  const [totalLegs, setTotalLegs] = useState(0)
+  const [stops,        setStops]        = useState<Stop[]>([])
+  const [origin,       setOrigin]       = useState<{ latitude: number; longitude: number; address: string } | null>(null)
+  const [tripComplete, setTripComplete] = useState(false)
 
   const legsRef      = useRef<Leg[]>([])
   const legIndexRef  = useRef(0)
@@ -85,13 +87,14 @@ function GoogleNavInner({ bookingId }: Props) {
     if (leg.type === 'pickup') {
       api.patch(`/booking/${bookingId}/status`, { status: 'in_transit' }).catch(() => {})
     } else {
+      const stopId = leg.destinationId
+      setStops((prev) => prev.map((s) => (s.destination_id === stopId ? { ...s, status: 'delivered' } : s)))
       api
-        .patch(`/booking-destinations/${leg.destinationId}/status`, { status: 'delivered' })
+        .patch(`/booking-destinations/${stopId}/status`, { status: 'delivered' })
         .catch(() => {})
     }
 
     legIndexRef.current = idx + 1
-    setLegIndex(idx + 1)
     // Continue to the next waypoint (returns a null waypoint if this was last).
     try { await navigationController.continueToNextDestination() } catch {}
   }, [bookingId, navigationController])
@@ -126,9 +129,34 @@ function GoogleNavInner({ bookingId }: Props) {
         const booking = data.data
 
         const pickedUp = ['in_transit', 'completed'].includes(booking.status)
-        const stops = (booking.booking_destinations ?? [])
-          .filter((d: any) => d.latitude != null && d.longitude != null && d.status === 'pending')
+
+        // Full list for the bottom-sheet UI (all statuses, optimized order).
+        const allStops: Stop[] = (booking.booking_destinations ?? [])
+          .filter((d: any) => d.latitude != null && d.longitude != null)
           .sort((a: any, b: any) => a.sequence_order - b.sequence_order)
+          .map((d: any): Stop => ({
+            destination_id:           d.destination_id,
+            address:                  d.address,
+            latitude:                 d.latitude,
+            longitude:                d.longitude,
+            optimized_sequence_order: d.sequence_order,
+            status:                   d.status,
+            notes:                    d.notes ?? null,
+          }))
+
+        if (!cancelled) {
+          setStops(allStops)
+          if (booking.origin_latitude != null && booking.origin_longitude != null) {
+            setOrigin({
+              latitude:  booking.origin_latitude,
+              longitude: booking.origin_longitude,
+              address:   booking.origin ?? 'Pickup',
+            })
+          }
+        }
+
+        // Pending stops drive the navigation waypoints.
+        const pendingStops = allStops.filter((s) => s.status === 'pending')
 
         const waypoints: Waypoint[] = []
         const legs:      Leg[]      = []
@@ -136,7 +164,7 @@ function GoogleNavInner({ bookingId }: Props) {
           waypoints.push({ title: 'Pickup', position: { lat: booking.origin_latitude, lng: booking.origin_longitude } })
           legs.push({ type: 'pickup' })
         }
-        for (const s of stops) {
+        for (const s of pendingStops) {
           waypoints.push({ title: s.address ?? 'Stop', position: { lat: s.latitude, lng: s.longitude } })
           legs.push({ type: 'dropoff', destinationId: s.destination_id })
         }
@@ -159,8 +187,6 @@ function GoogleNavInner({ bookingId }: Props) {
         legsRef.current      = legs
         legIndexRef.current  = 0
         processedRef.current = new Set()
-        setTotalLegs(waypoints.length)
-        setLegIndex(0)
       } catch (e: any) {
         bookingError = e
       }
@@ -225,6 +251,12 @@ function GoogleNavInner({ bookingId }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookingId])
 
+  useEffect(() => {
+    if (stops.length > 0 && stops.every((s) => s.status === 'delivered')) {
+      setTripComplete(true)
+    }
+  }, [stops])
+
   if (error) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#0a0a0a' }}>
@@ -255,8 +287,9 @@ function GoogleNavInner({ bookingId }: Props) {
         etaSeconds={navInfo?.etaSeconds}
         destDistanceM={navInfo?.destDistanceM}
         rerouting={rerouting}
-        current={legIndex + 1}
-        total={totalLegs}
+        origin={origin}
+        stops={stops}
+        tripComplete={tripComplete}
         onBack={() => router.back()}
       />
     </View>
