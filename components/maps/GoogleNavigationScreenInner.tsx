@@ -46,13 +46,14 @@ export default function GoogleNavigationScreenInner({ bookingId }: Props) {
 }
 
 function GoogleNavInner({ bookingId }: Props) {
-  const { navigationController, setOnArrival, removeAllListeners } = useNavigation()
+  const { navigationController, setOnArrival, setOnNavigationReady, removeAllListeners } = useNavigation()
 
   const [error, setError] = useState<string | null>(null)
 
   const legsRef      = useRef<Leg[]>([])
   const legIndexRef  = useRef(0)
   const processedRef = useRef<Set<number>>(new Set())
+  const waypointsRef = useRef<Waypoint[]>([])
 
   const handleArrival = useCallback(async (_event: ArrivalEvent) => {
     const idx = legIndexRef.current
@@ -80,6 +81,19 @@ function GoogleNavInner({ bookingId }: Props) {
 
   useEffect(() => {
     let cancelled = false
+
+    // setDestinations/startGuidance must run only AFTER the navigator reports
+    // ready — calling them right after init() throws "initialize the navigator
+    // before executing".
+    const beginGuidance = async () => {
+      if (cancelled || waypointsRef.current.length === 0) return
+      try {
+        await navigationController.setDestinations(waypointsRef.current)
+        await navigationController.startGuidance()
+      } catch (e: any) {
+        if (!cancelled) setError(e?.message ?? 'Failed to start guidance.')
+      }
+    }
 
     ;(async () => {
       try {
@@ -117,22 +131,22 @@ function GoogleNavInner({ bookingId }: Props) {
           return
         }
 
+        waypointsRef.current = waypoints
         legsRef.current      = legs
         legIndexRef.current  = 0
         processedRef.current = new Set()
+
+        // Register listeners BEFORE init so onNavigationReady isn't missed.
+        setOnArrival(handleArrival)
+        setOnNavigationReady(() => { beginGuidance() })
 
         // Terms of Service must be accepted before init().
         const accepted = await navigationController.areTermsAccepted()
         if (!accepted) await navigationController.showTermsAndConditionsDialog()
         if (cancelled) return
 
+        // Kicks off initialization; guidance starts in onNavigationReady.
         await navigationController.init()
-        if (cancelled) return
-
-        setOnArrival(handleArrival)
-
-        await navigationController.setDestinations(waypoints)
-        await navigationController.startGuidance()
       } catch (e: any) {
         if (!cancelled) {
           setError(e?.response?.data?.message ?? e?.message ?? 'Failed to start navigation.')
