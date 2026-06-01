@@ -83,9 +83,10 @@ The Navigation SDK is **NOT** the same product as the Maps SDK
 - ⚠️ **Native requirements:** Android `minSdkVersion 24`, **core-library
       desugaring** (`com.android.tools:desugar_jdk_libs_nio:2.0.4`); iOS
       **deployment target 16.0**; Google Play services on device.
-- ⚠️ **Three map libs coexist** (`@rnmapbox/maps`, `react-native-maps`, Nav
-      SDK). Watch app size / Play-services conflicts; consider dropping
-      `react-native-maps` later if unused.
+- ✅ **`react-native-maps` removed.** It was unused (you use `@rnmapbox/maps`)
+      and its `play-services-maps` clashed with the Maps classes the Nav SDK
+      bundles → duplicate-class build failure. Removed; now `@rnmapbox/maps` +
+      Nav SDK only. (See §6.4.)
 - ⚠️ **iOS builds need a Mac or EAS Build** — Windows can't run `expo run:ios`.
       Android builds locally with `expo run:android`.
 
@@ -180,9 +181,23 @@ npx expo run:android               # local Android dev build (Windows OK)
 # iOS: use a Mac (npx expo run:ios) or EAS Build (eas build -p ios)
 ```
 
-> The native config above has **not been build-verified** (no Android/iOS build
-> was run). Expect to iterate on `expo prebuild` errors — the desugaring plugin's
-> regex anchors assume the standard Expo-generated `app/build.gradle`.
+### 6.4 Build issues hit + fixes (Android, resolved)
+
+First Android dev build surfaced two issues, both now fixed:
+
+1. **`core library desugaring ... requires ... to be enabled`** — the RN 0.81
+   Expo template ships **no `compileOptions` block**, so the desugaring *flag*
+   had nothing to anchor to (only the dependency was added). Fix:
+   `plugins/with-google-nav.js` now injects a fresh `compileOptions { ... }`
+   inside `android {}` when none exists.
+2. **`Duplicate class com.google.android.gms.maps.*`** between
+   `navigation-7.6.1` and `play-services-maps-18.2.0` — the Nav SDK bundles the
+   Maps classes, and the unused `react-native-maps` pulled in `play-services-maps`.
+   Fix: `npm uninstall react-native-maps` (it had **zero source imports**), then
+   regenerate native: **`npx expo prebuild --clean`** (required after removing a
+   native module) → `npx expo run:android`.
+
+> Other native bits (iOS `GMSServices` key, on-device run) are still unverified.
 
 ---
 
