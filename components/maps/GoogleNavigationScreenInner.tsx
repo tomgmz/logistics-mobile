@@ -81,12 +81,15 @@ function GoogleNavInner({ bookingId }: Props) {
 
   useEffect(() => {
     let cancelled = false
+    let navReady  = false
+    let started   = false
 
-    // setDestinations/startGuidance must run only AFTER the navigator reports
-    // ready — calling them right after init() throws "initialize the navigator
-    // before executing".
-    const beginGuidance = async () => {
-      if (cancelled || waypointsRef.current.length === 0) return
+    // Start guidance only once BOTH the navigator is ready and the booking's
+    // waypoints have loaded. Calling setDestinations before the navigator is
+    // ready throws "initialize the navigator before executing".
+    const maybeBegin = async () => {
+      if (cancelled || started || !navReady || waypointsRef.current.length === 0) return
+      started = true
       try {
         await navigationController.setDestinations(waypointsRef.current)
         await navigationController.startGuidance()
@@ -95,28 +98,21 @@ function GoogleNavInner({ bookingId }: Props) {
       }
     }
 
-    ;(async () => {
+    // Load the booking in PARALLEL so the Terms dialog isn't gated behind this
+    // network round-trip. Never rejects — errors are captured for the main flow.
+    let bookingError: any = null
+    const loadBooking = (async () => {
       try {
-        // The Navigation SDK requires location permission to render/guide.
-        // On the Google path useGps isn't mounted, so request it here.
-        const { status } = await Location.requestForegroundPermissionsAsync()
-        if (status !== 'granted') {
-          if (!cancelled) setError('Location permission is required for navigation. Enable it in Settings, then reopen.')
-          return
-        }
-
         const { data } = await api.get(`/booking/${bookingId}`)
         const booking = data.data
 
         const pickedUp = ['in_transit', 'completed'].includes(booking.status)
-
         const stops = (booking.booking_destinations ?? [])
           .filter((d: any) => d.latitude != null && d.longitude != null && d.status === 'pending')
           .sort((a: any, b: any) => a.sequence_order - b.sequence_order)
 
         const waypoints: Waypoint[] = []
         const legs:      Leg[]      = []
-
         if (!pickedUp && booking.origin_latitude != null && booking.origin_longitude != null) {
           waypoints.push({ title: 'Pickup', position: { lat: booking.origin_latitude, lng: booking.origin_longitude } })
           legs.push({ type: 'pickup' })
@@ -125,9 +121,8 @@ function GoogleNavInner({ bookingId }: Props) {
           waypoints.push({ title: s.address ?? 'Stop', position: { lat: s.latitude, lng: s.longitude } })
           legs.push({ type: 'dropoff', destinationId: s.destination_id })
         }
-
         if (waypoints.length === 0) {
-          if (!cancelled) setError('No stops with coordinates to navigate. Run route optimization first.')
+          bookingError = new Error('No stops with coordinates to navigate. Run route optimization first.')
           return
         }
 
@@ -135,18 +130,39 @@ function GoogleNavInner({ bookingId }: Props) {
         legsRef.current      = legs
         legIndexRef.current  = 0
         processedRef.current = new Set()
+      } catch (e: any) {
+        bookingError = e
+      }
+    })()
+
+    ;(async () => {
+      try {
+        // The Navigation SDK requires location permission to render/guide.
+        const { status } = await Location.requestForegroundPermissionsAsync()
+        if (status !== 'granted') {
+          if (!cancelled) setError('Location permission is required for navigation. Enable it in Settings, then reopen.')
+          return
+        }
 
         // Register listeners BEFORE init so onNavigationReady isn't missed.
         setOnArrival(handleArrival)
-        setOnNavigationReady(() => { beginGuidance() })
+        setOnNavigationReady(() => { navReady = true; maybeBegin() })
 
-        // Terms of Service must be accepted before init().
+        // Show Terms immediately — independent of the booking fetch.
         const accepted = await navigationController.areTermsAccepted()
         if (!accepted) await navigationController.showTermsAndConditionsDialog()
         if (cancelled) return
 
-        // Kicks off initialization; guidance starts in onNavigationReady.
         await navigationController.init()
+
+        // Now wait for the (parallel) booking load, then start guidance.
+        await loadBooking
+        if (cancelled) return
+        if (bookingError) {
+          setError(bookingError?.response?.data?.message ?? bookingError?.message ?? 'Failed to load booking.')
+          return
+        }
+        await maybeBegin()
       } catch (e: any) {
         if (!cancelled) {
           setError(e?.response?.data?.message ?? e?.message ?? 'Failed to start navigation.')
