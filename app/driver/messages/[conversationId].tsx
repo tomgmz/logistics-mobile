@@ -4,7 +4,7 @@ import {
   StyleSheet, ActivityIndicator,
   Animated, Modal, Keyboard,
 } from 'react-native'
-import { useLocalSearchParams, useRouter } from 'expo-router'
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ArrowLeft, Send, CornerUpLeft, X, Smile, Trash2 } from 'lucide-react-native'
 import Reanimated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated'
@@ -14,6 +14,7 @@ import { useAuthStore } from '../../../lib/store/auth.store'
 import { useMessagingStore } from '../../../lib/store/messaging.store'
 import { messagingApi } from '../../../lib/api/messaging.api'
 import { useMessagingRealtime } from '../../../hooks/useMessagingRealtime'
+import { setActiveChat } from '../../../lib/push'
 import EmojiSheet from '../../../components/messaging/EmojiSheet'
 import type { MessageRow, ReactionTogglePayload } from '../../../types/messaging.types'
 
@@ -349,6 +350,14 @@ export default function DmChatScreen() {
 
   const [activeConvId, setActiveConvId] = useState(conversationId)
   const isDraft = !activeConvId || activeConvId === 'new'
+
+  // Suppress push notifications for this conversation while it is on screen.
+  useFocusEffect(
+    useCallback(() => {
+      setActiveChat(activeConvId ?? null)
+      return () => setActiveChat(null)
+    }, [activeConvId])
+  )
 
   const [messages,        setMessages]        = useState<MsgItem[]>([])
   const [loading,         setLoading]         = useState(true)

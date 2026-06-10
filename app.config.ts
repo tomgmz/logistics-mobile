@@ -1,9 +1,15 @@
 import path from 'node:path'
+import { existsSync } from 'node:fs'
 import { config as loadEnv } from 'dotenv'
 
 loadEnv({ path: path.resolve(__dirname, '.env.local') })
 loadEnv({ path: path.resolve(__dirname, '..', '.env') })
 loadEnv({ path: path.resolve(__dirname, '.env') })
+
+// FCM config for Android push. Only referenced once the file is present, so
+// builds keep working until you add it (Firebase Console → google-services.json).
+const googleServicesFile = process.env.GOOGLE_SERVICES_JSON ?? path.resolve(__dirname, 'google-services.json')
+const androidGoogleServices = existsSync(googleServicesFile) ? { googleServicesFile } : {}
 
 export default {
   expo: {
@@ -34,6 +40,7 @@ export default {
     }
     },
     android: {
+      ...androidGoogleServices,
       package: 'ph.logistics8338.mobile',
       versionCode: 1,
       targetSdkVersion: 34,
@@ -91,6 +98,14 @@ export default {
       ],
       // Mandatory Android core-library desugaring for the Navigation SDK.
       "./plugins/with-google-nav",
+      // Push notifications for messages.
+      [
+        "expo-notifications",
+        {
+          icon: "./assets/mobile-icon.png",
+          color: "#00BCD4",
+        },
+      ],
     ],
     extra: {
       eas: {

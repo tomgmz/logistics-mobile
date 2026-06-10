@@ -4,7 +4,7 @@ import {
   StyleSheet, ActivityIndicator,
   Animated, Modal, Keyboard,
 } from 'react-native'
-import { useLocalSearchParams, useRouter } from 'expo-router'
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ArrowLeft, Send, CornerUpLeft, X, Users, Check, X as XIcon, Smile } from 'lucide-react-native'
 import Reanimated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated'
@@ -13,6 +13,7 @@ import { GestureDetector, Gesture } from 'react-native-gesture-handler'
 import { useAuthStore } from '../../../../lib/store/auth.store'
 import { messagingApi } from '../../../../lib/api/messaging.api'
 import { useMessagingRealtime } from '../../../../hooks/useMessagingRealtime'
+import { setActiveChat } from '../../../../lib/push'
 import EmojiSheet from '../../../../components/messaging/EmojiSheet'
 import type { GroupMessageRaw, ReactionTogglePayload, GroupReadReceiptPayload } from '../../../../types/messaging.types'
 
@@ -368,6 +369,14 @@ export default function GroupChatScreen() {
   const { groupId, groupName, myStatus: initialStatus } = useLocalSearchParams<{
     groupId: string; groupName: string; myStatus: string
   }>()
+
+  // Suppress push notifications for this group while it is on screen.
+  useFocusEffect(
+    useCallback(() => {
+      setActiveChat(groupId ?? null)
+      return () => setActiveChat(null)
+    }, [groupId])
+  )
 
   const [messages,    setMessages]    = useState<GMsg[]>([])
   const [loading,     setLoading]     = useState(true)

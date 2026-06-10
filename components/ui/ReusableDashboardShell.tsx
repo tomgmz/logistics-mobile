@@ -8,6 +8,7 @@ import ReusableHeader from './ReusableHeader'
 import ReusableSidebar, { NavItem } from './ReusableSideBar'
 import { useAuthStore } from '../../lib/store/auth.store'
 import { logout } from '../../lib/api/auth.api'
+import { unregisterPushNotifications } from '../../lib/push'
 
 const ICON_COLOR = 'rgba(255,255,255,0.40)'
 const ICON_SIZE  = 17
@@ -35,6 +36,7 @@ export default function ReusableDashboardShell({
 
   const handleLogout = async () => {
     try {
+      await unregisterPushNotifications()
       await logout()
     } catch {
     } finally {

@@ -9,6 +9,7 @@ import '../global.css'
 import { useAuthStore, useAuthHydrated } from '../lib/store/auth.store'
 import { getMe, setSessionExpiredHandler, TokenStore } from '../lib/api/auth.api'
 import { APP_FONTS } from '../lib/config/fonts'
+import { registerForPushNotifications, initPushResponders } from '../lib/push'
 
 SplashScreen.preventAutoHideAsync()
 
@@ -51,6 +52,17 @@ export default function RootLayout() {
     if (pathname === '/change-password') return
     router.replace('/change-password')
   }, [isReady, pathname, user])
+
+  // Register for push notifications once signed in; wire tap handling once.
+  useEffect(() => {
+    if (!authReady || !user) return
+    registerForPushNotifications()
+  }, [authReady, user?.user_id])
+
+  useEffect(() => {
+    const cleanup = initPushResponders()
+    return cleanup
+  }, [])
 
   useEffect(() => {
     if (!isReady) return

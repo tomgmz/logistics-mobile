@@ -43,3 +43,7 @@ yarn-error.*
 # build logs
 build-android.log
 *.log
+
+# Push notification secrets (do NOT commit)
+google-services.json
+*firebase-adminsdk*.json
