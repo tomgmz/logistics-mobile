@@ -21,11 +21,11 @@ import {
   AlertCircle, CheckCircle2, Navigation2, WifiOff, PackageCheck,
 } from 'lucide-react-native'
 
-import { useGPS }   from '../../hooks/useGps'
-import { useRoute } from '../../hooks/useRoute'
+import { useGPS }   from './useGps'
+import { useRoute } from './useRoute'
 
 import { TurnCard }    from './TurnCard'
-import { BottomSheet } from './BottomSheet'
+import { BottomSheet } from '../shared/BottomSheet'
 import {
   TrafficLayer,
   OriginMarker,
@@ -33,11 +33,11 @@ import {
   DriverMarker,
 } from './MapLayer'
 
-import { C, MAPBOX_STYLE } from '../../theme/navigation.theme'
-import { toCoord }          from '../../utils/geo'
-import type { Stop }        from '../../types/navigation.types'
+import { C, MAPBOX_STYLE } from '../../../theme/navigation.theme'
+import { toCoord }          from '../../../utils/geo'
+import type { Stop }        from '../../../types/navigation.types'
 
-import { cleanupTripPacks } from '../../utils/cache'
+import { cleanupTripPacks } from './cache'
 
 MapboxGL.setAccessToken(process.env.EXPO_PUBLIC_MAPBOX_TOKEN ?? '')
 

@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import * as Location from 'expo-location'
 import MapboxGL      from '@rnmapbox/maps'
 
-import type { LatLng } from '../types/navigation.types'
-import { toCoord }     from '../utils/geo'
+import type { LatLng } from '../../../types/navigation.types'
+import { toCoord }     from '../../../utils/geo'
 
 const HEADING_SMOOTH = 0.3
 

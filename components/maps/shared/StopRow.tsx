@@ -1,8 +1,8 @@
 import React from 'react'
 import { Text, View } from 'react-native'
 import { CheckCircle2, AlertCircle, Navigation2 } from 'lucide-react-native'
-import { C } from '../../theme/navigation.theme'
-import type { Stop } from '../../types/navigation.types'
+import { C } from '../../../theme/navigation.theme'
+import type { Stop } from '../../../types/navigation.types'
 
 interface StopRowProps {
   stop:      Stop

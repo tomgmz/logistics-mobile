@@ -6,9 +6,9 @@ import {
 } from 'lucide-react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
-import { ManeuverIcon } from './ManueverIcon'
-import { C } from '../../theme/navigation.theme'
-import type { RouteStep } from '../../types/navigation.types'
+import { ManeuverIcon } from '../shared/ManueverIcon'
+import { C } from '../../../theme/navigation.theme'
+import type { RouteStep } from '../../../types/navigation.types'
 
 interface TurnCardProps {
   instruction:    RouteStep

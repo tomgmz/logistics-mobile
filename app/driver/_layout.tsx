@@ -2,9 +2,11 @@ import ReusableDashboardShell from '../../components/ui/ReusableDashboardShell'
 import { Slot } from 'expo-router'
 import { Toolbox, ClipboardList } from 'lucide-react-native'
 import { usePathname } from 'expo-router'
+import { useEffect } from 'react'
 import { useAuthStore } from '../../lib/store/auth.store'
 import { useMessagingBadgeSync } from '../../hooks/useMessagingBadgeSync'
 import { useGlobalPresence } from '../../hooks/useGlobalPresence'
+import { startAutoFlush, flushOnAppForeground } from '../../lib/offlineQueue'
 
 const DRIVER_NAV = [
   {
@@ -26,6 +28,14 @@ export default function DriverLayout() {
   useMessagingBadgeSync(currentUserId)
 
   useGlobalPresence(currentUserId)
+
+  // Drain any queued offline status updates (arrivals confirmed in a dead zone)
+  // on reconnect and on app foreground, even after the nav screen has unmounted.
+  useEffect(() => {
+    const stopNet = startAutoFlush()
+    const stopApp = flushOnAppForeground()
+    return () => { stopNet(); stopApp() }
+  }, [])
 
   const hideShell =
     pathname.startsWith('/driver/maps') ||

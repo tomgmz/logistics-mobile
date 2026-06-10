@@ -3,9 +3,9 @@ import { Text, View } from 'react-native'
 import MapboxGL       from '@rnmapbox/maps'
 import { Navigation2, Truck } from 'lucide-react-native'
 
-import { C }                          from '../../theme/navigation.theme'
-import { toCoord, toTrafficFeatures } from '../../utils/geo'
-import type { BookingRoute, LatLng, Stop, TrafficSegment } from '../../types/navigation.types'
+import { C }                          from '../../../theme/navigation.theme'
+import { toCoord, toTrafficFeatures } from '../../../utils/geo'
+import type { BookingRoute, LatLng, Stop, TrafficSegment } from '../../../types/navigation.types'
 
 interface TrafficLayerProps {
   segments: TrafficSegment[]

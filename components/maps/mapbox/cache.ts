@@ -1,8 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import MapboxGL      from '@rnmapbox/maps'
 
-import type { BookingRoute, LatLng } from '../types/navigation.types'
-import { MAPBOX_STYLE }              from '../theme/navigation.theme'
+import type { BookingRoute, LatLng } from '../../../types/navigation.types'
+import { MAPBOX_STYLE }              from '../../../theme/navigation.theme'
 
 const STOP_RADIUS_DEG = 0.045
 

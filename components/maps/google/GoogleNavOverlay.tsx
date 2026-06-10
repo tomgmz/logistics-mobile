@@ -4,11 +4,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { AnimatePresence, MotiView } from 'moti'
 import { ArrowLeft, PackageCheck, RotateCw } from 'lucide-react-native'
 
-import { ManeuverIcon } from './ManueverIcon'
-import { BottomSheet } from './BottomSheet'
-import { C } from '../../theme/navigation.theme'
-import { fmtDistance, fmtDuration } from '../../utils/geo'
-import type { BookingRoute, Stop } from '../../types/navigation.types'
+import { ManeuverIcon } from '../shared/ManueverIcon'
+import { BottomSheet } from '../shared/BottomSheet'
+import { C } from '../../../theme/navigation.theme'
+import { fmtDistance, fmtDuration } from '../../../utils/geo'
+import type { BookingRoute, Stop } from '../../../types/navigation.types'
 
 /**
  * Full custom navigation overlay for the Google path — mirrors the Mapbox UI

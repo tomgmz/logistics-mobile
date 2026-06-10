@@ -92,23 +92,29 @@ The Navigation SDK is **NOT** the same product as the Maps SDK
 
 ---
 
-## 4. Reversibility model (already in place)
+## 4. Reversibility model (in place)
 
-The scaffold is built so the **working nav never breaks** and rollback is a flag:
+The two providers are fully isolated and rollback is a flag:
 
+- **Folder layout**: nav code is split into `components/maps/google/`,
+  `components/maps/mapbox/` (incl. the Mapbox-only `useRoute`, `useGps`,
+  `cache`), and `components/maps/shared/` (`BookingDetailsScreen`,
+  `ManueverIcon`, `BottomSheet`, `StopRow`). Provider-agnostic `theme/`,
+  `types/`, `utils/geo`, and `lib/` stay at the top level.
 - **Feature flag**: [`lib/config/featureFlags.ts`](../lib/config/featureFlags.ts)
-  reads `EXPO_PUBLIC_NAV_PROVIDER`. Default (`mapbox`) renders the existing
-  [`NavigationScreen`](../components/maps/NavigationScreen.tsx). Only
-  `EXPO_PUBLIC_NAV_PROVIDER=google` renders the Google path.
+  reads `EXPO_PUBLIC_NAV_PROVIDER`. **Default `google`** renders the Google
+  path; `EXPO_PUBLIC_NAV_PROVIDER=mapbox` renders the existing
+  [`NavigationScreen`](../components/maps/mapbox/NavigationScreen.tsx). Both
+  SDKs are linked into the one native build, so this is a runtime switch
+  (change the var + reload JS; no native rebuild required).
 - **Route switch**: [`app/driver/maps/[bookingId]/index.tsx`](../app/driver/maps/%5BbookingId%5D/index.tsx)
-  picks the screen from the flag. Custom stack is the default branch.
-- **Custom stack untouched**: `useRoute`, `useGps`, `geo`, `cache`,
-  `NavigationScreenMapInner` are not modified by this migration.
-- **Graceful load**: [`GoogleNavigationScreen`](../components/maps/GoogleNavigationScreen.tsx)
-  lazy-loads the real
-  [`GoogleNavigationScreenInner`](../components/maps/GoogleNavigationScreenInner.tsx);
-  if the native module isn't built yet, it shows setup guidance instead of
-  crashing — so the bundle builds even before a native dev build.
+  picks the screen from `getNavProvider()`.
+- **Custom stack untouched**: the Mapbox `useRoute`, `useGps`, `geo`, `cache`,
+  `NavigationScreenMapInner` keep their original behavior (only their import
+  paths changed in the reorg).
+- **Graceful load**: each wrapper lazy-loads its inner screen; if the native
+  module isn't built yet it shows setup guidance instead of crashing — so the
+  bundle builds even before a native dev build.
 
 **Git rollback (recommended baseline):**
 

@@ -5,7 +5,7 @@ import {
   RotateCcw, RefreshCw,
   MapPin,
 } from 'lucide-react-native'
-import { C } from '../../theme/navigation.theme'
+import { C } from '../../../theme/navigation.theme'
 
 interface ManeuverIconProps {
   maneuver?: string

@@ -13,7 +13,8 @@ import { ActivityIndicator, Linking, Pressable, Text, View } from 'react-native'
  */
 
 interface Props {
-  bookingId: string
+  bookingId:  string
+  routeToken?: string | null
 }
 
 const SETUP_HINT =
@@ -21,7 +22,7 @@ const SETUP_HINT =
   '`npx expo run:android` (or EAS Build for iOS) with the SDK configured, and make sure ' +
   'Navigation SDK access is enabled on your Google key. See docs/google-nav-sdk-migration.md.'
 
-export default function GoogleNavigationScreen({ bookingId }: Props) {
+export default function GoogleNavigationScreen({ bookingId, routeToken }: Props) {
   const [Inner, setInner] = useState<React.ComponentType<Props> | null>(null)
   const [loadErr, setLoadErr] = useState<string | null>(null)
 
@@ -63,5 +64,5 @@ export default function GoogleNavigationScreen({ bookingId }: Props) {
     )
   }
 
-  return <Inner bookingId={bookingId} />
+  return <Inner bookingId={bookingId} routeToken={routeToken} />
 }

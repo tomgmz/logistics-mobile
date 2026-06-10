@@ -1,22 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import NetInfo, { NetInfoState } from '@react-native-community/netinfo'
 
-import api from '../lib/api/auth.api'
-import type { BookingRoute, LatLng, Stop } from '../types/navigation.types'
+import api from '../../../lib/api/auth.api'
+import type { BookingRoute, LatLng, Stop } from '../../../types/navigation.types'
 import {
   decodePolyline,
   buildTrafficSegments,
   stripHtml,
   distanceToPolyline,
   haversineDistance,
-} from '../utils/geo'
-import { saveRouteCache, loadRouteCache, ensureOfflinePack } from '../utils/cache'
+} from '../../../utils/geo'
+import { saveRouteCache, loadRouteCache, ensureOfflinePack } from './cache'
 import {
   ROUTE_REFRESH_MS,
   OFF_ROUTE_M,
   OFF_ROUTE_HOLD_MS,
   STEP_ADVANCE_M,
-} from '../theme/navigation.theme'
+} from '../../../theme/navigation.theme'
 
 const ARRIVAL_PROXIMITY_M = 50
 const MANUAL_BUTTON_M     = 200
@@ -239,10 +239,22 @@ export function useRoute({
       const destination   = waypointsAfterDriver[waypointsAfterDriver.length - 1]
       const intermediates = waypointsAfterDriver.slice(0, -1)
 
+      // Bias the origin to the driver's direction of travel so routing/snapping
+      // pick the correct carriageway and entry instead of a parallel road (e.g.
+      // an expressway running beside the service road the driver is actually on).
+      // heading and sideOfRoad are mutually exclusive in the Routes API, so send
+      // heading when we have a real one (0 = stationary/unknown default) and fall
+      // back to a side-of-road bias otherwise.
+      const originHeading = Math.round(headingRef.current) % 360
+      const hasHeading    = originHeading > 0
+
       const directionsRes = await api.post('/directions', {
         origin: {
-          location: { latLng: { latitude: driverPos.latitude, longitude: driverPos.longitude } },
-          sideOfRoad: true,
+          location: {
+            latLng:  { latitude: driverPos.latitude, longitude: driverPos.longitude },
+            ...(hasHeading && { heading: originHeading }),
+          },
+          ...(!hasHeading && { sideOfRoad: true }),
         },
         destination: { location: { latLng: destination } },
         ...(intermediates.length > 0 && {
