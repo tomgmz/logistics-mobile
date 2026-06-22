@@ -1,11 +1,12 @@
 import ReusableDashboardShell from '../../components/ui/ReusableDashboardShell'
 import { Slot } from 'expo-router'
-import { Toolbox, ClipboardList } from 'lucide-react-native'
+import { Toolbox, ClipboardList, Bell } from 'lucide-react-native'
 import { usePathname } from 'expo-router'
 import { useEffect } from 'react'
 import { useAuthStore } from '../../lib/store/auth.store'
 import { useMessagingBadgeSync } from '../../hooks/useMessagingBadgeSync'
 import { useGlobalPresence } from '../../hooks/useGlobalPresence'
+import { useNotificationsRealtime } from '../../hooks/useNotificationsRealtime'
 import { startAutoFlush, flushOnAppForeground } from '../../lib/offlineQueue'
 
 const DRIVER_NAV = [
@@ -13,6 +14,11 @@ const DRIVER_NAV = [
     href:  '/driver/driver-assignment',
     label: 'Driver Assignment',
     icon:  <ClipboardList size={17} color="rgba(255,255,255,0.40)" />,
+  },
+  {
+    href:  '/driver/notifications',
+    label: 'Notifications',
+    icon:  <Bell size={17} color="rgba(255,255,255,0.40)" />,
   },
   {
     href:  '/driver/maintenance',
@@ -29,6 +35,8 @@ export default function DriverLayout() {
 
   useGlobalPresence(currentUserId)
 
+  useNotificationsRealtime(currentUserId)
+
   // Drain any queued offline status updates (arrivals confirmed in a dead zone)
   // on reconnect and on app foreground, even after the nav screen has unmounted.
   useEffect(() => {
@@ -39,7 +47,8 @@ export default function DriverLayout() {
 
   const hideShell =
     pathname.startsWith('/driver/maps') ||
-    pathname.startsWith('/driver/messages')
+    pathname.startsWith('/driver/messages') ||
+    pathname.startsWith('/driver/notifications')
 
   if (hideShell) {
     return <Slot />

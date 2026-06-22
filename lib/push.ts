@@ -94,8 +94,14 @@ export async function unregisterPushNotifications(): Promise<void> {
   }
 }
 
-function routeToChat(data: Record<string, unknown> | undefined): void {
+function routeFromNotification(data: Record<string, unknown> | undefined): void {
   if (!data) return
+  // Booking workflow notifications (e.g. 'booking.assigned').
+  if (typeof data.type === 'string' && data.type.startsWith('booking.')) {
+    router.push('/driver/driver-assignment')
+    return
+  }
+  // Chat notifications.
   if (data.type === 'group' && data.group_id) {
     router.push(`/driver/messages/group/${data.group_id}`)
   } else if (data.conversation_id) {
@@ -109,12 +115,12 @@ function routeToChat(data: Record<string, unknown> | undefined): void {
  */
 export function initPushResponders(): () => void {
   const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-    routeToChat(response.notification.request.content.data as Record<string, unknown> | undefined)
+    routeFromNotification(response.notification.request.content.data as Record<string, unknown> | undefined)
   })
 
   // Handle a tap that launched the app from a cold start.
   Notifications.getLastNotificationResponseAsync().then((response) => {
-    if (response) routeToChat(response.notification.request.content.data as Record<string, unknown> | undefined)
+    if (response) routeFromNotification(response.notification.request.content.data as Record<string, unknown> | undefined)
   })
 
   return () => sub.remove()
