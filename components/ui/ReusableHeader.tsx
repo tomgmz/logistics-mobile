@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
 import { useAuthStore } from '../../lib/store/auth.store'
 import { useMessagingStore } from '../../lib/store/messaging.store'
+import { useNotificationStore } from '../../lib/store/notification.store'
 
 const COLORS = {
   bg:      '#1a1a1a',
@@ -35,6 +36,7 @@ export default function ReusableHeader({
   const user         = useAuthStore((s) => s.user)
   const router       = useRouter()
   const totalUnread  = useMessagingStore((s) => s.totalUnread)
+  const unreadNotifs = useNotificationStore((s) => s.unreadCount)
 
   const avatarLetter =
     user?.first_name?.[0]?.toUpperCase() ??
@@ -76,9 +78,16 @@ export default function ReusableHeader({
           )}
         </TouchableOpacity>
 
-        <IconBtn badge>
+        <TouchableOpacity activeOpacity={0.7} style={styles.iconBtn} onPress={() => router.push('/driver/notifications')}>
           <Bell size={16} color={COLORS.white} />
-        </IconBtn>
+          {unreadNotifs > 0 && (
+            <View style={styles.msgBadge}>
+              <Text style={styles.msgBadgeText}>
+                {unreadNotifs > 9 ? '9+' : unreadNotifs}
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
 
         <MotiView
           from={{ scale: 0.8, opacity: 0 }}
@@ -90,21 +99,6 @@ export default function ReusableHeader({
         </MotiView>
       </View>
     </MotiView>
-  )
-}
-
-function IconBtn({
-  children,
-  badge = false,
-}: {
-  children: React.ReactNode
-  badge?: boolean
-}) {
-  return (
-    <TouchableOpacity activeOpacity={0.7} style={styles.iconBtn}>
-      {children}
-      {badge && <View style={styles.badge} />}
-    </TouchableOpacity>
   )
 }
 
@@ -173,15 +167,6 @@ const styles = StyleSheet.create({
     alignItems:      'center',
     justifyContent:  'center',
     position:        'relative',
-  },
-  badge: {
-    position:        'absolute',
-    top:             8,
-    right:           8,
-    width:           6,
-    height:          6,
-    borderRadius:    3,
-    backgroundColor: COLORS.cyan,
   },
   msgBadge: {
     position:        'absolute',

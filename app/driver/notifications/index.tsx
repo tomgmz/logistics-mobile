@@ -66,8 +66,14 @@ export default function NotificationsScreen() {
 
   const onPressItem = useCallback((n: AppNotification) => {
     if (!n.read_at) markRead(n.notification_id)
-    // Driver notifications route to the assignment list.
-    if (n.booking_id) router.push('/driver/driver-assignment')
+    // Deep-link to the specific booking; fall back to the assignment list.
+    const bookingId =
+      n.booking_id ?? (typeof n.data?.booking_id === 'string' ? n.data.booking_id : null)
+    if (bookingId) {
+      router.push({ pathname: '/driver/maps/[bookingId]', params: { bookingId } })
+    } else {
+      router.push('/driver/driver-assignment')
+    }
   }, [markRead, router])
 
   return (

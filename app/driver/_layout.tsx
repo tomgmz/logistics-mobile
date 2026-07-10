@@ -1,6 +1,6 @@
 import ReusableDashboardShell from '../../components/ui/ReusableDashboardShell'
 import { Slot } from 'expo-router'
-import { Toolbox, ClipboardList, Bell } from 'lucide-react-native'
+import { Toolbox, ClipboardList } from 'lucide-react-native'
 import { usePathname } from 'expo-router'
 import { useEffect } from 'react'
 import { useAuthStore } from '../../lib/store/auth.store'
@@ -14,11 +14,6 @@ const DRIVER_NAV = [
     href:  '/driver/driver-assignment',
     label: 'Driver Assignment',
     icon:  <ClipboardList size={17} color="rgba(255,255,255,0.40)" />,
-  },
-  {
-    href:  '/driver/notifications',
-    label: 'Notifications',
-    icon:  <Bell size={17} color="rgba(255,255,255,0.40)" />,
   },
   {
     href:  '/driver/maintenance',

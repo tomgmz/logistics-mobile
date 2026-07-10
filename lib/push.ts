@@ -96,9 +96,15 @@ export async function unregisterPushNotifications(): Promise<void> {
 
 function routeFromNotification(data: Record<string, unknown> | undefined): void {
   if (!data) return
-  // Booking workflow notifications (e.g. 'booking.assigned').
+  // Booking workflow notifications (e.g. 'booking.assigned') deep-link to the
+  // specific booking; fall back to the assignment list if the id is missing.
   if (typeof data.type === 'string' && data.type.startsWith('booking.')) {
-    router.push('/driver/driver-assignment')
+    const bookingId = typeof data.booking_id === 'string' ? data.booking_id : null
+    if (bookingId) {
+      router.push({ pathname: '/driver/maps/[bookingId]', params: { bookingId } })
+    } else {
+      router.push('/driver/driver-assignment')
+    }
     return
   }
   // Chat notifications.
