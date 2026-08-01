@@ -211,7 +211,6 @@ export interface AuthUser {
     license_number:   string
     license_expiry:   string
     status:           string
-    is_vendor_driver: boolean
   } | null
 
   clients?: {
