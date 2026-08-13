@@ -3,6 +3,7 @@ import NetInfo from '@react-native-community/netinfo'
 import { AppState, AppStateStatus } from 'react-native'
 
 import api from './api/auth.api'
+import { uploadProofPhoto } from './proofPhoto'
 
 /**
  * Durable, offline-tolerant queue for booking/destination status updates.
@@ -14,17 +15,36 @@ import api from './api/auth.api'
  * foreground, so a confirmed delivery is never dropped.
  *
  * Idempotency: each action carries a stable `id` (`pickup:<bookingId>` /
- * `delivery:<stopId>`). Re-enqueuing the same id is a no-op, which dedupes the
- * proximity + manual-button double-fire and survives screen remounts. Backend
- * status transitions are forward-only (pending → delivered, assigned →
- * in_transit), so re-applying is harmless — the id only avoids redundant calls.
+ * `delivery:<stopId>` / `complete:<bookingId>`). Re-enqueuing the same id is a
+ * no-op, which dedupes double taps and survives screen remounts. The driver
+ * progress endpoints are idempotent server-side too (re-confirming a stop
+ * returns the current record), so a retry is always harmless.
+ *
+ * Order matters: the backend rejects a drop-off before the pickup and a
+ * completion before the last drop-off, so the queue is drained strictly FIFO
+ * and stops at the first entry that couldn't be applied.
+ *
+ * Proof photos ride along: a stop confirmed in a dead zone keeps the photo as a
+ * local file URI (`photoUri`), which is uploaded here as the first step of
+ * applying that entry. The status update is never sent without its proof — the
+ * backend would reject it, and a delivery recorded without evidence is exactly
+ * what the photo requirement exists to prevent.
  */
 
+// A 409 means the server refused the transition *for now* (e.g. the pickup it
+// depends on hasn't landed yet). Retry a bounded number of times rather than
+// dropping it like other 4xx — losing a confirmed delivery is worse than a few
+// wasted calls.
+const MAX_CONFLICT_ATTEMPTS = 5
+
 export interface QueuedAction {
-  id:        string                    // 'pickup:<bookingId>' | 'delivery:<stopId>'
-  kind:      'pickup' | 'delivery'
-  url:       string                    // '/booking/:id/status' | '/booking-destinations/:id/status'
-  body:      Record<string, unknown>   // { status: 'in_transit' | 'delivered' }
+  id:        string                    // 'pickup:<bookingId>' | 'delivery:<stopId>' | 'complete:<bookingId>'
+  kind:      'pickup' | 'delivery' | 'complete'
+  url:       string                    // '/driver/bookings/:id/pickup' | '.../destinations/:id/delivered' | '.../complete'
+  body:      Record<string, unknown>   // { proof_photo_url } for stops; empty for completion
+  // Local file URI of a proof photo that still needs uploading. Once uploaded,
+  // its hosted URL is merged into `body` as proof_photo_url and this is cleared.
+  photoUri?: string
   createdAt: number
   attempts:  number
 }
@@ -85,8 +105,30 @@ export function flush(): Promise<void> {
     const remaining: QueuedAction[] = []
     let stop = false
 
-    for (const item of queue) {
-      if (stop) { remaining.push(item); continue }
+    for (const queued of queue) {
+      if (stop) { remaining.push(queued); continue }
+
+      // Carries a photo that hasn't been uploaded yet (the stop was confirmed in
+      // a dead zone). Upload it first and fold the hosted URL into the body —
+      // the status update must never be sent without its proof.
+      let item = queued
+      if (item.photoUri) {
+        try {
+          const url = await uploadProofPhoto(item.photoUri)
+          item = { ...item, body: { ...item.body, proof_photo_url: url }, photoUri: undefined }
+          // Persist the URL right away: if the PATCH below fails we retry the
+          // request, not the (already successful) upload.
+          await writeQueue(queue.map((a) => (a.id === item.id ? item : a)))
+        } catch (uploadErr: any) {
+          // The photo is what's blocking, not the status update. Keep this entry
+          // and everything after it in order, and retry on the next flush.
+          console.warn(`[offlineQueue] proof upload failed for ${item.id}; will retry.`, uploadErr?.message)
+          stop = true
+          remaining.push({ ...item, attempts: item.attempts + 1 })
+          continue
+        }
+      }
+
       try {
         await api.patch(item.url, item.body)
         // success → drop
@@ -98,19 +140,26 @@ export function flush(): Promise<void> {
           // stop; retry on the next flush.
           stop = true
           remaining.push({ ...item, attempts: item.attempts + 1 })
+        } else if (status === 409 && item.attempts + 1 < MAX_CONFLICT_ATTEMPTS) {
+          // Out-of-order transition — the entry this one depends on hasn't been
+          // applied yet. Keep it (and everything after it, to preserve order)
+          // and try again on the next flush.
+          stop = true
+          remaining.push({ ...item, attempts: item.attempts + 1 })
         } else if (status === 403) {
-          // The driver app calls admin-gated routes; a 403 is an authorization
-          // mismatch (drivers not allowed on these routes), NOT an applied
-          // update. Keep it and surface loudly instead of silently dropping.
+          // The signed-in driver isn't the one assigned to this booking (or the
+          // route lost its 'driver' authorization). Never an applied update —
+          // keep it and surface loudly instead of silently dropping.
           console.warn(
             `[offlineQueue] 403 on ${item.url} — status update rejected. ` +
-            `The driver role likely lacks access to this route; add 'driver' ` +
-            `to its authorize() list on the backend.`,
+            `This driver is not assigned to the booking, or the route no longer ` +
+            `authorizes the driver role on the backend.`,
             item,
           )
           remaining.push({ ...item, attempts: item.attempts + 1 })
         } else {
-          // Other 4xx (e.g. 409/422 already-applied) → idempotent success, drop.
+          // Other 4xx (404/422, or a 409 that outlived its retries) → nothing
+          // more we can do with it; drop rather than retry forever.
           console.warn(`[offlineQueue] dropping ${item.id} on ${status} (treated as already applied).`)
         }
       }

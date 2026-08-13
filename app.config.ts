@@ -106,6 +106,16 @@ export default {
           color: "#00BCD4",
         },
       ],
+      // Camera, for the proof-of-pickup / proof-of-delivery photo the driver
+      // takes at every stop. Photo library access isn't requested: proof must be
+      // taken at the stop, not picked from the gallery.
+      [
+        "expo-image-picker",
+        {
+          cameraPermission:
+            "8338 Logistics needs the camera to take proof-of-pickup and proof-of-delivery photos at each stop.",
+        },
+      ],
     ],
     extra: {
       eas: {

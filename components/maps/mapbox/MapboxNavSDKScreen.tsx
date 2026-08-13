@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ActivityIndicator,
+  Alert,
   Linking,
   Platform,
   Text,
@@ -8,13 +9,16 @@ import {
   View,
 } from 'react-native'
 import { useRouter } from 'expo-router'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import * as Location from 'expo-location'
+import { CheckCircle2, PackageCheck } from 'lucide-react-native'
 import { MapboxNavigationView } from '@badatgil/expo-mapbox-navigation'
 import MapboxGL from '@rnmapbox/maps'
 
 import api from '../../../lib/api/auth.api'
-import { enqueue, flush } from '../../../lib/offlineQueue'
+import { confirmPickup, confirmDelivery, completeBooking } from '../../../lib/tripProgress'
 import { saveBookingCache, loadBookingCache, clearBookingCache } from '../../../lib/navCache'
+import { StopProofModal } from '../shared/StopProofModal'
 import { C } from '../../../theme/navigation.theme'
 
 /**
@@ -27,11 +31,17 @@ import { C } from '../../../theme/navigation.theme'
  * only jobs are:
  *   1. Feed it ordered coordinates from the backend (GET /booking/:id):
  *      [driver, (pickup if not yet picked up), ...pending drop-offs].
- *   2. Translate its arrival callbacks back into our booking status PATCHes,
+ *   2. Translate its arrival callbacks back into our booking status updates,
  *      mapping each arrival to a leg by order (the SDK exposes no waypoint id).
  *
- * The PATCHes go through the durable offline queue so a confirmation reached in
- * a dead zone is synced on reconnect (same as the Google path).
+ * As on the Google screen, the confirm button on the right of the map is a
+ * FALLBACK for when the SDK's arrival detection doesn't fire (weak GPS, an
+ * address the geofence can't reach). Both paths run the same confirmLeg(), so a
+ * stop is recorded once either way. Marking the whole delivery done is always
+ * the driver's tap — this SDK has no notion of the job being finished.
+ *
+ * The updates go through the durable offline queue so a confirmation made in a
+ * dead zone is synced on reconnect (same as the Google path).
  */
 
 interface Props {
@@ -39,8 +49,8 @@ interface Props {
 }
 
 type Leg =
-  | { type: 'pickup' }
-  | { type: 'dropoff'; destinationId: string }
+  | { type: 'pickup';  address?: string | null }
+  | { type: 'dropoff'; destinationId: string; address?: string | null }
 
 const ANDROID = Platform.OS === 'android'
 // The Android SDK wants the profile WITHOUT the `mapbox/` prefix; iOS wants it.
@@ -54,6 +64,10 @@ const PLAIN_PROFILE   = ANDROID ? 'driving'         : 'mapbox/driving'
 const routeProfileFor = (coordCount: number) =>
   coordCount > 3 ? PLAIN_PROFILE : TRAFFIC_PROFILE
 
+// How long after a stop is confirmed we disregard the SDK's own arrival
+// detection (see onSdkArrival). Far shorter than any real drive between stops.
+const RECENT_CONFIRM_IGNORE_MS = 5_000
+
 MapboxGL.setAccessToken(process.env.EXPO_PUBLIC_MAPBOX_TOKEN ?? '')
 
 export default function MapboxNavSDKScreen({ bookingId }: Props) {
@@ -66,41 +80,97 @@ export default function MapboxNavSDKScreen({ bookingId }: Props) {
 
 function MapboxNavSDKInner({ bookingId }: Props) {
   const router = useRouter()
+  const insets = useSafeAreaInsets()
 
   const [coordinates, setCoordinates] = useState<{ latitude: number; longitude: number }[] | null>(null)
   const [waypointIndices, setWaypointIndices] = useState<number[]>([])
   const [error, setError] = useState<string | null>(null)
   const [complete, setComplete] = useState(false)
   const [retry, setRetry] = useState(0)
+  // Which leg the driver is confirming next, mirrored from cursorRef so the
+  // button label re-renders. Separate from wherever the SDK's route has got to.
+  const [cursor, setCursor] = useState(0)
+  const [legCount, setLegCount] = useState(0)
+  const [dropoffCount, setDropoffCount] = useState(0)
+  // True once the SDK reports we've reached the stop the driver is on — a visual
+  // cue only; it confirms nothing.
+  const [atStop, setAtStop] = useState(false)
+  // The stop whose proof popup is open, and whether it opened by itself (arrival
+  // detected) or from the button. Null when the popup is closed.
+  const [proofFor, setProofFor] = useState<{ idx: number; auto: boolean } | null>(null)
 
   const legsRef      = useRef<Leg[]>([])
   const cursorRef    = useRef(0)
   const processedRef = useRef<Set<number>>(new Set())
+  const completedRef = useRef(false)
+  // When a stop was last confirmed — see onSdkArrival.
+  const lastConfirmAtRef = useRef(0)
 
-  // Persist a leg's status update durably. Idempotent: the offline queue dedupes
-  // by id, and processedRef guards against the SDK double-firing an arrival.
-  const confirmLeg = (i: number) => {
+  // Record a leg with the proof photo taken at it. The single write path: the
+  // proof popup is the only caller, however it was opened. Idempotent — the
+  // offline queue dedupes by id and processedRef makes a second call a no-op.
+  const confirmLeg = useCallback((i: number, photoUri: string) => {
     const legs = legsRef.current
     if (i < 0 || i >= legs.length || processedRef.current.has(i)) return
+    // Only ever confirm the stop we're actually on. Skipping one would leave a
+    // drop-off unrecorded with no way back to it — and the backend won't let the
+    // booking be completed while any drop-off is still pending. If an arrival
+    // went undetected, the driver catches up with the button, in order.
+    if (i !== cursorRef.current) return
     processedRef.current.add(i)
+    lastConfirmAtRef.current = Date.now()
     const leg = legs[i]
-    if (leg.type === 'pickup') {
-      enqueue({
-        id:   `pickup:${bookingId}`,
-        kind: 'pickup',
-        url:  `/booking/${bookingId}/status`,
-        body: { status: 'in_transit' },
-      }).then(() => flush()).catch(() => {})
-    } else {
-      enqueue({
-        id:   `delivery:${leg.destinationId}`,
-        kind: 'delivery',
-        url:  `/booking-destinations/${leg.destinationId}/status`,
-        body: { status: 'delivered' },
-      }).then(() => flush()).catch(() => {})
+    const persist = leg.type === 'pickup'
+      ? confirmPickup(bookingId, photoUri)
+      : confirmDelivery(bookingId, leg.destinationId, photoUri)
+    persist.catch(() => {})
+
+    cursorRef.current = i + 1
+    setCursor(i + 1)
+    setAtStop(false)
+  }, [bookingId])
+
+  // Arrival detected by the SDK: opens the proof popup for that stop hands-free.
+  // Ignored right after a confirmation — if the driver confirmed while parked
+  // inside the geofence, an arrival landing a moment later belongs to the stop
+  // they just finished and would pop the dialog for the next one.
+  const onSdkArrival = useCallback((i: number) => {
+    if (Date.now() - lastConfirmAtRef.current < RECENT_CONFIRM_IGNORE_MS) return
+    if (i !== cursorRef.current || processedRef.current.has(i)) return
+    setAtStop(true)
+    setProofFor({ idx: i, auto: true })
+  }, [])
+
+  /** Every drop-off confirmed — close the booking out. */
+  const markDeliveryDone = useCallback(() => {
+    if (completedRef.current) return
+    completedRef.current = true
+    completeBooking(bookingId).catch(() => {})
+    clearBookingCache(bookingId)
+    setComplete(true)
+  }, [bookingId])
+
+  // The button: opens the same proof popup an arrival would have opened, or —
+  // once every stop is confirmed — asks to close the booking out.
+  const onConfirmPress = useCallback(() => {
+    const legs = legsRef.current
+    const i    = cursorRef.current
+
+    if (legs.length > 0 && i >= legs.length) {
+      Alert.alert(
+        'Mark delivery as done?',
+        'This closes the booking. Only do this once every drop-off has been completed.',
+        [
+          { text: 'Not yet', style: 'cancel' },
+          { text: 'Mark as done', style: 'default', onPress: markDeliveryDone },
+        ],
+      )
+      return
     }
-    if (i === legs.length - 1) clearBookingCache(bookingId)
-  }
+
+    if (!legs[i]) return
+    setProofFor({ idx: i, auto: false })
+  }, [markDeliveryDone])
 
   useEffect(() => {
     let cancelled = false
@@ -155,11 +225,11 @@ function MapboxNavSDKInner({ bookingId }: Props) {
         const coords: { latitude: number; longitude: number }[] = [driver]
 
         if (!pickedUp && booking.origin_latitude != null && booking.origin_longitude != null) {
-          legs.push({ type: 'pickup' })
+          legs.push({ type: 'pickup', address: booking.origin })
           coords.push({ latitude: booking.origin_latitude, longitude: booking.origin_longitude })
         }
         dropoffs.forEach((d: any) => {
-          legs.push({ type: 'dropoff', destinationId: d.destination_id })
+          legs.push({ type: 'dropoff', destinationId: d.destination_id, address: d.address })
           coords.push({ latitude: d.latitude, longitude: d.longitude })
         })
 
@@ -171,6 +241,11 @@ function MapboxNavSDKInner({ bookingId }: Props) {
         legsRef.current      = legs
         cursorRef.current    = 0
         processedRef.current = new Set()
+        if (!cancelled) {
+          setCursor(0)
+          setLegCount(legs.length)
+          setDropoffCount(legs.filter((l) => l.type === 'dropoff').length)
+        }
 
         // Every coordinate is a waypoint/destination. Index 0 (the driver's
         // start) must be included for the route to render; the rest are the
@@ -219,6 +294,16 @@ function MapboxNavSDKInner({ bookingId }: Props) {
     )
   }
 
+  const allConfirmed = legCount > 0 && cursor >= legCount
+  const currentLeg   = legsRef.current[cursor]
+  const confirmLabel = allConfirmed
+    ? 'Mark delivery as done'
+    : currentLeg?.type === 'pickup'
+      ? 'Pickup done'
+      : dropoffCount > 1
+        ? `Drop-off ${cursor - (legCount - dropoffCount) + 1} of ${dropoffCount} done`
+        : 'Drop-off done'
+
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <MapboxNavigationView
@@ -227,24 +312,83 @@ function MapboxNavSDKInner({ bookingId }: Props) {
         waypointIndices={waypointIndices}
         routeProfile={routeProfileFor(coordinates.length)}
         initialLocation={{ ...coordinates[0], zoom: 15 }}
-        onWaypointArrival={() => {
-          // Fires for each intermediate destination in order. Map to the leg at
-          // the current cursor, then advance. The final destination is handled
-          // by onFinalDestinationArrival instead.
-          const i = cursorRef.current
-          cursorRef.current = i + 1
-          confirmLeg(i)
-        }}
-        onFinalDestinationArrival={() => {
-          confirmLeg(legsRef.current.length - 1)
-          cursorRef.current = legsRef.current.length
-          setComplete(true)
-        }}
+        // Fires for each intermediate destination in order, so the leg at the
+        // current cursor is the one we've reached. The final destination comes
+        // through its own callback instead — but it does NOT close the booking:
+        // that stays the driver's tap on "Mark delivery as done".
+        onWaypointArrival={() => onSdkArrival(cursorRef.current)}
+        onFinalDestinationArrival={() => onSdkArrival(legsRef.current.length - 1)}
         onRouteFailedToLoad={(e) => {
           setError(e.nativeEvent?.errorMessage ?? 'Could not build the route. Check your connection and try again.')
         }}
         onCancelNavigation={() => router.back()}
       />
+
+      {/* Stop confirmation, docked on the right of the map: "Pickup done", then
+          "Drop-off N of M done" for each drop-off (1–3 of them), then green
+          "Mark delivery as done" once they're all confirmed. */}
+      {legCount > 0 && !complete && (
+        <TouchableOpacity
+          onPress={onConfirmPress}
+          activeOpacity={0.85}
+          style={{
+            position:        'absolute',
+            right:           12,
+            top:             insets.top + 12,
+            zIndex:          25,
+            maxWidth:        '76%',
+            minHeight:       48,
+            paddingVertical: 12,
+            paddingHorizontal: 16,
+            borderRadius:    24,
+            flexDirection:   'row',
+            alignItems:      'center',
+            gap:             9,
+            backgroundColor: allConfirmed ? C.green : atStop ? C.cyan : C.bannerBg,
+            borderWidth:     1.5,
+            borderColor:     allConfirmed ? C.green : atStop ? C.cyan : C.bannerBorder,
+            shadowColor:     '#000',
+            shadowOffset:    { width: 0, height: 4 },
+            shadowOpacity:   0.5,
+            shadowRadius:    12,
+            elevation:       12,
+          }}
+        >
+          {allConfirmed
+            ? <CheckCircle2 size={20} color="#000" />
+            : <PackageCheck size={20} color={atStop ? '#000' : C.cyan} />}
+          <Text
+            numberOfLines={1}
+            style={{ fontSize: 14, fontWeight: '800', color: allConfirmed || atStop ? '#000' : C.white }}
+          >
+            {confirmLabel}
+          </Text>
+        </TouchableOpacity>
+      )}
+
+      {/* The stop confirmation popup + proof photo. Opened by arrival detection
+          or by the button above; both go through confirmLeg on confirm. */}
+      {proofFor !== null && legsRef.current[proofFor.idx] && (
+        <StopProofModal
+          visible
+          kind={legsRef.current[proofFor.idx].type === 'pickup' ? 'pickup' : 'dropoff'}
+          title={
+            legsRef.current[proofFor.idx].type === 'pickup'
+              ? 'Pickup'
+              : dropoffCount > 1
+                ? `Drop-off ${proofFor.idx - (legCount - dropoffCount) + 1} of ${dropoffCount}`
+                : 'Drop-off'
+          }
+          address={legsRef.current[proofFor.idx].address ?? undefined}
+          autoOpened={proofFor.auto}
+          onCancel={() => setProofFor(null)}
+          onConfirm={(photoUri) => {
+            const idx = proofFor.idx
+            setProofFor(null)
+            confirmLeg(idx, photoUri)
+          }}
+        />
+      )}
 
       {complete && (
         <View
