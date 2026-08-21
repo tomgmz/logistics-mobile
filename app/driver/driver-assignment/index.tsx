@@ -8,6 +8,7 @@ import {
   RefreshControl,
   Animated,
   Pressable,
+  Modal,
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -15,7 +16,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import NetInfo from '@react-native-community/netinfo'
 import api from '../../../lib/api/auth.api'
 import { useDriverId, useAuthHydrated } from '../../../lib/store/auth.store'
-import { Package, Search, Truck, TriangleAlert, WifiOff } from 'lucide-react-native'
+import { useAvailabilityStore } from '../../../lib/store/availability.store'
+import { Package, Search, Truck, TriangleAlert, WifiOff, Power } from 'lucide-react-native'
 
 interface BookingDestination {
   destination_id:  string
@@ -425,6 +427,108 @@ function OfflineBanner({ savedAt, onRetry }: OfflineBannerProps) {
   )
 }
 
+/**
+ * The driver's own on/off switch for delivery work.
+ *
+ * Operations only sees drivers who have turned this on, so a driver who never
+ * flips it never gets assigned — which is deliberate: a new account starts off.
+ * While a delivery is in flight the switch reads "On delivery" and is locked;
+ * finishing the delivery stands them down and they opt back in from here.
+ */
+function AvailabilityToggle() {
+  const status    = useAvailabilityStore((s) => s.status)
+  const canToggle = useAvailabilityStore((s) => s.canToggle)
+  const saving    = useAvailabilityStore((s) => s.saving)
+  const setStatus = useAvailabilityStore((s) => s.setStatus)
+
+  const isAvailable = status === 'available'
+  const onDelivery  = status === 'assigned'
+  const blocked     = status === 'on_leave' || status === 'inactive'
+
+  const label = onDelivery ? 'On delivery'
+    : blocked ? (status === 'on_leave' ? 'On leave' : 'Inactive')
+    : isAvailable ? 'Accepting deliveries'
+    : 'Not accepting'
+
+  const tone = onDelivery ? { bg: 'bg-blue-950',   dot: 'bg-blue-400',   text: 'text-blue-400'   }
+    : blocked            ? { bg: 'bg-zinc-800',    dot: 'bg-zinc-500',   text: 'text-zinc-400'   }
+    : isAvailable        ? { bg: 'bg-emerald-950', dot: 'bg-emerald-400', text: 'text-emerald-400' }
+    :                      { bg: 'bg-amber-950',   dot: 'bg-amber-400',  text: 'text-amber-400'  }
+
+  const disabled = !canToggle || saving || status == null
+
+  return (
+    <TouchableOpacity
+      onPress={() => { if (!disabled) void setStatus(isAvailable ? 'unavailable' : 'available').catch(() => {}) }}
+      disabled={disabled}
+      activeOpacity={0.75}
+      accessibilityRole="switch"
+      accessibilityState={{ checked: isAvailable, disabled }}
+      accessibilityLabel={`Availability: ${label}`}
+      className={`flex-row items-center gap-2 rounded-2xl px-3 py-2 ${tone.bg} ${disabled ? 'opacity-70' : ''}`}
+    >
+      {saving
+        ? <ActivityIndicator size="small" color="#ffffff" />
+        : <View className={`w-2 h-2 rounded-full ${tone.dot}`} />}
+      <View>
+        <Text className={`text-[11px] font-bold ${tone.text}`}>{label}</Text>
+        {canToggle && !saving && (
+          <Text className="text-[10px] text-ink-faint">
+            Tap to turn {isAvailable ? 'off' : 'on'}
+          </Text>
+        )}
+      </View>
+      <Power size={13} color={disabled ? '#818181' : '#ffffff'} />
+    </TouchableOpacity>
+  )
+}
+
+/**
+ * Shown once after a delivery ends. The server stands the driver down when the
+ * booking completes, so without this they would silently stop receiving work —
+ * the prompt is what makes that opt-out visible and reversible on the spot.
+ */
+function ReAvailablePrompt() {
+  const visible     = useAvailabilityStore((s) => s.promptReAvailable)
+  const saving      = useAvailabilityStore((s) => s.saving)
+  const setStatus   = useAvailabilityStore((s) => s.setStatus)
+  const clearPrompt = useAvailabilityStore((s) => s.clearPrompt)
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={clearPrompt}>
+      <View className="flex-1 items-center justify-center bg-black/75 px-8">
+        <View className="w-full rounded-2xl bg-surface-elevated border border-surface-border p-5 gap-3">
+          <Text className="text-lg font-black text-ink-primary">Delivery complete</Text>
+          <Text className="text-sm text-ink-muted leading-5">
+            You&apos;ve been set to not accepting deliveries. Turn yourself back on to be
+            considered for the next booking.
+          </Text>
+          <View className="flex-row gap-2 mt-1">
+            <TouchableOpacity
+              onPress={clearPrompt}
+              disabled={saving}
+              activeOpacity={0.8}
+              className="flex-1 rounded-xl border border-surface-border py-3 items-center"
+            >
+              <Text className="text-sm font-bold text-ink-faint">Not now</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => { void setStatus('available').catch(() => {}) }}
+              disabled={saving}
+              activeOpacity={0.8}
+              className="flex-1 rounded-xl bg-emerald-500 py-3 items-center"
+            >
+              <Text className="text-sm font-bold text-black">
+                {saving ? 'Turning on…' : "I'm available"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  )
+}
+
 export default function DriverBookingList() {
   const router      = useRouter()
   const insets      = useSafeAreaInsets()
@@ -438,8 +542,15 @@ export default function DriverBookingList() {
   const [activeFilter, setActiveFilter] = useState<FilterKey>('All')
   const [offlineMeta,  setOfflineMeta]  = useState<{ savedAt: string } | null>(null)
 
+  const refreshAvailability = useAvailabilityStore((s) => s.refresh)
+
   const loadCacheThenFetch = useCallback(async (isRefresh = false) => {
     if (!hasHydrated || !driverId) return
+
+    // Pulled alongside the bookings: this is also how a finished delivery is
+    // noticed (the server drops the driver from 'assigned' to 'unavailable'),
+    // which raises the "ready for another delivery?" prompt.
+    void refreshAvailability()
 
     if (!isRefresh) {
       const cached = await readCache(driverId)
@@ -469,7 +580,7 @@ export default function DriverBookingList() {
       setLoading(false)
       setRefreshing(false)
     }
-  }, [driverId, hasHydrated])
+  }, [driverId, hasHydrated, refreshAvailability])
 
   useEffect(() => {
     if (!hasHydrated) return
@@ -501,7 +612,9 @@ export default function DriverBookingList() {
   return (
     <View className="flex-1 bg-surface-bg">
 
-      <View className="flex-row items-end justify-between px-5 pt-3 pb-8">
+      <ReAvailablePrompt />
+
+      <View className="flex-row items-end justify-between px-5 pt-3 pb-3">
         <View>
           <Text className="label-mono text-ink-faint mb-0.5">My Assignments</Text>
           <Text className="text-[28px] font-black text-ink-primary tracking-tight leading-9">
@@ -511,6 +624,11 @@ export default function DriverBookingList() {
         <View className="bg-ink-primary rounded-2xl min-w-[44px] h-11 items-center justify-center px-3 mb-1">
           <Text className="text-surface-bg font-black text-xl">{bookings.length}</Text>
         </View>
+      </View>
+
+      {/* Nothing reaches this driver unless they turn themselves on here. */}
+      <View className="px-4 pb-5">
+        <AvailabilityToggle />
       </View>
 
       <View className="flex-row gap-1.5 px-4 pb-3">

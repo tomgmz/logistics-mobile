@@ -7,6 +7,7 @@ import { Home, Package, Truck, BarChart2, Users } from 'lucide-react-native'
 import ReusableHeader from './ReusableHeader'
 import ReusableSidebar, { NavItem } from './ReusableSideBar'
 import { useAuthStore } from '../../lib/store/auth.store'
+import { useAvailabilityStore } from '../../lib/store/availability.store'
 import { logout } from '../../lib/api/auth.api'
 import { unregisterPushNotifications } from '../../lib/push'
 
@@ -41,6 +42,9 @@ export default function ReusableDashboardShell({
     } catch {
     } finally {
       clearUser()
+      // Availability is per driver — drop it so the next sign-in on this device
+      // doesn't show the previous driver's switch state.
+      useAvailabilityStore.getState().reset()
       router.replace('/')
     }
   }
