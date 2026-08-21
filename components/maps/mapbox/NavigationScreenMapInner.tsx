@@ -33,7 +33,8 @@ import {
   DriverMarker,
 } from './MapLayer'
 
-import { C, MAPBOX_STYLE } from '../../../theme/navigation.theme'
+import { C } from '../../../theme/navigation.theme'
+import { MAPBOX_STYLE } from './style'
 import { toCoord }          from '../../../utils/geo'
 import type { Stop }        from '../../../types/navigation.types'
 

@@ -10,171 +10,30 @@ import {
   Pressable,
   Modal,
 } from 'react-native'
-import { useRouter } from 'expo-router'
+import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import AsyncStorage from '@react-native-async-storage/async-storage'
 import NetInfo from '@react-native-community/netinfo'
-import api from '../../../lib/api/auth.api'
 import { useDriverId, useAuthHydrated } from '../../../lib/store/auth.store'
 import { useAvailabilityStore } from '../../../lib/store/availability.store'
-import { Package, Search, Truck, TriangleAlert, WifiOff, Power } from 'lucide-react-native'
-
-interface BookingDestination {
-  destination_id:  string
-  booking_id:      string
-  address:         string
-  sequence_order:  number
-  status:          'pending' | 'delivered' | 'failed'
-  delivered_at:    string | null
-  notes:           string | null
-  latitude:        number | null
-  longitude:       number | null
-  created_at:      string
-}
-
-interface TruckModel {
-  model_id:     string
-  name:         string
-  vehicle_type: string
-  image_url:    string | null
-}
-
-interface TruckAssignment {
-  assignment_id: string
-  truck_id:      string
-  assigned_at:   string
-  trucks: {
-    plate_number: string
-    status:       string | null
-    model_id:     string | null
-    truck_models: TruckModel | null 
-  }
-}
-
-interface BookingClient {
-  client_id:       string
-  company_name:    string | null
-  billing_address: string | null
-  payment_terms:   number
-  users: {
-    first_name: string
-    last_name:  string
-    email:      string
-    phone:      string | null
-  }
-}
-
-interface BookingWithRelations {
-  booking_id:          string
-  client_id:           string
-  origin:              string
-  origin_latitude:     number | null
-  origin_longitude:    number | null
-  truck_type_needed:   string
-  cargo_details:       string | null
-  schedule_date:       string
-  call_time:           string
-  status:              'pending' | 'assigned' | 'in_transit' | 'completed' | 'cancelled'
-  total_cost:          number | null
-  estimated_delivery:  string | null
-  required_volume_cbm: number | null
-  required_weight_kg:  number | null
-  required_length_cm:  number | null
-  stackable_required:  boolean | null
-  payment_terms:       string | null
-  created_at:          string
-  updated_at:          string
-  clients:             BookingClient
-  booking_destinations: BookingDestination[]
-  truck_assignments:   TruckAssignment[]
-}
-
-interface CachePayload {
-  bookings: BookingWithRelations[]
-  savedAt:  string
-}
-
-type StatusKey = 'pending' | 'assigned' | 'in_transit' | 'completed' | 'cancelled'
-
-const STATUS_CONFIG: Record<StatusKey, {
-  label:   string
-  badgeCn: string
-  textCn:  string
-  dotCn:   string
-}> = {
-  pending:    { label: 'Pending',   badgeCn: 'bg-amber-950',   textCn: 'text-amber-400',   dotCn: 'bg-amber-400'   },
-  assigned:   { label: 'Assigned',  badgeCn: 'bg-blue-950',    textCn: 'text-blue-400',    dotCn: 'bg-blue-400'    },
-  in_transit: { label: 'En Route',  badgeCn: 'bg-emerald-950', textCn: 'text-emerald-400', dotCn: 'bg-emerald-400' },
-  completed:  { label: 'Delivered', badgeCn: 'bg-zinc-800',    textCn: 'text-zinc-400',    dotCn: 'bg-zinc-500'    },
-  cancelled:  { label: 'Cancelled', badgeCn: 'bg-red-950',     textCn: 'text-red-400',     dotCn: 'bg-red-500'     },
-}
-
-function cacheKey(driverId: string) {
-  return `bookings_driver_${driverId}`
-}
-
-async function readCache(driverId: string): Promise<CachePayload | null> {
-  try {
-    const raw = await AsyncStorage.getItem(cacheKey(driverId))
-    if (!raw) return null
-    return JSON.parse(raw) as CachePayload
-  } catch {
-    return null
-  }
-}
-
-async function writeCache(driverId: string, bookings: BookingWithRelations[]) {
-  try {
-    const payload: CachePayload = { bookings, savedAt: new Date().toISOString() }
-    await AsyncStorage.setItem(cacheKey(driverId), JSON.stringify(payload))
-  } catch {
-    // non-fatal
-  }
-}
-
-function formatCacheAge(savedAt: string): string {
-  const diffMs  = Date.now() - new Date(savedAt).getTime()
-  const diffMin = Math.floor(diffMs / 60_000)
-  if (diffMin < 1)  return 'just now'
-  if (diffMin < 60) return `${diffMin}m ago`
-  const diffH = Math.floor(diffMin / 60)
-  if (diffH < 24)   return `${diffH}h ago`
-  return `${Math.floor(diffH / 24)}d ago`
-}
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('en-PH', {
-    month: 'short', day: 'numeric', year: 'numeric',
-  })
-}
-
-function formatTime(timeStr: string): string {
-  const [h, m] = timeStr.split(':')
-  const hour   = parseInt(h, 10)
-  return `${hour % 12 || 12}:${m} ${hour >= 12 ? 'PM' : 'AM'}`
-}
-
-function getProgress(destinations: BookingDestination[]) {
-  const done  = destinations.filter((d) => d.status === 'delivered').length
-  const total = destinations.length
-  return { done, total, pct: total ? done / total : 0 }
-}
-
-function resolveTruckLabel(
-  truckAssignment: TruckAssignment | undefined,
-  truckTypeNeeded: string,
-): string {
-  if (!truckAssignment) return truckTypeNeeded
-
-  const { trucks } = truckAssignment
-  const plate      = trucks?.plate_number ?? ''
-  const modelName  = trucks?.truck_models?.name ?? trucks?.truck_models?.vehicle_type ?? ''
-
-  if (plate && modelName) return `${plate} · ${modelName}`
-  if (plate)              return plate
-  if (modelName)          return modelName
-  return truckTypeNeeded
-}
+import { FONTS } from '../../../lib/config/fonts'
+import { Package, Search, Truck, TriangleAlert, WifiOff } from 'lucide-react-native'
+import {
+  BookingWithRelations,
+  FILTERS,
+  FilterKey,
+  STATUS_CONFIG,
+  bookingRef,
+  fetchDriverBookings,
+  filterBookings,
+  formatCacheAge,
+  formatDate,
+  formatTime,
+  getProgress,
+  isFilterKey,
+  readCache,
+  resolveTruckLabel,
+  writeCache,
+} from '../../../lib/driverBookings'
 
 interface BookingCardProps {
   booking: BookingWithRelations
@@ -218,7 +77,7 @@ function BookingCard({ booking, onPress, index }: BookingCardProps) {
   const lastStop = [...(booking.booking_destinations ?? [])]
     .sort((a, b) => b.sequence_order - a.sequence_order)[0]?.address
 
-  const shortId = booking.booking_id.split('-')[0].toUpperCase()
+  const ref = bookingRef(booking)
 
   return (
     <Animated.View
@@ -245,7 +104,7 @@ function BookingCard({ booking, onPress, index }: BookingCardProps) {
         <View className="flex-row items-center justify-between mb-3">
           <View className="flex-row items-center gap-2">
             <Text className="text-[11px] font-black tracking-widest text-ink-primary font-mono">
-              #{shortId}
+              {ref}
             </Text>
             <View className="w-1 h-1 rounded-full bg-surface-overlay" />
             <Text className="text-xs text-ink-faint font-medium">
@@ -366,18 +225,6 @@ function BookingCard({ booking, onPress, index }: BookingCardProps) {
   )
 }
 
-const FILTERS = ['All', 'Active', 'Pending', 'Completed'] as const
-type FilterKey = typeof FILTERS[number]
-
-function filterBookings(bookings: BookingWithRelations[], filter: FilterKey) {
-  switch (filter) {
-    case 'Active':    return bookings.filter((b) => b.status === 'in_transit' || b.status === 'assigned')
-    case 'Pending':   return bookings.filter((b) => b.status === 'pending')
-    case 'Completed': return bookings.filter((b) => b.status === 'completed'  || b.status === 'cancelled')
-    default:          return bookings
-  }
-}
-
 function EmptyState({ filter }: { filter: FilterKey }) {
   return (
     <View className="items-center justify-center py-20 px-8">
@@ -424,62 +271,6 @@ function OfflineBanner({ savedAt, onRetry }: OfflineBannerProps) {
         </TouchableOpacity>
       </View>
     </Animated.View>
-  )
-}
-
-/**
- * The driver's own on/off switch for delivery work.
- *
- * Operations only sees drivers who have turned this on, so a driver who never
- * flips it never gets assigned — which is deliberate: a new account starts off.
- * While a delivery is in flight the switch reads "On delivery" and is locked;
- * finishing the delivery stands them down and they opt back in from here.
- */
-function AvailabilityToggle() {
-  const status    = useAvailabilityStore((s) => s.status)
-  const canToggle = useAvailabilityStore((s) => s.canToggle)
-  const saving    = useAvailabilityStore((s) => s.saving)
-  const setStatus = useAvailabilityStore((s) => s.setStatus)
-
-  const isAvailable = status === 'available'
-  const onDelivery  = status === 'assigned'
-  const blocked     = status === 'on_leave' || status === 'inactive'
-
-  const label = onDelivery ? 'On delivery'
-    : blocked ? (status === 'on_leave' ? 'On leave' : 'Inactive')
-    : isAvailable ? 'Accepting deliveries'
-    : 'Not accepting'
-
-  const tone = onDelivery ? { bg: 'bg-blue-950',   dot: 'bg-blue-400',   text: 'text-blue-400'   }
-    : blocked            ? { bg: 'bg-zinc-800',    dot: 'bg-zinc-500',   text: 'text-zinc-400'   }
-    : isAvailable        ? { bg: 'bg-emerald-950', dot: 'bg-emerald-400', text: 'text-emerald-400' }
-    :                      { bg: 'bg-amber-950',   dot: 'bg-amber-400',  text: 'text-amber-400'  }
-
-  const disabled = !canToggle || saving || status == null
-
-  return (
-    <TouchableOpacity
-      onPress={() => { if (!disabled) void setStatus(isAvailable ? 'unavailable' : 'available').catch(() => {}) }}
-      disabled={disabled}
-      activeOpacity={0.75}
-      accessibilityRole="switch"
-      accessibilityState={{ checked: isAvailable, disabled }}
-      accessibilityLabel={`Availability: ${label}`}
-      className={`flex-row items-center gap-2 rounded-2xl px-3 py-2 ${tone.bg} ${disabled ? 'opacity-70' : ''}`}
-    >
-      {saving
-        ? <ActivityIndicator size="small" color="#ffffff" />
-        : <View className={`w-2 h-2 rounded-full ${tone.dot}`} />}
-      <View>
-        <Text className={`text-[11px] font-bold ${tone.text}`}>{label}</Text>
-        {canToggle && !saving && (
-          <Text className="text-[10px] text-ink-faint">
-            Tap to turn {isAvailable ? 'off' : 'on'}
-          </Text>
-        )}
-      </View>
-      <Power size={13} color={disabled ? '#818181' : '#ffffff'} />
-    </TouchableOpacity>
   )
 }
 
@@ -535,12 +326,24 @@ export default function DriverBookingList() {
   const hasHydrated = useAuthHydrated()
   const driverId    = useDriverId()
 
+  // Home deep-links straight to a tab: the active-order card lands on Active,
+  // "See All" lands on All. Anything unrecognised falls back to All.
+  const { filter: filterParam } = useLocalSearchParams<{ filter?: string }>()
+  const requestedFilter = isFilterKey(filterParam) ? filterParam : 'All'
+
   const [bookings,     setBookings]     = useState<BookingWithRelations[]>([])
   const [loading,      setLoading]      = useState(true)
   const [refreshing,   setRefreshing]   = useState(false)
   const [error,        setError]        = useState<string | null>(null)
-  const [activeFilter, setActiveFilter] = useState<FilterKey>('All')
+  const [activeFilter, setActiveFilter] = useState<FilterKey>(requestedFilter)
   const [offlineMeta,  setOfflineMeta]  = useState<{ savedAt: string } | null>(null)
+
+  // Re-arriving from Home with a different tab in the URL wins over whatever
+  // tab was left selected; tapping a tab here doesn't touch the param, so this
+  // never fights the driver's own choice.
+  useEffect(() => {
+    setActiveFilter(requestedFilter)
+  }, [requestedFilter])
 
   const refreshAvailability = useAvailabilityStore((s) => s.refresh)
 
@@ -561,8 +364,7 @@ export default function DriverBookingList() {
     }
 
     try {
-      const { data } = await api.get(`/booking/driver/${driverId}`)
-      const fresh: BookingWithRelations[] = data.data ?? []
+      const fresh = await fetchDriverBookings(driverId)
       setBookings(fresh)
       setOfflineMeta(null)
       setError(null)
@@ -614,21 +416,29 @@ export default function DriverBookingList() {
 
       <ReAvailablePrompt />
 
-      <View className="flex-row items-end justify-between px-5 pt-3 pb-3">
-        <View>
-          <Text className="label-mono text-ink-faint mb-0.5">My Assignments</Text>
-          <Text className="text-[28px] font-black text-ink-primary tracking-tight leading-9">
-            Bookings
+      {/* "My Assignments" now lives in the top bar, so this is just the heading
+          and the running total, per node 2734:1475. */}
+      <View className="flex-row items-center justify-between px-6 pt-3.5 pb-4">
+        <Text
+          className="text-[36px] leading-[36px] text-ink-primary"
+          style={{ fontFamily: FONTS.spartan.bold }}
+        >
+          BOOKINGS
+        </Text>
+        <View className="items-end">
+          <Text
+            className="text-[32px] leading-[32px] text-cyan"
+            style={{ fontFamily: FONTS.spartan.bold }}
+          >
+            {bookings.length}
+          </Text>
+          <Text
+            className="text-base leading-4 text-ink-faint"
+            style={{ fontFamily: FONTS.spartan.medium }}
+          >
+            TOTAL
           </Text>
         </View>
-        <View className="bg-ink-primary rounded-2xl min-w-[44px] h-11 items-center justify-center px-3 mb-1">
-          <Text className="text-surface-bg font-black text-xl">{bookings.length}</Text>
-        </View>
-      </View>
-
-      {/* Nothing reaches this driver unless they turn themselves on here. */}
-      <View className="px-4 pb-5">
-        <AvailabilityToggle />
       </View>
 
       <View className="flex-row gap-1.5 px-4 pb-3">

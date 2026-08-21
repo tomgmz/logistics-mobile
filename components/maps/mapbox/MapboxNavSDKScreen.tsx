@@ -46,6 +46,12 @@ import { C } from '../../../theme/navigation.theme'
 
 interface Props {
   bookingId: string
+  /**
+   * The driver chose to run this booking ahead of its scheduled day. It has to
+   * reach the pickup confirmation: the server refuses an early pickup that
+   * doesn't declare itself, and records the override when it does.
+   */
+  earlyStart?: boolean
 }
 
 type Leg =
@@ -70,15 +76,15 @@ const RECENT_CONFIRM_IGNORE_MS = 5_000
 
 MapboxGL.setAccessToken(process.env.EXPO_PUBLIC_MAPBOX_TOKEN ?? '')
 
-export default function MapboxNavSDKScreen({ bookingId }: Props) {
+export default function MapboxNavSDKScreen({ bookingId, earlyStart = false }: Props) {
   return (
     <NavErrorBoundary>
-      <MapboxNavSDKInner bookingId={bookingId} />
+      <MapboxNavSDKInner bookingId={bookingId} earlyStart={earlyStart} />
     </NavErrorBoundary>
   )
 }
 
-function MapboxNavSDKInner({ bookingId }: Props) {
+function MapboxNavSDKInner({ bookingId, earlyStart = false }: Props) {
   const router = useRouter()
   const insets = useSafeAreaInsets()
 
@@ -121,7 +127,7 @@ function MapboxNavSDKInner({ bookingId }: Props) {
     lastConfirmAtRef.current = Date.now()
     const leg = legs[i]
     const persist = leg.type === 'pickup'
-      ? confirmPickup(bookingId, photoUri)
+      ? confirmPickup(bookingId, photoUri, earlyStart)
       : confirmDelivery(bookingId, leg.destinationId, photoUri)
     persist.catch(() => {})
 

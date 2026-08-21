@@ -9,6 +9,7 @@ import '../global.css'
 import { useAuthStore, useAuthHydrated } from '../lib/store/auth.store'
 import { getMe, setSessionExpiredHandler, TokenStore } from '../lib/api/auth.api'
 import { APP_FONTS } from '../lib/config/fonts'
+import { syncServerTime } from '../lib/serverTime'
 import { registerForPushNotifications, initPushResponders } from '../lib/push'
 
 SplashScreen.preventAutoHideAsync()
@@ -63,6 +64,13 @@ export default function RootLayout() {
     const cleanup = initPushResponders()
     return cleanup
   }, [])
+
+  // Date-gated work (can this booking be started yet?) must not trust the
+  // device clock, so learn the server's offset as soon as we're signed in.
+  useEffect(() => {
+    if (!authReady || !user) return
+    void syncServerTime()
+  }, [authReady, user?.user_id])
 
   useEffect(() => {
     if (!isReady) return

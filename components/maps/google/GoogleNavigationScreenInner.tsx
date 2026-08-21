@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { ActivityIndicator, Alert, Linking, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { Milestone, Truck, Check, CheckCircle2, PackageCheck, ListOrdered, WifiOff } from 'lucide-react-native'
+import { Signpost, CheckCircle2, PackageCheck, WifiOff } from 'lucide-react-native'
 import NetInfo from '@react-native-community/netinfo'
 import * as Location from 'expo-location'
 import {
@@ -30,6 +30,7 @@ import {
 } from '../../../lib/navSession'
 import { GoogleTurnCard } from './GoogleTurnCard'
 import { StopProofModal } from '../shared/StopProofModal'
+import { GoogleNavSheet, SHEET_PEEK_H } from './GoogleNavSheet'
 import { C } from '../../../theme/navigation.theme'
 
 /**
@@ -37,9 +38,12 @@ import { C } from '../../../theme/navigation.theme'
  * once the native module is present (i.e. after a prebuild/dev build with the
  * SDK configured).
  *
- * The SDK owns routing, snapping, voice and rerouting, and renders most of its
- * own navigation UI (footer, speedometer, recenter, etc.). We hide only its
- * instruction header and replace it with our Mapbox-style turn card. Our jobs:
+ * The SDK owns the map itself — routing, the route line, snapping, camera,
+ * voice and rerouting. We hide two pieces of the chrome it draws over that map
+ * (its instruction header and its ETA card) and put our own on top, per the
+ * Figma "Tracking [in transit]" frame: turn card, round map controls and the
+ * trip sheet. Its re-center button stays its own, and nothing here touches the
+ * camera. Our jobs:
  *   1. Feed it waypoints from the backend (GET /booking/:id).
  *   2. Turn each confirmed stop into a booking status update, with the proof
  *      photo the driver took there.
@@ -63,6 +67,8 @@ interface Props {
   // route; otherwise it computes its own. Currently always unset (the route
   // picker was removed); kept for possible future use.
   routeToken?: string | null
+  /** The driver chose to run this ahead of its scheduled day. */
+  earlyStart?: boolean
 }
 
 const TOS_OPTIONS = {
@@ -77,22 +83,82 @@ const TOS_OPTIONS = {
 // shorter than any real drive between stops.
 const RECENT_CONFIRM_IGNORE_MS = 5_000
 
-// Flip to `false` to restore the custom Mapbox-style overlay (turn card,
-// stop list, avoid-highways toggle). When `true` we show the Google
-// Navigation SDK's own native chrome (instruction header, footer, etc.) and
-// hide our overlays — useful for comparing against the stock SDK experience.
-// All waypoint/arrival/booking logic runs the same either way.
+// Flip to `true` to see the stock Google Navigation experience: its own header
+// and ETA card come back and EVERY overlay of ours is withheld — turn card,
+// round map controls, banners and the trip sheet. That makes it a clean A/B for
+// "is the SDK drawing this, or are we covering it?", which is the only way to
+// answer that: the SDK's chrome renders inside a closed AAR, so which controls
+// it shows and when can't be read from source.
+//
+// All waypoint/arrival/booking logic runs the same either way, and arrival
+// detection still opens the proof popup on its own, so a trip stays completable
+// with our controls hidden.
 const SHOW_NATIVE_UI = false
 
-export default function GoogleNavigationScreenInner({ bookingId, routeToken }: Props) {
+
+/**
+ * The round map controls — the Figma "Tracking [in transit]" frame draws them as
+ * light discs with a 2px status-coloured ring, stacked down the right edge.
+ *
+ * They hang under Google's compass, which is the stock Maps SDK control
+ * (UiSettings.setCompassEnabled) rather than anything this wrapper positions.
+ * That means its box is fixed: a 48dp container at a 12dp right margin, with the
+ * visible disc inset inside it by the drawable's own padding.
+ *
+ * So these match the compass's BOX rather than its visible circle — same width,
+ * same margin. Guessing at the circle can't work: with a different box size the
+ * centre lines never line up, whatever margin you pick. The frame's own 40px is
+ * given up here on purpose; it has no compass to sit under.
+ */
+const MAP_BTN_FILL = '#f2e4e4'
+const MAP_BTN_RED  = '#f62626'
+const MAP_BTN_IDLE = '#818181'
+
+/**
+ * How much of the map's bottom we declare obscured, via mapPadding.
+ *
+ * Deliberately more than the closed sheet's own height: the SDK needs room to
+ * put its re-center button AND its traffic/flood callouts fully clear of the
+ * sheet, not merely flush against it. Raise this if either still ends up behind
+ * the sheet; the cost is that the camera frames the driver that much higher up
+ * the screen, since padding is what tells it where centre is.
+ */
+const SDK_BOTTOM_CLEARANCE = SHEET_PEEK_H + 140
+
+/** The Maps SDK compass container, matched exactly. */
+const MAP_BTN_SIZE  = 48
+const MAP_BTN_RIGHT = 12
+/** Below the compass, measured down from the top safe-area inset. */
+const MAP_BTN_TOP   = 164
+/** Disc height plus the gap between them. */
+const MAP_BTN_PITCH = MAP_BTN_SIZE + 6
+
+const MAP_BTN = {
+  position:        'absolute' as const,
+  right:           MAP_BTN_RIGHT,
+  width:           MAP_BTN_SIZE,
+  height:          MAP_BTN_SIZE,
+  borderRadius:    MAP_BTN_SIZE / 2,
+  alignItems:      'center' as const,
+  justifyContent:  'center' as const,
+  backgroundColor: MAP_BTN_FILL,
+  borderWidth:     2,
+  shadowColor:     '#000',
+  shadowOffset:    { width: 0, height: 4 },
+  shadowOpacity:   0.25,
+  shadowRadius:    4,
+  elevation:       8,
+}
+
+export default function GoogleNavigationScreenInner({ bookingId, routeToken, earlyStart = false }: Props) {
   return (
     <NavigationProvider termsAndConditionsDialogOptions={TOS_OPTIONS}>
-      <GoogleNavInner bookingId={bookingId} routeToken={routeToken} />
+      <GoogleNavInner bookingId={bookingId} routeToken={routeToken} earlyStart={earlyStart} />
     </NavigationProvider>
   )
 }
 
-function GoogleNavInner({ bookingId, routeToken }: Props) {
+function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
   const router = useRouter()
   const insets = useSafeAreaInsets()
   const {
@@ -105,15 +171,20 @@ function GoogleNavInner({ bookingId, routeToken }: Props) {
   } = useNavigation()
 
   const [error, setError] = useState<string | null>(null)
-  const [navInfo, setNavInfo] = useState<{ instruction: string; stepDistanceM: number } | null>(null)
+  const [navInfo, setNavInfo] = useState<{
+    instruction:    string
+    stepDistanceM:  number
+    nextEtaS?:      number
+    nextDistanceM?: number
+    finalEtaS?:     number
+    steps?:         { instruction: string; distanceM: number }[]
+  } | null>(null)
   const [rerouting, setRerouting] = useState(false)
   const [avoidHighways, setAvoidHighways] = useState(false)
   const [toggleError, setToggleError] = useState<string | null>(null)
-  // Numbered stop-list overlay: the planned stops, which one is current, and
-  // whether the list is expanded.
+  // The planned stops and which one is current. The trip sheet renders the list.
   const [stops, setStops]       = useState<DisplayStop[]>([])
   const [legIndex, setLegIndex] = useState(0)
-  const [stopsOpen, setStopsOpen] = useState(false)
   // Index of the stop whose arrival geofence we're inside, if any — a visual cue
   // on the confirm button for the case where the SDK saw the arrival but the
   // stop wasn't recorded from it.
@@ -317,7 +388,7 @@ function GoogleNavInner({ bookingId, routeToken }: Props) {
     // reconnect. Idempotency keys dedupe; the queue flushes immediately when
     // we're online.
     const persist = leg.type === 'pickup'
-      ? confirmPickup(bookingId, photoUri)
+      ? confirmPickup(bookingId, photoUri, earlyStart)
       : confirmDelivery(bookingId, leg.destinationId, photoUri)
     persist.catch(() => {})
 
@@ -418,6 +489,15 @@ function GoogleNavInner({ bookingId, routeToken }: Props) {
         setNavInfo({
           instruction:   e.currentStep?.instruction ?? '',
           stepDistanceM: e.distanceToCurrentStepMeters ?? 0,
+          // Feeds the sheet's ETA strip and its "ON THE WAY" total.
+          nextEtaS:      e.timeToNextDestinationSeconds ?? undefined,
+          nextDistanceM: e.distanceToNextDestinationMeters ?? undefined,
+          finalEtaS:     e.timeToFinalDestinationSeconds ?? undefined,
+          // Every manoeuvre still ahead — what the turn card drops down to show.
+          steps: (e.getRemainingSteps ?? []).map((st: any) => ({
+            instruction: st?.instruction ?? '',
+            distanceM:   st?.distanceMeters ?? 0,
+          })),
         })
       })
       setOnRouteChanged(() => {
@@ -694,14 +774,29 @@ function GoogleNavInner({ bookingId, routeToken }: Props) {
   // proof popup, or it never opened. Highlight the button that reopens it.
   const atCurrentStop = arrivedIdx !== null && arrivedIdx === legIndex
 
-  // Google owns the map + most of its nav chrome (footer, speedometer,
-  // recenter). We hide only its instruction header and draw our own turn card
-  // on top.
+  // Google owns the map and its own nav chrome. We withhold its instruction
+  // header and ETA card, draw our turn card and trip sheet in their place, and
+  // declare the sheet's strip as map padding so the SDK moves its remaining
+  // controls clear of it.
   return (
     <View style={{ flex: 1, backgroundColor: '#0a0a0a' }}>
       <NavigationView
         style={StyleSheet.absoluteFill}
         headerEnabled={SHOW_NATIVE_UI}
+        // Our sheet takes the footer's place, so that one is off. The camera —
+        // including the SDK's own re-center button and everything it does with
+        // following mode — is left entirely alone.
+        footerEnabled={SHOW_NATIVE_UI}
+        // Declares the bottom strip as obscured so the SDK draws its OWN
+        // furniture — the re-center button, and the traffic/flood callouts —
+        // above our sheet instead of behind it. Our sheet is a sibling rendered
+        // after this view, so it always wins on z-order; moving what the SDK
+        // draws is the only way, and this prop is the only lever for it.
+        //
+        // A layout declaration, not a camera call: no controller, no moveCamera,
+        // no perspective. Bottom only, so the compass and the disc column keep
+        // their positions.
+        mapPadding={SHOW_NATIVE_UI ? undefined : { bottom: SDK_BOTTOM_CLEARANCE + insets.bottom }}
         // Dark map: during a nav session the theme is driven by
         // navigationNightMode (not a cloud mapId/color scheme), so force night.
         navigationNightMode={NavigationNightMode.FORCE_NIGHT}
@@ -710,8 +805,16 @@ function GoogleNavInner({ bookingId, routeToken }: Props) {
         <GoogleTurnCard
           instruction={navInfo?.instruction}
           stepDistanceM={navInfo?.stepDistanceM}
+          steps={navInfo?.steps}
           isRerouting={rerouting}
           onBack={() => router.back()}
+          // The leg being driven: from the stop just cleared to the one ahead.
+          // Before the pickup there is no previous stop, so the driver's own
+          // position is the start.
+          fromLabel={legIndex > 0 ? stops[legIndex - 1]?.label : 'Current location'}
+          fromAddress={legIndex > 0 ? stops[legIndex - 1]?.address : 'On the way'}
+          toLabel={currentStop?.label}
+          toAddress={currentStop?.address}
         />
       )}
 
@@ -722,9 +825,11 @@ function GoogleNavInner({ bookingId, routeToken }: Props) {
       {!SHOW_NATIVE_UI && offline && (
         <View
           style={{
+            // Under the turn card, stopping short of the compass / button column.
             position:        'absolute',
-            right:           12,
-            top:             insets.top + 118,
+            left:            22,
+            right:           MAP_BTN_RIGHT + MAP_BTN_SIZE + 12,
+            top:             insets.top + 104,
             zIndex:          24,
             flexDirection:   'row',
             alignItems:      'center',
@@ -748,41 +853,30 @@ function GoogleNavInner({ bookingId, routeToken }: Props) {
       {/* Avoid-highways toggle. Recomputes the route off motorways — the
           practical lever when GPS keeps snapping you onto a nearby expressway.
           Icon-only round button, docked below the SDK's compass. */}
+      {!SHOW_NATIVE_UI && (
       <TouchableOpacity
         onPress={toggleAvoidHighways}
         activeOpacity={0.85}
-        style={{
-          position:        'absolute',
-          right:           12,
-          top:             insets.top + 190,
-          zIndex:          21,
-          width:           48,
-          height:          48,
-          borderRadius:    24,
-          alignItems:      'center',
-          justifyContent:  'center',
-          backgroundColor: C.bannerBg,
-          borderWidth:     1.5,
-          borderColor:     avoidHighways ? C.cyan : C.bannerBorder,
-          shadowColor:     '#000',
-          shadowOffset:    { width: 0, height: 4 },
-          shadowOpacity:   0.5,
-          shadowRadius:    12,
-          elevation:       12,
-        }}
+        accessibilityRole="switch"
+        accessibilityState={{ checked: avoidHighways }}
+        accessibilityLabel="Avoid highways"
+        style={[MAP_BTN, { top: insets.top + MAP_BTN_TOP, zIndex: 21, borderColor: avoidHighways ? MAP_BTN_RED : MAP_BTN_IDLE }]}
       >
-        <Milestone size={20} color={avoidHighways ? C.cyan : C.dimWhite} />
+        <Signpost size={22} color={avoidHighways ? MAP_BTN_RED : MAP_BTN_IDLE} strokeWidth={1.5} />
       </TouchableOpacity>
+      )}
 
       {/* Transient banner shown when an avoid-highways recompute fails. The
           toggle has already reverted to the route actually being guided. */}
-      {toggleError && (
+      {!SHOW_NATIVE_UI && toggleError && (
         <View
           style={{
+            // Shares the banner column under the turn card; drops a row when the
+            // offline banner is already sitting in the first slot.
             position:        'absolute',
-            right:           68,
-            top:             insets.top + 194,
-            maxWidth:        '62%',
+            left:            22,
+            right:           MAP_BTN_RIGHT + MAP_BTN_SIZE + 12,
+            top:             insets.top + (offline ? 148 : 104),
             zIndex:          22,
             flexDirection:   'row',
             alignItems:      'center',
@@ -802,136 +896,50 @@ function GoogleNavInner({ bookingId, routeToken }: Props) {
         </View>
       )}
 
-      {/* Stop-list overlay — collapsed to an icon-only round button (matching
-          the avoid-highways control) that docks below it on the right. Tapping
-          it expands the numbered list of every stop in optimized order, with the
-          current stop highlighted and visited ones checked. */}
-      {stops.length > 0 && (
-        <>
-          <TouchableOpacity
-            onPress={() => setStopsOpen((o) => !o)}
-            activeOpacity={0.85}
-            style={{
-              position:        'absolute',
-              right:           12,
-              top:             insets.top + 250,
-              zIndex:          23,
-              width:           48,
-              height:          48,
-              borderRadius:    24,
-              alignItems:      'center',
-              justifyContent:  'center',
-              backgroundColor: C.bannerBg,
-              borderWidth:     1.5,
-              borderColor:     stopsOpen ? C.cyan : C.bannerBorder,
-              shadowColor:     '#000',
-              shadowOffset:    { width: 0, height: 4 },
-              shadowOpacity:   0.5,
-              shadowRadius:    12,
-              elevation:       12,
-            }}
-          >
-            <ListOrdered size={20} color={stopsOpen ? C.cyan : C.dimWhite} />
-          </TouchableOpacity>
-
-          {stopsOpen && (
-            <View
-              style={{
-                position: 'absolute', right: 12, top: insets.top + 368, zIndex: 23,
-                width: 260, maxWidth: '72%',
-                backgroundColor: C.overlay, borderRadius: 14, borderWidth: 1, borderColor: C.border,
-                paddingHorizontal: 12, paddingVertical: 11, gap: 8,
-              }}
-            >
-              {stops.map((s, i) => {
-                const done    = i < legIndex
-                const current = i === legIndex
-                const accent  = s.kind === 'pickup' ? C.cyan : C.orange
-                return (
-                  <View key={`${s.kind}-${i}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, opacity: done ? 0.5 : 1 }}>
-                    <View
-                      style={{
-                        width: 22, height: 22, borderRadius: 11,
-                        backgroundColor: done ? C.green : current ? accent : 'transparent',
-                        borderWidth: 1, borderColor: done ? C.green : accent,
-                        alignItems: 'center', justifyContent: 'center',
-                      }}
-                    >
-                      {done
-                        ? <Check size={12} color="#000" />
-                        : s.kind === 'pickup'
-                          ? <Truck size={11} color={current ? '#000' : accent} />
-                          : <Text style={{ color: current ? '#000' : accent, fontSize: 11, fontWeight: '900' }}>{s.number}</Text>}
-                    </View>
-                    <Text
-                      style={{ color: current ? C.white : C.dimWhite, fontSize: 12, fontWeight: current ? '700' : '400', flex: 1 }}
-                      numberOfLines={1}
-                    >
-                      <Text style={{ color: C.dimWhite }}>{s.label}: </Text>{s.address}
-                    </Text>
-                  </View>
-                )
-              })}
-            </View>
-          )}
-        </>
-      )}
-
-      {/* Stop confirmation — the driver's control over trip progress, docked
-          below the avoid-highways and stop-list circles. It reads "Pickup done"
-          on the pickup leg, "Drop-off N of M done" on each drop-off (1–3 of
-          them), and once they're all confirmed it turns green: "Mark delivery as
-          done", which closes the booking. Wider than the circles above it
-          because the label is what makes it unambiguous at a glance.
+      {/* Stop confirmation — the driver's control over trip progress, drawn as
+          the green disc in the right-hand stack. Which stop it applies to is
+          read from the trip sheet below; the disc itself carries no label, so
+          confirmLabel now only names it for screen readers.
 
           For a stop, this opens the proof popup — the same one arrival detection
           opens by itself — so this button is how the driver gets there when the
           geofence never fired, or after dismissing it. */}
-      {stops.length > 0 && !completed && (
+      {!SHOW_NATIVE_UI && stops.length > 0 && !completed && (
         <TouchableOpacity
           onPress={onConfirmPress}
           disabled={confirming}
           activeOpacity={0.85}
-          style={{
-            position:        'absolute',
-            right:           12,
-            top:             insets.top + 310,
-            zIndex:          25,
-            maxWidth:        '76%',
-            minHeight:       48,
-            paddingVertical: 12,
-            paddingHorizontal: 16,
-            borderRadius:    24,
-            flexDirection:   'row',
-            alignItems:      'center',
-            gap:             9,
-            opacity:         confirming ? 0.6 : 1,
-            backgroundColor: isFinalAction ? C.green : atCurrentStop ? C.cyan : C.bannerBg,
-            borderWidth:     1.5,
-            borderColor:     isFinalAction ? C.green : atCurrentStop ? C.cyan : C.bannerBorder,
-            shadowColor:     '#000',
-            shadowOffset:    { width: 0, height: 4 },
-            shadowOpacity:   0.5,
-            shadowRadius:    12,
-            elevation:       12,
-          }}
+          accessibilityRole="button"
+          accessibilityLabel={confirmLabel}
+          style={[
+            MAP_BTN,
+            {
+              top:         insets.top + MAP_BTN_TOP + MAP_BTN_PITCH,
+              zIndex:      25,
+              opacity:     confirming ? 0.6 : 1,
+              borderColor: C.green,
+            },
+          ]}
         >
           {confirming
-            ? <ActivityIndicator size="small" color={isFinalAction || atCurrentStop ? '#000' : C.cyan} />
+            ? <ActivityIndicator size="small" color={C.green} />
             : isFinalAction
-              ? <CheckCircle2 size={20} color="#000" />
-              : <PackageCheck size={20} color={atCurrentStop ? '#000' : C.cyan} />}
-          <Text
-            numberOfLines={1}
-            style={{
-              fontSize:   14,
-              fontWeight: '800',
-              color:      isFinalAction || atCurrentStop ? '#000' : C.white,
-            }}
-          >
-            {confirmLabel}
-          </Text>
+              ? <CheckCircle2 size={22} color={C.green} strokeWidth={1.5} />
+              : <PackageCheck size={22} color={C.green} strokeWidth={1.5} />}
         </TouchableOpacity>
+      )}
+
+      {/* Trip panel over the bottom of the map — ETA strip collapsed, the whole
+          route board when expanded. Replaces Google's footer. */}
+      {!SHOW_NATIVE_UI && !completed && stops.length > 0 && (
+        <GoogleNavSheet
+          stops={stops}
+          legIndex={legIndex}
+          etaSeconds={navInfo?.nextEtaS}
+          distanceM={navInfo?.nextDistanceM}
+          totalEtaSeconds={navInfo?.finalEtaS}
+          onConfirmStop={(idx) => setProofFor({ idx, auto: false })}
+        />
       )}
 
       {/* The stop confirmation popup + proof photo. Opened by arrival detection

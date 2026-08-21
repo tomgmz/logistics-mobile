@@ -25,7 +25,13 @@ import { uploadProofPhoto } from './proofPhoto'
  * durably recorded — the driver never waits on the network to move to the next
  * stop.
  */
-async function queueStop(id: string, kind: 'pickup' | 'delivery', url: string, photoUri: string): Promise<void> {
+async function queueStop(
+  id: string,
+  kind: 'pickup' | 'delivery',
+  url: string,
+  photoUri: string,
+  extraBody?: Record<string, unknown>,
+): Promise<void> {
   let uploadedUrl: string | null = null
 
   const net = await NetInfo.fetch().catch(() => null)
@@ -38,19 +44,27 @@ async function queueStop(id: string, kind: 'pickup' | 'delivery', url: string, p
     id,
     kind,
     url,
-    body:     uploadedUrl ? { proof_photo_url: uploadedUrl } : {},
+    body:     { ...extraBody, ...(uploadedUrl ? { proof_photo_url: uploadedUrl } : {}) },
     photoUri: uploadedUrl ? undefined : photoUri,
   })
   await flush()
 }
 
-/** Pickup loaded, with proof photo — moves the booking to `in_transit`. */
-export function confirmPickup(bookingId: string, photoUri: string): Promise<void> {
+/**
+ * Pickup loaded, with proof photo — moves the booking to `in_transit`.
+ *
+ * `earlyStart` carries the driver's decision to run this booking ahead of its
+ * scheduled day. The server refuses an early pickup without it, and records the
+ * override when it's set — so it has to ride along in the queued body rather
+ * than being decided at drain time, which may be hours later.
+ */
+export function confirmPickup(bookingId: string, photoUri: string, earlyStart = false): Promise<void> {
   return queueStop(
     `pickup:${bookingId}`,
     'pickup',
     `/driver/bookings/${bookingId}/pickup`,
     photoUri,
+    earlyStart ? { early_start: true } : undefined,
   )
 }
 

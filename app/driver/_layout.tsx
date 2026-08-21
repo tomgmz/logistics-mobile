@@ -1,26 +1,13 @@
-import ReusableDashboardShell from '../../components/ui/ReusableDashboardShell'
 import { Slot } from 'expo-router'
-import { Toolbox, ClipboardList } from 'lucide-react-native'
+import { View, StyleSheet } from 'react-native'
 import { usePathname } from 'expo-router'
 import { useEffect } from 'react'
+import DriverTopBar from '../../components/ui/DriverTopBar'
 import { useAuthStore } from '../../lib/store/auth.store'
 import { useMessagingBadgeSync } from '../../hooks/useMessagingBadgeSync'
 import { useGlobalPresence } from '../../hooks/useGlobalPresence'
 import { useNotificationsRealtime } from '../../hooks/useNotificationsRealtime'
 import { startAutoFlush, flushOnAppForeground } from '../../lib/offlineQueue'
-
-const DRIVER_NAV = [
-  {
-    href:  '/driver/driver-assignment',
-    label: 'Driver Assignment',
-    icon:  <ClipboardList size={17} color="rgba(255,255,255,0.40)" />,
-  },
-  {
-    href:  '/driver/maintenance',
-    label: 'Maintenance',
-    icon:  <Toolbox size={17} color="rgba(255,255,255,0.40)" />,
-  },
-]
 
 export default function DriverLayout() {
   const pathname = usePathname()
@@ -40,18 +27,32 @@ export default function DriverLayout() {
     return () => { stopNet(); stopApp() }
   }, [])
 
-  const hideShell =
+  // These screens are full-bleed and bring their own headers.
+  const hideChrome =
     pathname.startsWith('/driver/maps') ||
     pathname.startsWith('/driver/messages') ||
     pathname.startsWith('/driver/notifications')
 
-  if (hideShell) {
+  if (hideChrome) {
     return <Slot />
   }
 
   return (
-    <ReusableDashboardShell navItems={DRIVER_NAV}>
-      <Slot />
-    </ReusableDashboardShell>
+    <View style={styles.root}>
+      <DriverTopBar />
+      <View style={styles.main}>
+        <Slot />
+      </View>
+    </View>
   )
 }
+
+const styles = StyleSheet.create({
+  root: {
+    flex:            1,
+    backgroundColor: '#000000',
+  },
+  main: {
+    flex: 1,
+  },
+})

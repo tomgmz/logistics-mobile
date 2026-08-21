@@ -15,6 +15,8 @@ import { ActivityIndicator, Linking, Pressable, Text, View } from 'react-native'
 interface Props {
   bookingId:  string
   routeToken?: string | null
+  /** The driver chose to run this ahead of its scheduled day. */
+  earlyStart?: boolean
 }
 
 const SETUP_HINT =
@@ -22,7 +24,7 @@ const SETUP_HINT =
   '`npx expo run:android` (or EAS Build for iOS) with the SDK configured, and make sure ' +
   'Navigation SDK access is enabled on your Google key. See docs/google-nav-sdk-migration.md.'
 
-export default function GoogleNavigationScreen({ bookingId, routeToken }: Props) {
+export default function GoogleNavigationScreen({ bookingId, routeToken, earlyStart = false }: Props) {
   const [Inner, setInner] = useState<React.ComponentType<Props> | null>(null)
   const [loadErr, setLoadErr] = useState<string | null>(null)
 
@@ -64,5 +66,5 @@ export default function GoogleNavigationScreen({ bookingId, routeToken }: Props)
     )
   }
 
-  return <Inner bookingId={bookingId} routeToken={routeToken} />
+  return <Inner bookingId={bookingId} routeToken={routeToken} earlyStart={earlyStart} />
 }

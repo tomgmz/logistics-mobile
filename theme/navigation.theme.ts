@@ -27,8 +27,6 @@ export const C = {
   rerouteBorder:'rgba(0,229,255,0.4)',
 } as const
 
-import MapboxGL from '@rnmapbox/maps'
-export const MAPBOX_STYLE = MapboxGL.StyleURL.Street
 
 export const STEP_ADVANCE_M    = 50 
 export const OFF_ROUTE_M       = 80
