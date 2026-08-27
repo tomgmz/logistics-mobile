@@ -23,8 +23,19 @@ interface AvailabilityStore {
   // the prompt.
   promptReAvailable: boolean
 
+  // The month calendar behind the pill: which month is loaded, the days ticked
+  // in it, and the server's idea of today (the device clock never decides which
+  // days are already past).
+  month:       string | null
+  days:        string[]
+  today:       string | null
+  loadingDays: boolean
+  savingDays:  boolean
+
   refresh:      () => Promise<void>
   setStatus:    (status: 'available' | 'unavailable') => Promise<void>
+  loadDays:     (month: string) => Promise<void>
+  saveDays:     (month: string, days: string[]) => Promise<void>
   clearPrompt:  () => void
   reset:        () => void
 }
@@ -36,6 +47,12 @@ export const useAvailabilityStore = create<AvailabilityStore>((set, get) => ({
   saving:    false,
   error:     null,
   promptReAvailable: false,
+
+  month:       null,
+  days:        [],
+  today:       null,
+  loadingDays: false,
+  savingDays:  false,
 
   refresh: async () => {
     set({ loading: true })
@@ -74,10 +91,41 @@ export const useAvailabilityStore = create<AvailabilityStore>((set, get) => ({
     }
   },
 
+  loadDays: async (month) => {
+    // Switching months blanks the grid rather than showing the previous month's
+    // ticks against the new month's dates.
+    set({ loadingDays: true, days: get().month === month ? get().days : [], month })
+    try {
+      const next = await driverApi.getAvailabilityDays(month)
+      set({ month: next.month, days: next.days, today: next.today, error: null })
+    } catch {
+      set({ error: 'Could not load your calendar' })
+    } finally {
+      set({ loadingDays: false })
+    }
+  },
+
+  saveDays: async (month, days) => {
+    // Optimistic: the calendar closes on the driver's tap, so the ticks they
+    // just made have to survive the round trip. A failure re-reads the month on
+    // the next open, which is the server's truth either way.
+    set({ savingDays: true, month, days })
+    try {
+      const next = await driverApi.setAvailabilityDays(month, days)
+      set({ month: next.month, days: next.days, today: next.today, error: null })
+    } catch (err: any) {
+      set({ error: err?.response?.data?.message ?? 'Could not save your calendar' })
+      throw err
+    } finally {
+      set({ savingDays: false })
+    }
+  },
+
   clearPrompt: () => set({ promptReAvailable: false }),
 
   reset: () => set({
     status: null, canToggle: false, loading: false, saving: false,
     error: null, promptReAvailable: false,
+    month: null, days: [], today: null, loadingDays: false, savingDays: false,
   }),
 }))

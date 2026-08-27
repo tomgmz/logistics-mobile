@@ -1,8 +1,10 @@
-import React from 'react'
-import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native'
+import React, { useState } from 'react'
+import { View, Text, TouchableOpacity, Pressable, ActivityIndicator } from 'react-native'
 import { Power } from 'lucide-react-native'
 
 import { useAvailabilityStore } from '../../lib/store/availability.store'
+import AvailabilityCalendarModal from './AvailabilityCalendarModal'
+import { PencilUpIcon } from './icons/AvailabilityIcons'
 
 /**
  * The driver's own on/off switch for delivery work.
@@ -15,8 +17,14 @@ import { useAvailabilityStore } from '../../lib/store/availability.store'
  * It is docked at the bottom of the landing page rather than buried in a list,
  * because it is the one control that decides whether the driver gets work at
  * all — it should be reachable by thumb the moment they open the app.
+ *
+ * The switch is only about today. The pencil opens the month calendar, where the
+ * driver marks which days ahead they can be given a delivery — the same control
+ * expanded, which is why it grows out of this pill rather than opening a screen.
  */
 export default function AvailabilityToggle() {
+  const [calendarOpen, setCalendarOpen] = useState(false)
+
   const status    = useAvailabilityStore((s) => s.status)
   const canToggle = useAvailabilityStore((s) => s.canToggle)
   const saving    = useAvailabilityStore((s) => s.saving)
@@ -44,6 +52,7 @@ export default function AvailabilityToggle() {
   const disabled = !canToggle || saving || status == null
 
   return (
+    <>
     <TouchableOpacity
       onPress={() => { if (!disabled) void setStatus(isAvailable ? 'unavailable' : 'available').catch(() => {}) }}
       disabled={disabled}
@@ -66,6 +75,21 @@ export default function AvailabilityToggle() {
       </View>
 
       <Power size={18} color={disabled ? '#818181' : '#ffffff'} />
+
+      {/* Its own target inside the switch: planning the month must not be one
+          mis-tap away from standing yourself down. */}
+      <Pressable
+        onPress={() => setCalendarOpen(true)}
+        hitSlop={12}
+        accessibilityRole="button"
+        accessibilityLabel="Set the days you can be assigned to a delivery"
+        style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+      >
+        <PencilUpIcon size={16} color="#4df9ed" />
+      </Pressable>
     </TouchableOpacity>
+
+    <AvailabilityCalendarModal open={calendarOpen} onClose={() => setCalendarOpen(false)} />
+    </>
   )
 }
