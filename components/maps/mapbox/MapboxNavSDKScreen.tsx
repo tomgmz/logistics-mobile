@@ -16,9 +16,10 @@ import { MapboxNavigationView } from '@badatgil/expo-mapbox-navigation'
 import MapboxGL from '@rnmapbox/maps'
 
 import api from '../../../lib/api/auth.api'
-import { confirmPickup, confirmDelivery, completeBooking } from '../../../lib/tripProgress'
+import { confirmPickup, confirmDelivery, completeBooking, type StopProofContext } from '../../../lib/tripProgress'
 import { saveBookingCache, loadBookingCache, clearBookingCache } from '../../../lib/navCache'
 import { StopProofModal } from '../shared/StopProofModal'
+import { legCoordinates } from '../../../lib/stopGeofence'
 import { C } from '../../../theme/navigation.theme'
 
 /**
@@ -54,9 +55,12 @@ interface Props {
   earlyStart?: boolean
 }
 
+// The stop's own coordinates ride on the leg so the proof popup can measure the
+// driver against it directly, rather than indexing into the parallel `coords`
+// array (which is offset by the driver's own start point).
 type Leg =
-  | { type: 'pickup';  address?: string | null }
-  | { type: 'dropoff'; destinationId: string; address?: string | null }
+  | { type: 'pickup';  address?: string | null; latitude?: number | null; longitude?: number | null }
+  | { type: 'dropoff'; destinationId: string; address?: string | null; latitude?: number | null; longitude?: number | null }
 
 const ANDROID = Platform.OS === 'android'
 // The Android SDK wants the profile WITHOUT the `mapbox/` prefix; iOS wants it.
@@ -115,7 +119,7 @@ function MapboxNavSDKInner({ bookingId, earlyStart = false }: Props) {
   // Record a leg with the proof photo taken at it. The single write path: the
   // proof popup is the only caller, however it was opened. Idempotent — the
   // offline queue dedupes by id and processedRef makes a second call a no-op.
-  const confirmLeg = useCallback((i: number, photoUri: string) => {
+  const confirmLeg = useCallback((i: number, photoUri: string, proof: StopProofContext) => {
     const legs = legsRef.current
     if (i < 0 || i >= legs.length || processedRef.current.has(i)) return
     // Only ever confirm the stop we're actually on. Skipping one would leave a
@@ -127,8 +131,8 @@ function MapboxNavSDKInner({ bookingId, earlyStart = false }: Props) {
     lastConfirmAtRef.current = Date.now()
     const leg = legs[i]
     const persist = leg.type === 'pickup'
-      ? confirmPickup(bookingId, photoUri, earlyStart)
-      : confirmDelivery(bookingId, leg.destinationId, photoUri)
+      ? confirmPickup(bookingId, photoUri, earlyStart, proof)
+      : confirmDelivery(bookingId, leg.destinationId, photoUri, proof)
     persist.catch(() => {})
 
     cursorRef.current = i + 1
@@ -231,11 +235,11 @@ function MapboxNavSDKInner({ bookingId, earlyStart = false }: Props) {
         const coords: { latitude: number; longitude: number }[] = [driver]
 
         if (!pickedUp && booking.origin_latitude != null && booking.origin_longitude != null) {
-          legs.push({ type: 'pickup', address: booking.origin })
+          legs.push({ type: 'pickup', address: booking.origin, latitude: booking.origin_latitude, longitude: booking.origin_longitude })
           coords.push({ latitude: booking.origin_latitude, longitude: booking.origin_longitude })
         }
         dropoffs.forEach((d: any) => {
-          legs.push({ type: 'dropoff', destinationId: d.destination_id, address: d.address })
+          legs.push({ type: 'dropoff', destinationId: d.destination_id, address: d.address, latitude: d.latitude, longitude: d.longitude })
           coords.push({ latitude: d.latitude, longitude: d.longitude })
         })
 
@@ -387,11 +391,12 @@ function MapboxNavSDKInner({ bookingId, earlyStart = false }: Props) {
           }
           address={legsRef.current[proofFor.idx].address ?? undefined}
           autoOpened={proofFor.auto}
+          stopCoordinates={legCoordinates(legsRef.current[proofFor.idx])}
           onCancel={() => setProofFor(null)}
-          onConfirm={(photoUri) => {
+          onConfirm={(photoUri, proof) => {
             const idx = proofFor.idx
             setProofFor(null)
-            confirmLeg(idx, photoUri)
+            confirmLeg(idx, photoUri, proof)
           }}
         />
       )}

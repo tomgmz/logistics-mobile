@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { View, Text, TouchableOpacity, Pressable, ActivityIndicator } from 'react-native'
+import { View, Text, Pressable } from 'react-native'
 import { Power } from 'lucide-react-native'
 
 import { useAvailabilityStore } from '../../lib/store/availability.store'
@@ -7,87 +7,71 @@ import AvailabilityCalendarModal from './AvailabilityCalendarModal'
 import { PencilUpIcon } from './icons/AvailabilityIcons'
 
 /**
- * The driver's own on/off switch for delivery work.
+ * Where the driver says when they can work — and what that adds up to today.
  *
- * Operations only sees drivers who have turned this on, so a driver who never
- * flips it never gets assigned — which is deliberate: a new account starts off.
- * While a delivery is in flight the switch reads "On delivery" and is locked;
- * finishing the delivery stands them down and they opt back in from here.
+ * The days ticked on the calendar are the whole of the driver's opt-in:
+ * operations can put them on a booking scheduled for a ticked day and on no
+ * other. So this pill is a readout, not a switch. It used to be a switch, and
+ * the pair could disagree — a driver switched "available" with no days ticked
+ * got nothing, and could not see why. One control, one answer.
  *
- * It is docked at the bottom of the landing page rather than buried in a list,
- * because it is the one control that decides whether the driver gets work at
- * all — it should be reachable by thumb the moment they open the app.
- *
- * The switch is only about today. The pencil opens the month calendar, where the
- * driver marks which days ahead they can be given a delivery — the same control
- * expanded, which is why it grows out of this pill rather than opening a screen.
+ * It stays docked at the bottom of the landing page because the calendar behind
+ * it is the one thing that decides whether the driver gets work at all: it
+ * should be reachable by thumb the moment they open the app.
  */
 export default function AvailabilityToggle() {
   const [calendarOpen, setCalendarOpen] = useState(false)
 
-  const status    = useAvailabilityStore((s) => s.status)
-  const canToggle = useAvailabilityStore((s) => s.canToggle)
-  const saving    = useAvailabilityStore((s) => s.saving)
-  const setStatus = useAvailabilityStore((s) => s.setStatus)
+  const status     = useAvailabilityStore((s) => s.status)
+  const onDelivery = useAvailabilityStore((s) => s.onDelivery)
+  const days       = useAvailabilityStore((s) => s.days)
+  const today      = useAvailabilityStore((s) => s.today)
 
-  const isAvailable = status === 'available'
-  const onDelivery  = status === 'assigned'
-  const blocked     = status === 'on_leave' || status === 'inactive'
+  const blocked  = status === 'on_leave' || status === 'inactive'
+  // The calendar is only loaded once it has been opened, so "no days yet" is not
+  // proof of anything until we know what today is on the server's clock.
+  const known    = today != null
+  const workingToday = known && days.includes(today)
 
   const label = onDelivery ? 'On delivery'
     : blocked ? (status === 'on_leave' ? 'On leave' : 'Inactive')
-    : isAvailable ? 'Accepting deliveries'
-    : 'Not accepting'
+    : !known ? 'Your availability'
+    : workingToday ? 'Available today'
+    : 'Not working today'
 
   const hint = onDelivery ? 'Locked until this delivery is done'
     : blocked ? 'Contact operations to change this'
-    : isAvailable ? 'Tap to stop receiving bookings'
-    : 'Tap to start receiving bookings'
+    : !known ? 'Tap to pick the days you can work'
+    : workingToday ? 'You can be given a delivery today'
+    : 'Tap to pick the days you can work'
 
   const tone = onDelivery ? { bg: 'bg-blue-950',    dot: 'bg-blue-400',    text: 'text-blue-400'    }
     : blocked            ? { bg: 'bg-zinc-800',     dot: 'bg-zinc-500',    text: 'text-zinc-400'    }
-    : isAvailable        ? { bg: 'bg-emerald-950',  dot: 'bg-emerald-400', text: 'text-emerald-400' }
+    : workingToday       ? { bg: 'bg-emerald-950',  dot: 'bg-emerald-400', text: 'text-emerald-400' }
     :                      { bg: 'bg-amber-950',    dot: 'bg-amber-400',   text: 'text-amber-400'   }
-
-  const disabled = !canToggle || saving || status == null
 
   return (
     <>
-    <TouchableOpacity
-      onPress={() => { if (!disabled) void setStatus(isAvailable ? 'unavailable' : 'available').catch(() => {}) }}
-      disabled={disabled}
-      activeOpacity={0.75}
-      accessibilityRole="switch"
-      accessibilityState={{ checked: isAvailable, disabled }}
-      accessibilityLabel={`Availability: ${label}`}
-      accessibilityHint={disabled ? undefined : hint}
-      className={`flex-row items-center gap-3 rounded-2xl px-4 py-3 ${tone.bg} ${disabled ? 'opacity-70' : ''}`}
+    {/* The whole pill opens the calendar — it is the only thing here to do, so
+        there is no smaller target to hunt for. */}
+    <Pressable
+      onPress={() => setCalendarOpen(true)}
+      accessibilityRole="button"
+      accessibilityLabel={`${label}. Set the days you can be assigned to a delivery`}
+      accessibilityHint="Opens your availability calendar"
+      style={({ pressed }) => ({ opacity: pressed ? 0.75 : 1 })}
+      className={`flex-row items-center gap-3 rounded-2xl px-4 py-3 ${tone.bg}`}
     >
-      {saving
-        ? <ActivityIndicator size="small" color="#ffffff" />
-        : <View className={`w-2.5 h-2.5 rounded-full ${tone.dot}`} />}
+      <View className={`w-2.5 h-2.5 rounded-full ${tone.dot}`} />
 
       <View className="flex-1">
         <Text className={`text-sm font-bold ${tone.text}`}>{label}</Text>
-        <Text className="text-[11px] text-ink-faint mt-0.5">
-          {saving ? 'Saving…' : hint}
-        </Text>
+        <Text className="text-[11px] text-ink-faint mt-0.5">{hint}</Text>
       </View>
 
-      <Power size={18} color={disabled ? '#818181' : '#ffffff'} />
-
-      {/* Its own target inside the switch: planning the month must not be one
-          mis-tap away from standing yourself down. */}
-      <Pressable
-        onPress={() => setCalendarOpen(true)}
-        hitSlop={12}
-        accessibilityRole="button"
-        accessibilityLabel="Set the days you can be assigned to a delivery"
-        style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
-      >
-        <PencilUpIcon size={16} color="#4df9ed" />
-      </Pressable>
-    </TouchableOpacity>
+      <Power size={18} color="#818181" />
+      <PencilUpIcon size={16} color="#4df9ed" />
+    </Pressable>
 
     <AvailabilityCalendarModal open={calendarOpen} onClose={() => setCalendarOpen(false)} />
     </>

@@ -17,7 +17,7 @@ import {
 
 import api from '../../../lib/api/auth.api'
 import { flush } from '../../../lib/offlineQueue'
-import { confirmPickup, confirmDelivery, completeBooking } from '../../../lib/tripProgress'
+import { confirmPickup, confirmDelivery, completeBooking, type StopProofContext } from '../../../lib/tripProgress'
 import { saveBookingCache, loadBookingCache, clearBookingCache } from '../../../lib/navCache'
 import {
   type Leg,
@@ -30,6 +30,7 @@ import {
 } from '../../../lib/navSession'
 import { GoogleTurnCard } from './GoogleTurnCard'
 import { StopProofModal } from '../shared/StopProofModal'
+import { legCoordinates } from '../../../lib/stopGeofence'
 import { GoogleNavSheet, SHEET_PEEK_H } from './GoogleNavSheet'
 import { C } from '../../../theme/navigation.theme'
 
@@ -370,7 +371,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
    * After the last drop-off guidance stops and the button turns into "Mark
    * delivery as done" (completeDelivery).
    */
-  const advanceStop = useCallback(async (idx: number, photoUri: string) => {
+  const advanceStop = useCallback(async (idx: number, photoUri: string, proof: StopProofContext) => {
     if (confirmingRef.current) return
     const legs = legsRef.current
     const leg  = legs[idx]
@@ -388,8 +389,8 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
     // reconnect. Idempotency keys dedupe; the queue flushes immediately when
     // we're online.
     const persist = leg.type === 'pickup'
-      ? confirmPickup(bookingId, photoUri, earlyStart)
-      : confirmDelivery(bookingId, leg.destinationId, photoUri)
+      ? confirmPickup(bookingId, photoUri, earlyStart, proof)
+      : confirmDelivery(bookingId, leg.destinationId, photoUri, proof)
     persist.catch(() => {})
 
     legIndexRef.current = idx + 1
@@ -628,12 +629,12 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
         const display:   DisplayStop[] = []
         if (!pickedUp && booking.origin_latitude != null && booking.origin_longitude != null) {
           waypoints.push({ title: 'Pickup', position: { lat: booking.origin_latitude, lng: booking.origin_longitude } })
-          legs.push({ type: 'pickup' })
+          legs.push({ type: 'pickup', latitude: booking.origin_latitude, longitude: booking.origin_longitude })
           display.push({ kind: 'pickup', label: 'Pickup', address: booking.origin ?? 'Pickup' })
         }
         dropoffs.forEach((s: any, i: number) => {
           waypoints.push({ title: s.address ?? 'Stop', position: { lat: s.latitude, lng: s.longitude } })
-          legs.push({ type: 'dropoff', destinationId: s.destination_id })
+          legs.push({ type: 'dropoff', destinationId: s.destination_id, latitude: s.latitude, longitude: s.longitude })
           display.push({ kind: 'dropoff', number: i + 1, label: `Drop-off ${i + 1}`, address: s.address ?? `Drop-off ${i + 1}` })
         })
         if (waypoints.length === 0) {
@@ -957,11 +958,12 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
           }
           address={stops[proofFor.idx].address}
           autoOpened={proofFor.auto}
+          stopCoordinates={legCoordinates(legsRef.current[proofFor.idx])}
           onCancel={() => setProofFor(null)}
-          onConfirm={(photoUri) => {
+          onConfirm={(photoUri, proof) => {
             const idx = proofFor.idx
             setProofFor(null)
-            advanceStop(idx, photoUri)
+            advanceStop(idx, photoUri, proof)
           }}
         />
       )}

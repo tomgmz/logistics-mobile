@@ -24,6 +24,10 @@ import { uploadProofPhoto } from './proofPhoto'
  * completion before the last drop-off, so the queue is drained strictly FIFO
  * and stops at the first entry that couldn't be applied.
  *
+ * Each stop also carries the position captured when the driver confirmed it, so
+ * the backend's distance check measures where they actually were rather than
+ * where they are when the queue happens to drain.
+ *
  * Proof photos ride along: a stop confirmed in a dead zone keeps the photo as a
  * local file URI (`photoUri`), which is uploaded here as the first step of
  * applying that entry. The status update is never sent without its proof — the
@@ -157,9 +161,23 @@ export function flush(): Promise<void> {
             item,
           )
           remaining.push({ ...item, attempts: item.attempts + 1 })
+        } else if (status === 422 && e?.response?.data?.code === 'STOP_TOO_FAR') {
+          // The server says the driver was too far from the stop. The app checks
+          // the same distance before queuing anything, so reaching here means the
+          // two disagreed — and dropping it would erase a delivery the driver
+          // believes they confirmed. Keep it and say so loudly; it needs a human,
+          // not another retry.
+          console.warn(
+            `[offlineQueue] 422 STOP_TOO_FAR on ${item.url} — the server placed the ` +
+            `driver ${e?.response?.data?.distance_m ?? '?'} m from the stop, but this ` +
+            `confirmation passed the on-device check. Kept for review; it will not apply ` +
+            `until the position or the stop's coordinates are corrected.`,
+            item,
+          )
+          remaining.push({ ...item, attempts: item.attempts + 1 })
         } else {
-          // Other 4xx (404/422, or a 409 that outlived its retries) → nothing
-          // more we can do with it; drop rather than retry forever.
+          // Other 4xx (404, or a 409 that outlived its retries) → nothing more we
+          // can do with it; drop rather than retry forever.
           console.warn(`[offlineQueue] dropping ${item.id} on ${status} (treated as already applied).`)
         }
       }

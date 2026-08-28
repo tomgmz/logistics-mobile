@@ -8,7 +8,6 @@ import {
   RefreshControl,
   Animated,
   Pressable,
-  Modal,
 } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -274,52 +273,6 @@ function OfflineBanner({ savedAt, onRetry }: OfflineBannerProps) {
   )
 }
 
-/**
- * Shown once after a delivery ends. The server stands the driver down when the
- * booking completes, so without this they would silently stop receiving work —
- * the prompt is what makes that opt-out visible and reversible on the spot.
- */
-function ReAvailablePrompt() {
-  const visible     = useAvailabilityStore((s) => s.promptReAvailable)
-  const saving      = useAvailabilityStore((s) => s.saving)
-  const setStatus   = useAvailabilityStore((s) => s.setStatus)
-  const clearPrompt = useAvailabilityStore((s) => s.clearPrompt)
-
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={clearPrompt}>
-      <View className="flex-1 items-center justify-center bg-black/75 px-8">
-        <View className="w-full rounded-2xl bg-surface-elevated border border-surface-border p-5 gap-3">
-          <Text className="text-lg font-black text-ink-primary">Delivery complete</Text>
-          <Text className="text-sm text-ink-muted leading-5">
-            You&apos;ve been set to not accepting deliveries. Turn yourself back on to be
-            considered for the next booking.
-          </Text>
-          <View className="flex-row gap-2 mt-1">
-            <TouchableOpacity
-              onPress={clearPrompt}
-              disabled={saving}
-              activeOpacity={0.8}
-              className="flex-1 rounded-xl border border-surface-border py-3 items-center"
-            >
-              <Text className="text-sm font-bold text-ink-faint">Not now</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => { void setStatus('available').catch(() => {}) }}
-              disabled={saving}
-              activeOpacity={0.8}
-              className="flex-1 rounded-xl bg-emerald-500 py-3 items-center"
-            >
-              <Text className="text-sm font-bold text-black">
-                {saving ? 'Turning on…' : "I'm available"}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  )
-}
-
 export default function DriverBookingList() {
   const router      = useRouter()
   const insets      = useSafeAreaInsets()
@@ -414,7 +367,6 @@ export default function DriverBookingList() {
   return (
     <View className="flex-1 bg-surface-bg">
 
-      <ReAvailablePrompt />
 
       {/* "My Assignments" now lives in the top bar, so this is just the heading
           and the running total, per node 2734:1475. */}

@@ -1,12 +1,14 @@
 import api from './auth.api'
 
 /**
- * The driver's own switch for accepting delivery work.
+ * Whether the driver can be given delivery work.
  *
- * A driver account starts 'unavailable' — operations only sees drivers who have
- * turned themselves on. 'assigned' is set by the system while a delivery is in
- * flight and cannot be toggled out of; finishing the delivery drops the driver
- * back to 'unavailable' so they opt in again when they are ready for the next one.
+ * There is no on/off switch — the calendar is the driver's opt-in, and the days
+ * they tick are the only days operations can put them on a booking. This status
+ * records the things that stop work regardless of any plan: 'assigned' while a
+ * delivery is in flight (system-owned), and 'on_leave' / 'inactive' when the
+ * fleet manager has stood them down. 'available' and 'unavailable' are left over
+ * from the old switch and mean nothing beyond "not stopped".
  */
 export type DriverAvailabilityStatus =
   | 'available'
@@ -16,18 +18,19 @@ export type DriverAvailabilityStatus =
   | 'inactive'
 
 export interface DriverAvailability {
-  driver_id:  string
-  status:     DriverAvailabilityStatus
-  // False while out on a delivery, or when the account is on leave / inactive.
-  can_toggle: boolean
+  driver_id:   string
+  status:      DriverAvailabilityStatus
+  // True while out on a delivery. Nothing the driver can change from their side.
+  on_delivery: boolean
 }
 
 /**
  * The driver's plan for one calendar month: the days they can be given a
  * delivery, ticked on the calendar behind the availability pill.
  *
- * A month with no days is a month the driver never filled in — operations reads
- * that as "no objection", not "unavailable".
+ * These days ARE the opt-in. A day left unticked is a day the driver cannot be
+ * assigned, and a month left empty means no work that month — so the calendar is
+ * the one thing that decides whether the driver gets given a delivery at all.
  */
 export interface DriverAvailabilityMonth {
   driver_id: string
@@ -42,11 +45,6 @@ export interface DriverAvailabilityMonth {
 export const driverApi = {
   getAvailability: async (): Promise<DriverAvailability> => {
     const { data } = await api.get('/driver/availability')
-    return data.data
-  },
-
-  setAvailability: async (status: 'available' | 'unavailable'): Promise<DriverAvailability> => {
-    const { data } = await api.patch('/driver/availability', { status })
     return data.data
   },
 

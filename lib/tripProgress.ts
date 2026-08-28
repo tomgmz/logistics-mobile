@@ -2,6 +2,7 @@ import NetInfo from '@react-native-community/netinfo'
 
 import { enqueue, flush } from './offlineQueue'
 import { uploadProofPhoto } from './proofPhoto'
+import type { StopFix } from './stopGeofence'
 
 /**
  * Driver-confirmed trip progress.
@@ -14,6 +15,12 @@ import { uploadProofPhoto } from './proofPhoto'
  * Every confirmation goes through the durable offline queue, so a stop confirmed
  * in a dead zone is synced on reconnect. The queue drains FIFO, which matches the
  * order the backend enforces (pickup → drop-offs → completion).
+ *
+ * Each confirmation carries the position captured AT THE STOP, plus the driver's
+ * reason when they confirmed one the distance gate would have refused. It has to
+ * be captured here and travel with the entry: by the time the queue drains, the
+ * driver may be hours and miles away, so a position read at send time would
+ * describe the wrong place entirely.
  */
 
 /**
@@ -58,23 +65,52 @@ async function queueStop(
  * override when it's set — so it has to ride along in the queued body rather
  * than being decided at drain time, which may be hours later.
  */
-export function confirmPickup(bookingId: string, photoUri: string, earlyStart = false): Promise<void> {
+export function confirmPickup(
+  bookingId: string,
+  photoUri: string,
+  earlyStart = false,
+  proof?: StopProofContext,
+): Promise<void> {
   return queueStop(
     `pickup:${bookingId}`,
     'pickup',
     `/driver/bookings/${bookingId}/pickup`,
     photoUri,
-    earlyStart ? { early_start: true } : undefined,
+    { ...(earlyStart ? { early_start: true } : {}), ...stopProofBody(proof) },
   )
 }
 
+/** Where the driver was when they confirmed, and why if they were too far. */
+export interface StopProofContext {
+  fix:             StopFix | null
+  overrideReason?: string | null
+}
+
+function stopProofBody(proof?: StopProofContext): Record<string, unknown> {
+  if (!proof) return {}
+  return {
+    ...(proof.fix ? {
+      latitude:   proof.fix.latitude,
+      longitude:  proof.fix.longitude,
+      ...(proof.fix.accuracy_m != null ? { accuracy_m: proof.fix.accuracy_m } : {}),
+    } : {}),
+    ...(proof.overrideReason ? { override_reason: proof.overrideReason } : {}),
+  }
+}
+
 /** One drop-off unloaded, with proof photo — marks that destination `delivered`. */
-export function confirmDelivery(bookingId: string, destinationId: string, photoUri: string): Promise<void> {
+export function confirmDelivery(
+  bookingId: string,
+  destinationId: string,
+  photoUri: string,
+  proof?: StopProofContext,
+): Promise<void> {
   return queueStop(
     `delivery:${destinationId}`,
     'delivery',
     `/driver/bookings/${bookingId}/destinations/${destinationId}/delivered`,
     photoUri,
+    stopProofBody(proof),
   )
 }
 

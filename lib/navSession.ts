@@ -18,9 +18,12 @@ import type { Waypoint } from '@googlemaps/react-native-navigation-sdk'
  * which a full app restart tears down anyway.
  */
 
+// Each leg carries the coordinates of the stop it ends at, so the proof popup
+// can measure the driver against it without re-deriving them from the waypoint
+// list by index — the two are built together and must not drift apart.
 export type Leg =
-  | { type: 'pickup' }
-  | { type: 'dropoff'; destinationId: string }
+  | { type: 'pickup';  latitude?: number | null; longitude?: number | null }
+  | { type: 'dropoff'; destinationId: string; latitude?: number | null; longitude?: number | null }
 
 // Display model for the numbered stop-list overlay (pickup + drop-offs in order).
 export interface DisplayStop {
