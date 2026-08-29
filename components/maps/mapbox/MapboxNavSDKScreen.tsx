@@ -130,9 +130,12 @@ function MapboxNavSDKInner({ bookingId, earlyStart = false }: Props) {
     processedRef.current.add(i)
     lastConfirmAtRef.current = Date.now()
     const leg = legs[i]
+    // Where the driver is headed next, so live tracking can tighten its update
+    // cadence as the truck closes on that stop. Null on the last leg.
+    const nextStop = legCoordinates(legs[i + 1])
     const persist = leg.type === 'pickup'
-      ? confirmPickup(bookingId, photoUri, earlyStart, proof)
-      : confirmDelivery(bookingId, leg.destinationId, photoUri, proof)
+      ? confirmPickup(bookingId, photoUri, earlyStart, proof, nextStop)
+      : confirmDelivery(bookingId, leg.destinationId, photoUri, proof, nextStop)
     persist.catch(() => {})
 
     cursorRef.current = i + 1

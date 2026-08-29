@@ -388,9 +388,12 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
     // is confirmed in a dead zone, it (and its photo) are queued and synced on
     // reconnect. Idempotency keys dedupe; the queue flushes immediately when
     // we're online.
+    // Where the driver is headed next, so live tracking can tighten its update
+    // cadence as the truck closes on that stop. Null on the last leg.
+    const nextStop = legCoordinates(legsRef.current[idx + 1])
     const persist = leg.type === 'pickup'
-      ? confirmPickup(bookingId, photoUri, earlyStart, proof)
-      : confirmDelivery(bookingId, leg.destinationId, photoUri, proof)
+      ? confirmPickup(bookingId, photoUri, earlyStart, proof, nextStop)
+      : confirmDelivery(bookingId, leg.destinationId, photoUri, proof, nextStop)
     persist.catch(() => {})
 
     legIndexRef.current = idx + 1

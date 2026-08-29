@@ -8,6 +8,11 @@ import { useMessagingBadgeSync } from '../../hooks/useMessagingBadgeSync'
 import { useGlobalPresence } from '../../hooks/useGlobalPresence'
 import { useNotificationsRealtime } from '../../hooks/useNotificationsRealtime'
 import { startAutoFlush, flushOnAppForeground } from '../../lib/offlineQueue'
+// Imported for its side effect: defining the background location task at module
+// scope. The OS can invoke that task before any screen has mounted — including
+// in a fresh JS context after the app was evicted — so the definition has to be
+// reached by simply loading the driver area, not by rendering the nav map.
+import '../../lib/locationTracking'
 
 export default function DriverLayout() {
   const pathname = usePathname()

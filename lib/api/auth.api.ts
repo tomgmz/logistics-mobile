@@ -42,6 +42,19 @@ export const TokenStore = {
   clearAll:     async () => {
     await storage.deleteItemAsync(KEYS.ACCESS_TOKEN)
     await storage.deleteItemAsync(KEYS.REFRESH_TOKEN)
+
+    // Losing the session must also stop the background location task. This is
+    // the one place all three ways out converge — sign out, sign out
+    // everywhere, and a refresh failure in the interceptors — so putting it
+    // here is what makes it impossible to leave a signed-out driver's phone
+    // reporting its position.
+    //
+    // Imported dynamically because locationTracking imports this module for
+    // `api`; a static import would close the cycle at load time.
+    try {
+      const { stopTracking } = await import('../locationTracking')
+      await stopTracking()
+    } catch { /* nothing to stop, or the module never loaded */ }
   },
 }
 

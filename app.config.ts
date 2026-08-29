@@ -116,6 +116,27 @@ export default {
             "8338 Logistics needs the camera to take proof-of-pickup and proof-of-delivery photos at each stop.",
         },
       ],
+      // Location. Background access is what lets the customer keep seeing the
+      // truck once the driver locks the screen or switches apps — without it
+      // tracking dies the moment the app leaves the foreground, and the customer
+      // is left looking at a truck frozen where it was minutes ago.
+      //
+      // The foreground service is required on Android for background delivery
+      // (and, from API 34, must declare the `location` type — the plugin writes
+      // that manifest entry). It also puts a persistent notification in front of
+      // the driver, which is the honest way to run this: someone whose position
+      // is being shared should be able to see that it is.
+      [
+        "expo-location",
+        {
+          locationWhenInUsePermission:
+            "8338 Logistics uses your location to navigate you to each stop and to confirm you are at the stop when you record proof.",
+          locationAlwaysAndWhenInUsePermission:
+            "8338 Logistics shares your location with the customer while a delivery is in progress, so they can see the truck approaching. It stops when the delivery is completed.",
+          isAndroidBackgroundLocationEnabled: true,
+          isAndroidForegroundServiceEnabled: true,
+        },
+      ],
     ],
     extra: {
       eas: {

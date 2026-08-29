@@ -2,7 +2,8 @@ import NetInfo from '@react-native-community/netinfo'
 
 import { enqueue, flush } from './offlineQueue'
 import { uploadProofPhoto } from './proofPhoto'
-import type { StopFix } from './stopGeofence'
+import { startTracking, stopTracking, setNextStop } from './locationTracking'
+import type { StopFix, Coordinates } from './stopGeofence'
 
 /**
  * Driver-confirmed trip progress.
@@ -70,7 +71,18 @@ export function confirmPickup(
   photoUri: string,
   earlyStart = false,
   proof?: StopProofContext,
+  firstDropoff?: Coordinates | null,
 ): Promise<void> {
+  // Pickup is what moves the booking to `in_transit`, which is the only state
+  // the backend accepts position pings for — so this is where live tracking
+  // begins. Started before the confirmation is queued, deliberately: if the
+  // driver is in a dead zone the confirmation may not land for hours, and the
+  // customer should still see the truck moving in the meantime.
+  //
+  // Not awaited, and failures are swallowed: a driver who declined the
+  // background-location prompt must still be able to run the delivery.
+  void startTracking(bookingId, firstDropoff ?? null).catch(() => {})
+
   return queueStop(
     `pickup:${bookingId}`,
     'pickup',
@@ -104,7 +116,12 @@ export function confirmDelivery(
   destinationId: string,
   photoUri: string,
   proof?: StopProofContext,
+  nextDropoff?: Coordinates | null,
 ): Promise<void> {
+  // Move the "arriving" tier onto the next leg, so the 5 s cadence follows the
+  // driver down the route instead of staying pinned to a stop already done.
+  void setNextStop(nextDropoff ?? null).catch(() => {})
+
   return queueStop(
     `delivery:${destinationId}`,
     'delivery',
@@ -116,6 +133,12 @@ export function confirmDelivery(
 
 /** Every drop-off done — marks the booking `completed`. Needs no photo of its own. */
 export function completeBooking(bookingId: string): Promise<void> {
+  // The trip is over, so the tracking is too. The backend refuses pings for a
+  // booking that isn't `in_transit`, but that is the backstop — a driver's
+  // position should stop leaving the phone the moment there is no delivery to
+  // justify it, not merely stop being stored.
+  void stopTracking().catch(() => {})
+
   return enqueue({
     id:   `complete:${bookingId}`,
     kind: 'complete',
