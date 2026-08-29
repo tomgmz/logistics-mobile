@@ -1,6 +1,7 @@
 import * as Location from 'expo-location'
 import * as TaskManager from 'expo-task-manager'
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import NetInfo from '@react-native-community/netinfo'
 import { AppState } from 'react-native'
 
 import api from './api/auth.api'
@@ -164,6 +165,19 @@ async function considerFix(location: Location.LocationObject): Promise<void> {
     heading_deg: coords.heading,
     recorded_at: new Date(location.timestamp).toISOString(),
   }
+
+  // Never fire a request with no connectivity to refresh a token against. The
+  // axios interceptor refreshes before each call and clears the session when
+  // that fails, so an offline ping can sign a driver out in the middle of a
+  // delivery — and because clearing the session also stops this task, they
+  // would stay dark after signal came back. `offlineQueue.flush` guards its
+  // drain for exactly this reason; a dead zone is a normal part of the job.
+  //
+  // It also stops the app hammering a dead network: the OS keeps delivering
+  // fixes every few seconds, and without this each one would burn a radio wake
+  // and an HTTP timeout.
+  const net = await NetInfo.fetch().catch(() => null)
+  if (!net?.isConnected) return
 
   try {
     const res = await api.post(`/driver/bookings/${context.bookingId}/location`, body)
