@@ -31,6 +31,7 @@ import { bookingRef } from '../../../lib/driverBookings'
 import { navigationGate, formatGateDate } from '../../../lib/deliveryWindow'
 import { syncServerTime } from '../../../lib/serverTime'
 import { FONTS } from '../../../lib/config/fonts'
+import { groupCargoByDestination, manifestFor } from '../../../lib/cargoManifest'
 
 /**
  * Assignment details, shown after a driver taps a booking and before navigation
@@ -65,6 +66,8 @@ interface HandlingCode {
 
 interface CargoItem {
   item_id:         string
+  /** The drop-off this line is bound for. Null on pre-existing bookings. */
+  destination_id?: string | null
   product_text?:   string | null
   commodity_text?: string | null
   shc_text?:       string | null
@@ -303,9 +306,17 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
   const totalQty  = cargo.reduce((n, c) => n + (c.quantity ?? 0), 0)
   const itemsMeta = totalQty > 0 ? `${totalQty} ITEM${totalQty === 1 ? '' : 'S'}` : null
 
-  // Cargo carries no destination link in the data, so it can only be named for a
-  // drop-off when there is exactly one to name.
-  const soleDropoff = dropoffs.length === 1
+  // Cargo now says which drop-off it is for, so it is shown grouped by stop
+  // rather than as one undifferentiated pile. Anything from a booking taken
+  // before that was recorded has no destination and is listed under "whole
+  // trip" — guessing would be worse than admitting we do not know.
+  const grouped = groupCargoByDestination(cargo)
+
+  const cargoByStop = dropoffs.map((d, i) => ({
+    destination: d,
+    label:       `DROP-OFF ${i + 1}`,
+    manifest:    manifestFor(grouped, d.destination_id),
+  }))
 
   return (
     <View style={s.root}>
@@ -368,27 +379,46 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
         >
           <View style={s.innerBox}>
             <Stop tone="pickup" label="Pickup" address={booking.origin} last={dropoffs.length === 0} />
-            {dropoffs.map((d, i) => (
-              <Stop
-                key={d.destination_id}
-                tone="dropoff"
-                label={`Drop-off ${i + 1}`}
-                address={d.address}
-                last={i === dropoffs.length - 1}
-              />
-            ))}
+            {dropoffs.map((d, i) => {
+              const m = cargoByStop[i].manifest
+              return (
+                <Stop
+                  key={d.destination_id}
+                  tone="dropoff"
+                  label={`Drop-off ${i + 1}`}
+                  address={d.address}
+                  // What actually comes off here, at a glance, on the route list.
+                  note={m.totalQty > 0 ? `${m.totalQty} item${m.totalQty === 1 ? '' : 's'} for this stop` : null}
+                  last={i === dropoffs.length - 1}
+                />
+              )
+            })}
           </View>
         </Card>
 
-        {/* Cargo */}
+        {/* Cargo, grouped by the stop it comes off at */}
         {cargo.length > 0 && (
           <Card icon={<Boxes size={16} color={D.cyan} />} title="CARGO" meta={itemsMeta}>
-            {cargo.map((c, i) => (
+            {cargoByStop.map(({ destination, label, manifest }) =>
+              manifest.items.map((c, i) => (
+                <CargoBlock
+                  key={c.item_id}
+                  item={c}
+                  index={i}
+                  dropoffLabel={label}
+                  // Repeat the stop's address on its first line so the driver
+                  // reads WHERE before WHAT.
+                  dropoffAddress={i === 0 ? destination.address : null}
+                />
+              )),
+            )}
+            {grouped.unassigned.items.map((c, i) => (
               <CargoBlock
                 key={c.item_id}
                 item={c}
                 index={i}
-                dropoffLabel={soleDropoff ? 'DROP-OFF 1' : null}
+                dropoffLabel="WHOLE TRIP"
+                dropoffAddress={null}
               />
             ))}
           </Card>
@@ -487,11 +517,13 @@ function Card({
 }
 
 function Stop({
-  tone, label, address, last,
+  tone, label, address, note, last,
 }: {
   tone:    'pickup' | 'dropoff'
   label:   string
   address: string
+  /** What comes off here, e.g. "3 items for this stop". */
+  note?:   string | null
   last:    boolean
 }) {
   const color = tone === 'pickup' ? D.green    : D.red
@@ -505,20 +537,25 @@ function Stop({
         </View>
         {!last && <View style={s.stopConnector} />}
       </View>
-      <Text style={s.stopText} numberOfLines={2}>
-        <Text style={{ color: D.faint }}>{label}: </Text>
-        {address}
-      </Text>
+      <View style={s.stopBody}>
+        <Text style={s.stopText} numberOfLines={2}>
+          <Text style={{ color: D.faint }}>{label}: </Text>
+          {address}
+        </Text>
+        {note ? <Text style={s.stopNote} numberOfLines={1}>{note}</Text> : null}
+      </View>
     </View>
   )
 }
 
 function CargoBlock({
-  item, index, dropoffLabel,
+  item, index, dropoffLabel, dropoffAddress,
 }: {
-  item:         CargoItem
-  index:        number
-  dropoffLabel: string | null
+  item:            CargoItem
+  index:           number
+  dropoffLabel:    string | null
+  /** Shown once per stop, above its first cargo block. */
+  dropoffAddress?: string | null
 }) {
   const product   = pick(item.products, item.product_text)
   const commodity = pick(item.commodities, item.commodity_text)
@@ -528,6 +565,9 @@ function CargoBlock({
 
   return (
     <View style={index > 0 ? { marginTop: 14 } : undefined}>
+      {dropoffAddress ? (
+        <Text style={s.cargoStopAddress} numberOfLines={2}>{dropoffAddress}</Text>
+      ) : null}
       <Text style={s.cargoHeading}>
         CARGO {index + 1}
         {dropoffLabel ? <Text style={{ color: D.faint }}> ({dropoffLabel})</Text> : null}
@@ -549,7 +589,7 @@ function CargoBlock({
 
         <SpecRow label="Commodity"            value={commodity} />
         <SpecRow label="Special Handling Code" value={shc} />
-        <SpecRow label="Additional SHC"        value={ashc} />
+        <SpecRow label="Additional Special Handling Code" value={ashc} />
         <SpecRow label="Weight" value={item.weight_kg  != null ? `${item.weight_kg} kg`   : null} accent />
         <SpecRow label="Volume" value={item.volume_cbm != null ? `${item.volume_cbm} CBM` : null} accent />
         <SpecRow label="L × W × H" value={dims} accent />
@@ -569,7 +609,7 @@ function SpecRow({
   if (!value) return null
   return (
     <View style={s.specRow}>
-      <Text style={s.specLabel} numberOfLines={1}>{label}</Text>
+      <Text style={s.specLabel} numberOfLines={2}>{label}</Text>
       <Text style={[s.specValue, accent && { color: D.cyan }]} numberOfLines={1}>{value}</Text>
     </View>
   )
@@ -742,6 +782,21 @@ const s = StyleSheet.create({
     paddingTop: 4,
   },
 
+  stopBody: {
+    flex: 1,
+  },
+  stopNote: {
+    fontFamily: FONTS.spartan.medium,
+    fontSize:   11,
+    color:      D.cyan,
+    marginTop:  2,
+  },
+  cargoStopAddress: {
+    fontFamily:   FONTS.spartan.medium,
+    fontSize:     11,
+    color:        D.faint,
+    marginBottom: 4,
+  },
   cargoHeading: {
     color:      D.cyan,
     fontSize:   14,

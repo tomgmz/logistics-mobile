@@ -30,6 +30,7 @@ import {
 } from '../../../lib/navSession'
 import { GoogleTurnCard } from './GoogleTurnCard'
 import { StopProofModal } from '../shared/StopProofModal'
+import { groupCargoByDestination, manifestFor } from '../../../lib/cargoManifest'
 import { legCoordinates } from '../../../lib/stopGeofence'
 import { GoogleNavSheet, SHEET_PEEK_H } from './GoogleNavSheet'
 import { C } from '../../../theme/navigation.theme'
@@ -213,6 +214,13 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
   const offlineRef = useRef(false)
 
   const legsRef       = useRef<Leg[]>([])
+  // Booking cargo grouped by destination, for the stop manifest.
+  const cargoRef = useRef(groupCargoByDestination([]))
+
+  /** The manifest for the drop-off a leg ends at; empty for the pickup leg. */
+  const manifestForLeg = (leg: Leg | undefined) =>
+    leg && leg.type === 'dropoff' ? manifestFor(cargoRef.current, leg.destinationId) : null
+
   const legIndexRef   = useRef(0)
   const processedRef  = useRef<Set<number>>(new Set())
   const waypointsRef  = useRef<Waypoint[]>([])
@@ -599,6 +607,10 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
           booking = cached
         }
 
+        // Cargo, grouped by the drop-off it is bound for, so the confirmation
+        // popup can show the driver what comes off at the stop in front of them.
+        cargoRef.current = groupCargoByDestination(booking.booking_cargo_items)
+
         const pickedUp    = ['in_transit', 'completed'].includes(booking.status)
         const allStops    = (booking.booking_destinations ?? [])
           .slice()
@@ -962,6 +974,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
           address={stops[proofFor.idx].address}
           autoOpened={proofFor.auto}
           stopCoordinates={legCoordinates(legsRef.current[proofFor.idx])}
+          manifest={manifestForLeg(legsRef.current[proofFor.idx])}
           onCancel={() => setProofFor(null)}
           onConfirm={(photoUri, proof) => {
             const idx = proofFor.idx

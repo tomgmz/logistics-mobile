@@ -19,6 +19,7 @@ import api from '../../../lib/api/auth.api'
 import { confirmPickup, confirmDelivery, completeBooking, type StopProofContext } from '../../../lib/tripProgress'
 import { saveBookingCache, loadBookingCache, clearBookingCache } from '../../../lib/navCache'
 import { StopProofModal } from '../shared/StopProofModal'
+import { groupCargoByDestination, manifestFor } from '../../../lib/cargoManifest'
 import { legCoordinates } from '../../../lib/stopGeofence'
 import { C } from '../../../theme/navigation.theme'
 
@@ -110,6 +111,13 @@ function MapboxNavSDKInner({ bookingId, earlyStart = false }: Props) {
   const [proofFor, setProofFor] = useState<{ idx: number; auto: boolean } | null>(null)
 
   const legsRef      = useRef<Leg[]>([])
+
+  // Booking cargo grouped by destination, for the stop manifest.
+  const cargoRef = useRef(groupCargoByDestination([]))
+
+  /** The manifest for the drop-off a leg ends at; empty for the pickup leg. */
+  const manifestForLeg = (leg: Leg | undefined) =>
+    leg && leg.type === 'dropoff' ? manifestFor(cargoRef.current, leg.destinationId) : null
   const cursorRef    = useRef(0)
   const processedRef = useRef<Set<number>>(new Set())
   const completedRef = useRef(false)
@@ -228,6 +236,10 @@ function MapboxNavSDKInner({ bookingId, earlyStart = false }: Props) {
           booking = cached
         }
         if (cancelled) return
+
+        // Cargo, grouped by the drop-off it is bound for, so the confirmation
+        // popup can show the driver what comes off at the stop in front of them.
+        cargoRef.current = groupCargoByDestination(booking.booking_cargo_items)
 
         const pickedUp = ['in_transit', 'completed'].includes(booking.status)
         const dropoffs = (booking.booking_destinations ?? [])
@@ -395,6 +407,7 @@ function MapboxNavSDKInner({ bookingId, earlyStart = false }: Props) {
           address={legsRef.current[proofFor.idx].address ?? undefined}
           autoOpened={proofFor.auto}
           stopCoordinates={legCoordinates(legsRef.current[proofFor.idx])}
+          manifest={manifestForLeg(legsRef.current[proofFor.idx])}
           onCancel={() => setProofFor(null)}
           onConfirm={(photoUri, proof) => {
             const idx = proofFor.idx

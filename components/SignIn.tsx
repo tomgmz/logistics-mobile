@@ -374,6 +374,7 @@ export default function SignInScreen() {
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
   const [loading,  setLoading]  = useState(false)
+  const inFlight = useRef(false)
   const [error,    setError]    = useState<string | null>(null)
 
   const [lockState, setLockState] = useState<LockState>('none')
@@ -433,6 +434,7 @@ export default function SignInScreen() {
   }, [])
 
   const handleEmailSubmit = useCallback(async () => {
+    if (inFlight.current) return
     const trimmed = email.trim().toLowerCase()
     if (!trimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
       setError('Enter a valid email address')
@@ -440,6 +442,7 @@ export default function SignInScreen() {
     }
     setError(null)
     setLoading(true)
+    inFlight.current = true
     try {
       const status = await getAuthStatus(trimmed)
 
@@ -473,11 +476,13 @@ export default function SignInScreen() {
     } catch (err: any) {
       setError(extractMessage(err, 'Something went wrong. Try again.'))
     } finally {
+      inFlight.current = false
       setLoading(false)
     }
   }, [email])
 
   const handleMethodSelect = async (chosen: Method) => {
+    if (inFlight.current) return
     setMethod(chosen)
     setError(null)
 
@@ -487,12 +492,14 @@ export default function SignInScreen() {
         return
       }
       setLoading(true)
+      inFlight.current = true
       try {
         await requestOtp(email)
         setStep('otp')
       } catch (err: any) {
         setError(extractMessage(err, 'Failed to send OTP. Try again.'))
       } finally {
+        inFlight.current = false
         setLoading(false)
       }
     } else {
@@ -501,9 +508,12 @@ export default function SignInScreen() {
   }
 
   const handleOtpSubmit = useCallback(async (code: string) => {
+    if (inFlight.current) return
     if (code.length !== 6 || lockState !== 'none') return
     setError(null)
     setLoading(true)
+    inFlight.current = true
+    let navigated = false
     try {
       const auth = await verifyOtp(email, code)
       setTokens(auth.accessToken, auth.refreshToken)
@@ -511,6 +521,7 @@ export default function SignInScreen() {
       const me = await getMe()
       setUser(me)
       if (me.must_change_password) {
+        navigated = true
         router.replace('/change-password')
         return
       }
@@ -519,6 +530,7 @@ export default function SignInScreen() {
         setError(`Role "${me.role}" has no mobile access.`)
         return
       }
+      navigated = true
       router.replace(route as any)
     } catch (err: any) {
       const message = extractMessage(err, 'Invalid code. Try again.')
@@ -529,7 +541,9 @@ export default function SignInScreen() {
         setTimeout(() => otpRef.current?.focus(), 100)
       }
     } finally {
-      setLoading(false)
+      inFlight.current = false
+      // keep the button disabled while the app navigates away
+      if (!navigated) setLoading(false)
     }
   }, [email, lockState, setUser, setTokens, handleLockError])
 
@@ -542,6 +556,7 @@ export default function SignInScreen() {
   }
 
   const handlePasswordSubmit = useCallback(async () => {
+    if (inFlight.current) return
     if (lockState !== 'none') return
     if (!password.trim()) {
       setError('Enter your password')
@@ -549,6 +564,8 @@ export default function SignInScreen() {
     }
     setError(null)
     setLoading(true)
+    inFlight.current = true
+    let navigated = false
     try {
       const auth = await loginWithPassword(email, password)
       setTokens(auth.accessToken, auth.refreshToken)
@@ -556,6 +573,7 @@ export default function SignInScreen() {
       const me = await getMe()
       setUser(me)
       if (me.must_change_password) {
+        navigated = true
         router.replace('/change-password')
         return
       }
@@ -564,13 +582,16 @@ export default function SignInScreen() {
         setError(`Role "${me.role}" has no mobile access.`)
         return
       }
+      navigated = true
       router.replace(route as any)
     } catch (err: any) {
       const message = extractMessage(err, 'Incorrect password. Try again.')
       setError(message)
       await handleLockError(message, email)
     } finally {
-      setLoading(false)
+      inFlight.current = false
+      // keep the button disabled while the app navigates away
+      if (!navigated) setLoading(false)
     }
   }, [email, password, lockState, setUser, setTokens, handleLockError])
 

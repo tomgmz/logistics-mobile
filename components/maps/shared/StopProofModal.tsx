@@ -14,6 +14,7 @@ import { Camera, CheckCircle2, MapPin, RefreshCw, X } from 'lucide-react-native'
 import { captureProofPhoto, CameraPermissionError } from '../../../lib/proofPhoto'
 import { checkStopProximity, type Coordinates, type ProximityCheck } from '../../../lib/stopGeofence'
 import type { StopProofContext } from '../../../lib/tripProgress'
+import { itemLine, type StopManifest } from '../../../lib/cargoManifest'
 import { C } from '../../../theme/navigation.theme'
 
 /**
@@ -48,12 +49,22 @@ interface Props {
   autoOpened?: boolean
   /** The stop's own coordinates. Null/absent means it can't be measured. */
   stopCoordinates?: Coordinates | null
+  /**
+   * What is meant to come off at THIS stop.
+   *
+   * The driver is standing at the tailgate deciding whether the drop is done;
+   * this is the moment the manifest is worth something. Until cargo recorded
+   * which drop-off it belonged to there was nothing trustworthy to show here, so
+   * nothing was shown. Absent or empty renders nothing, which is the right
+   * behaviour for a pickup and for older bookings whose cargo names no stop.
+   */
+  manifest?: StopManifest | null
   onConfirm: (photoUri: string, proof: StopProofContext) => void
   onCancel:  () => void
 }
 
 export function StopProofModal({
-  visible, title, address, kind, autoOpened, stopCoordinates, onConfirm, onCancel,
+  visible, title, address, kind, autoOpened, stopCoordinates, manifest, onConfirm, onCancel,
 }: Props) {
   const [photoUri, setPhotoUri] = useState<string | null>(null)
   const [busy, setBusy]         = useState(false)
@@ -167,6 +178,38 @@ export function StopProofModal({
               <X size={20} color={C.dimWhite} />
             </TouchableOpacity>
           </View>
+
+          {/* What should be coming off here. Shown above the photo prompt: the
+              driver checks the load against this BEFORE deciding the stop is
+              done, which is the whole point of putting it on this screen. */}
+          {!isPickup && manifest && manifest.items.length > 0 && (
+            <View
+              style={{
+                backgroundColor: C.surfaceHi,
+                borderRadius: 12,
+                borderWidth: 1, borderColor: C.border,
+                paddingHorizontal: 12, paddingVertical: 10, gap: 6,
+              }}
+            >
+              <Text style={{ color: C.dimWhite, fontSize: 11, fontWeight: '800', letterSpacing: 1 }}>
+                FOR THIS STOP
+              </Text>
+              {manifest.items.map((item) => (
+                <Text key={item.item_id} style={{ color: C.white, fontSize: 13, lineHeight: 19 }}>
+                  {itemLine(item)}
+                  {item.weight_kg != null ? (
+                    <Text style={{ color: C.dimWhite }}>{`  ·  ${item.weight_kg} kg`}</Text>
+                  ) : null}
+                </Text>
+              ))}
+              {manifest.items.length > 1 && manifest.totalQty > 0 && (
+                <Text style={{ color: C.dimWhite, fontSize: 12 }}>
+                  {manifest.totalQty} items
+                  {manifest.totalWeight > 0 ? ` · ${manifest.totalWeight} kg total` : ''}
+                </Text>
+              )}
+            </View>
+          )}
 
           {/* Why we're asking. Worded differently when the app opened this by
               itself, so an arrival prompt doesn't read like an accusation. */}
