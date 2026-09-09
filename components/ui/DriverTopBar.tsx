@@ -43,7 +43,10 @@ const HOME_ROUTE = '/driver/home'
  */
 const TITLES: Record<string, string> = {
   '/driver/driver-assignment': 'My Assignments',
-  '/driver/maintenance':       'Maintenance',
+  // "Maintenance" was the wrong name for this: most of what a driver raises
+  // mid-route is an accident, a hold-up or a colleague who has collapsed, and
+  // filing those under maintenance told them the screen was not for them.
+  '/driver/reports':           'Reports',
 }
 
 const COLORS = {

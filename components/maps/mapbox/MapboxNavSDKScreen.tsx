@@ -16,7 +16,16 @@ import { MapboxNavigationView } from '@badatgil/expo-mapbox-navigation'
 import MapboxGL from '@rnmapbox/maps'
 
 import api from '../../../lib/api/auth.api'
-import { confirmPickup, confirmDelivery, completeBooking, type StopProofContext } from '../../../lib/tripProgress'
+import {
+  confirmTripPickup,
+  confirmTripStop,
+  completeBooking,
+  endTripLeg,
+  type StopProofContext,
+} from '../../../lib/tripProgress'
+import { buildNavPlan } from '../../../lib/navLegs'
+import { SosButton } from '../../reports/SosButton'
+import { fetchTripsWithCache, type Trip } from '../../../lib/trips'
 import { saveBookingCache, loadBookingCache, clearBookingCache } from '../../../lib/navCache'
 import { StopProofModal } from '../shared/StopProofModal'
 import { groupCargoByDestination, manifestFor } from '../../../lib/cargoManifest'
@@ -59,9 +68,20 @@ interface Props {
 // The stop's own coordinates ride on the leg so the proof popup can measure the
 // driver against it directly, rather than indexing into the parallel `coords`
 // array (which is offset by the driver's own start point).
+// A leg also names the RUN it belongs to: one vehicle may run a booking several
+// times over, and two loads bound for the same bay are two different legs that
+// only the trip stop id tells apart.
 type Leg =
-  | { type: 'pickup';  address?: string | null; latitude?: number | null; longitude?: number | null }
-  | { type: 'dropoff'; destinationId: string; address?: string | null; latitude?: number | null; longitude?: number | null }
+  | { type: 'pickup';  tripId: string; address?: string | null; latitude?: number | null; longitude?: number | null }
+  | {
+      type:          'dropoff'
+      tripId:        string
+      tripStopId:    string
+      destinationId: string
+      address?:      string | null
+      latitude?:     number | null
+      longitude?:    number | null
+    }
 
 const ANDROID = Platform.OS === 'android'
 // The Android SDK wants the profile WITHOUT the `mapbox/` prefix; iOS wants it.
@@ -111,6 +131,12 @@ function MapboxNavSDKInner({ bookingId, earlyStart = false }: Props) {
   const [proofFor, setProofFor] = useState<{ idx: number; auto: boolean } | null>(null)
 
   const legsRef      = useRef<Leg[]>([])
+  // The booking's runs, the booking itself and where the driver was when the
+  // screen started — everything needed to rebuild the route for the NEXT run
+  // when the current one empties.
+  const tripsRef     = useRef<Trip[]>([])
+  const bookingDataRef = useRef<any>(null)
+  const driverStartRef = useRef<{ latitude: number; longitude: number } | null>(null)
 
   // Booking cargo grouped by destination, for the stop manifest.
   const cargoRef = useRef(groupCargoByDestination([]))
@@ -123,6 +149,54 @@ function MapboxNavSDKInner({ bookingId, earlyStart = false }: Props) {
   const completedRef = useRef(false)
   // When a stop was last confirmed — see onSdkArrival.
   const lastConfirmAtRef = useRef(0)
+
+  /**
+   * Build the route for the next run, or leave the booking ready to be closed.
+   *
+   * The shuttle's turning point: the truck has emptied this run's last bay and
+   * drives back to the origin to load again. That is a fresh route from where
+   * the driver now is, so the coordinate list is rebuilt from their current
+   * position rather than continued from the one the SDK is holding.
+   */
+  const startNextTripIfAny = useCallback(async () => {
+    endTripLeg()
+
+    let trips = tripsRef.current
+    try {
+      const fresh = await fetchTripsWithCache(bookingId)
+      trips = fresh.trips
+      tripsRef.current = trips
+    } catch { /* keep what we have — the local cursor drives the screen */ }
+
+    const plan = buildNavPlan(bookingDataRef.current ?? {}, trips)
+    if (!plan.trip || plan.nothingToNavigate || plan.legs.length === 0) return
+
+    // Where the truck is NOW is the start of the run back to the origin. Falling
+    // back to the original start point keeps a route on screen when the fix
+    // fails, rather than dropping the driver into a blank map.
+    let from = driverStartRef.current
+    try {
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High })
+      from = { latitude: pos.coords.latitude, longitude: pos.coords.longitude }
+      driverStartRef.current = from
+    } catch { /* keep the last known start */ }
+
+    const legs   = plan.legs as Leg[]
+    const coords = [
+      ...(from ? [from] : []),
+      ...legs.map((l) => ({ latitude: l.latitude as number, longitude: l.longitude as number })),
+    ]
+
+    legsRef.current      = legs
+    cursorRef.current    = 0
+    processedRef.current = new Set()
+    setCursor(0)
+    setLegCount(legs.length)
+    setDropoffCount(legs.filter((l) => l.type === 'dropoff').length)
+    setAtStop(false)
+    setWaypointIndices(coords.map((_, i) => i))
+    setCoordinates(coords)
+  }, [bookingId])
 
   // Record a leg with the proof photo taken at it. The single write path: the
   // proof popup is the only caller, however it was opened. Idempotent — the
@@ -142,14 +216,25 @@ function MapboxNavSDKInner({ bookingId, earlyStart = false }: Props) {
     // cadence as the truck closes on that stop. Null on the last leg.
     const nextStop = legCoordinates(legs[i + 1])
     const persist = leg.type === 'pickup'
-      ? confirmPickup(bookingId, photoUri, earlyStart, proof, nextStop)
-      : confirmDelivery(bookingId, leg.destinationId, photoUri, proof, nextStop)
+      ? confirmTripPickup(bookingId, leg.tripId, photoUri, earlyStart, proof, nextStop)
+      : confirmTripStop(leg.tripStopId, photoUri, proof, nextStop)
     persist.catch(() => {})
 
     cursorRef.current = i + 1
     setCursor(i + 1)
     setAtStop(false)
-  }, [bookingId])
+
+    // Last bay of THIS RUN. On a shuttle the truck now drives back to the origin
+    // to load again, which is a new route rather than a continuation — rebuild
+    // against the next run. Position reporting stops for the empty leg back.
+    //
+    // Chained off `persist` rather than fired beside it: the rebuild reads the
+    // offline queue to know what the driver has already done, and racing the
+    // enqueue would re-read a server that still thinks this bay is pending.
+    if (i + 1 >= legs.length) {
+      void persist.catch(() => {}).then(() => startNextTripIfAny())
+    }
+  }, [bookingId, startNextTripIfAny])
 
   // Arrival detected by the SDK: opens the proof popup for that stop hands-free.
   // Ignored right after a confirmation — if the driver confirmed while parked
@@ -241,22 +326,23 @@ function MapboxNavSDKInner({ bookingId, earlyStart = false }: Props) {
         // popup can show the driver what comes off at the stop in front of them.
         cargoRef.current = groupCargoByDestination(booking.booking_cargo_items)
 
-        const pickedUp = ['in_transit', 'completed'].includes(booking.status)
-        const dropoffs = (booking.booking_destinations ?? [])
-          .filter((d: any) => d.latitude != null && d.longitude != null && d.status === 'pending')
-          .sort((a: any, b: any) => a.sequence_order - b.sequence_order)
+        // The run the driver is on decides the route. A booking whose cargo
+        // exceeds the body is the SAME truck shuttling, so the SDK is given ONE
+        // run at a time — origin, then that run's own bays. Handing it every bay
+        // at once would route the driver from the last bay of run 1 straight to
+        // the first bay of run 2, skipping the reload that is the whole point.
+        const { trips } = await fetchTripsWithCache(bookingId)
+        if (cancelled) return
+        tripsRef.current       = trips
+        bookingDataRef.current = booking
+        driverStartRef.current = driver
 
-        const legs:   Leg[] = []
-        const coords: { latitude: number; longitude: number }[] = [driver]
-
-        if (!pickedUp && booking.origin_latitude != null && booking.origin_longitude != null) {
-          legs.push({ type: 'pickup', address: booking.origin, latitude: booking.origin_latitude, longitude: booking.origin_longitude })
-          coords.push({ latitude: booking.origin_latitude, longitude: booking.origin_longitude })
-        }
-        dropoffs.forEach((d: any) => {
-          legs.push({ type: 'dropoff', destinationId: d.destination_id, address: d.address, latitude: d.latitude, longitude: d.longitude })
-          coords.push({ latitude: d.latitude, longitude: d.longitude })
-        })
+        const plan = buildNavPlan(booking, trips)
+        const legs = plan.legs as Leg[]
+        const coords: { latitude: number; longitude: number }[] = [
+          driver,
+          ...legs.map((l) => ({ latitude: l.latitude as number, longitude: l.longitude as number })),
+        ]
 
         if (legs.length === 0) {
           if (!cancelled) setError('No stops with coordinates to navigate. Run route optimization first.')
@@ -348,6 +434,11 @@ function MapboxNavSDKInner({ bookingId, earlyStart = false }: Props) {
         }}
         onCancelNavigation={() => router.back()}
       />
+
+      {/* Emergency, without leaving navigation. A driver having an accident is
+          on this screen, not on the reports list — putting a screen transition
+          between them and the alert is the one thing this must not do. */}
+      <SosButton bookingId={bookingId} />
 
       {/* Stop confirmation, docked on the right of the map: "Pickup done", then
           "Drop-off N of M done" for each drop-off (1–3 of them), then green

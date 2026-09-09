@@ -36,7 +36,11 @@ export default function DriverLayout() {
   const hideChrome =
     pathname.startsWith('/driver/maps') ||
     pathname.startsWith('/driver/messages') ||
-    pathname.startsWith('/driver/notifications')
+    pathname.startsWith('/driver/notifications') ||
+    // The reports LIST keeps the bar (it is a tab like any other); the form and
+    // a single report bring their own header with a back arrow, because they
+    // are entered from a modal and need a way out that is not the tab bar.
+    /^\/driver\/reports\/./.test(pathname)
 
   if (hideChrome) {
     return <Slot />

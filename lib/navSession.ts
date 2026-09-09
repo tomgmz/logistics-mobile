@@ -21,9 +21,21 @@ import type { Waypoint } from '@googlemaps/react-native-navigation-sdk'
 // Each leg carries the coordinates of the stop it ends at, so the proof popup
 // can measure the driver against it without re-deriving them from the waypoint
 // list by index — the two are built together and must not drift apart.
+//
+// A leg also names the TRIP it belongs to. One vehicle may run a booking several
+// times over (see lib/trips), and a confirmation has to say which run it is
+// evidence of: two loads bound for the same bay are two different legs with the
+// same destination, and only the trip stop id tells them apart.
 export type Leg =
-  | { type: 'pickup';  latitude?: number | null; longitude?: number | null }
-  | { type: 'dropoff'; destinationId: string; latitude?: number | null; longitude?: number | null }
+  | { type: 'pickup';  tripId: string; latitude?: number | null; longitude?: number | null }
+  | {
+      type:          'dropoff'
+      tripId:        string
+      tripStopId:    string
+      destinationId: string
+      latitude?:     number | null
+      longitude?:    number | null
+    }
 
 // Display model for the numbered stop-list overlay (pickup + drop-offs in order).
 export interface DisplayStop {
@@ -31,6 +43,8 @@ export interface DisplayStop {
   number?: number
   label:   string
   address: string
+  /** Set only on a booking that really is a shuttle — e.g. "TRIP 2 OF 3". */
+  tripLabel?: string | null
 }
 
 export interface NavSession {

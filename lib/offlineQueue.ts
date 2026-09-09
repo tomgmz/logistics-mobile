@@ -187,6 +187,38 @@ export function flush(): Promise<void> {
   })
 }
 
+/**
+ * What the driver has confirmed that the server may not know about yet.
+ *
+ * The queue is the only honest record of this. Between a confirmation and its
+ * flush — which in a dead zone can be hours — the server still reports the stop
+ * as pending, and anything that rebuilds the route from the server's answer
+ * would send the driver back to a bay they have already emptied.
+ *
+ * Returns the ids the queue is holding, so callers can overlay their own
+ * knowledge onto whatever the server said. Ids are stable and structured
+ * (`trip-pickup:<tripId>`, `trip-stop:<tripStopId>`), which is what makes this
+ * readable rather than a second, parallel piece of bookkeeping that could
+ * disagree with the queue it is meant to mirror.
+ */
+export async function pendingConfirmations(): Promise<{
+  loadedTripIds:    string[]
+  confirmedStopIds: string[]
+}> {
+  const queue = await readQueue()
+  const loadedTripIds:    string[] = []
+  const confirmedStopIds: string[] = []
+
+  for (const item of queue) {
+    const [kind, id] = item.id.split(':')
+    if (!id) continue
+    if (kind === 'trip-pickup') loadedTripIds.push(id)
+    if (kind === 'trip-stop')   confirmedStopIds.push(id)
+  }
+
+  return { loadedTripIds, confirmedStopIds }
+}
+
 let netUnsub:   (() => void) | null = null
 let appSub:     { remove: () => void } | null = null
 let wasConnected = true

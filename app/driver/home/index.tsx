@@ -40,6 +40,7 @@ import {
 
 const routeMapImg   = require('../../../assets/home/route-map.png')
 const mapIconImg    = require('../../../assets/home/icon-map.png')
+// Still the wrench asset — the module was renamed to Reports, the artwork was not.
 const wrenchIconImg = require('../../../assets/home/icon-maintenance.png')
 const truckIconImg  = require('../../../assets/home/icon-vehicle.png')
 
@@ -160,8 +161,8 @@ export default function DriverHome() {
             />
             <QuickAction
               icon={<Image source={wrenchIconImg} style={{ width: 18, height: 18 }} resizeMode="contain" />}
-              label="Maintenance"
-              onPress={() => router.push('/driver/maintenance')}
+              label="Reports"
+              onPress={() => router.push('/driver/reports')}
             />
           </View>
 

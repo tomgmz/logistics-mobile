@@ -17,7 +17,16 @@ import {
 
 import api from '../../../lib/api/auth.api'
 import { flush } from '../../../lib/offlineQueue'
-import { confirmPickup, confirmDelivery, completeBooking, type StopProofContext } from '../../../lib/tripProgress'
+import {
+  confirmTripPickup,
+  confirmTripStop,
+  completeBooking,
+  endTripLeg,
+  type StopProofContext,
+} from '../../../lib/tripProgress'
+import { buildNavPlan } from '../../../lib/navLegs'
+import { SosButton } from '../../reports/SosButton'
+import { fetchTripsWithCache, type Trip } from '../../../lib/trips'
 import { saveBookingCache, loadBookingCache, clearBookingCache } from '../../../lib/navCache'
 import {
   type Leg,
@@ -216,6 +225,15 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
   const legsRef       = useRef<Leg[]>([])
   // Booking cargo grouped by destination, for the stop manifest.
   const cargoRef = useRef(groupCargoByDestination([]))
+  // The booking's runs, and the booking itself, kept so the screen can rebuild
+  // the route for the NEXT run when the current one finishes. On a shuttle the
+  // driver returns to the origin and reloads; that is a new route, not a
+  // continuation of the one the SDK is holding.
+  const tripsRef   = useRef<Trip[]>([])
+  const bookingRef = useRef<any>(null)
+  // Set between runs: the current load is delivered and the truck is heading
+  // back for the next one. Drives the "reload" card instead of the completion one.
+  const [reloading, setReloading] = useState(false)
 
   /** The manifest for the drop-off a leg ends at; empty for the pickup leg. */
   const manifestForLeg = (leg: Leg | undefined) =>
@@ -371,6 +389,71 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
   }, [])
 
   /**
+   * The run just finished — start the next one, or leave the booking ready to
+   * be closed.
+   *
+   * This is the shuttle's turning point. The truck has emptied the last bay of
+   * this run and is heading back to the origin; if operations planned another
+   * run there is a whole new route to build, starting at the pickup point
+   * again. Rebuilding rather than continuing matters: the SDK is holding a
+   * route that ends where the driver is standing, and "continue" would send
+   * them to the next bay without the reload in between.
+   *
+   * Position reporting stops for the empty leg back — a truck returning for
+   * another load is not on a delivery anyone is tracking.
+   */
+  const startNextTripIfAny = useCallback(async () => {
+    endTripLeg()
+
+    // The server closed this run when its last bay landed, so the plan has to
+    // be re-read to see it. Falls back to the cached copy in a dead zone, which
+    // still knows which runs exist — only their statuses may be stale, and the
+    // local leg cursor is what actually drives the screen.
+    let trips = tripsRef.current
+    try {
+      const fresh = await fetchTripsWithCache(bookingId)
+      trips = fresh.trips
+      tripsRef.current = trips
+    } catch { /* keep what we have */ }
+
+    const plan = buildNavPlan(bookingRef.current ?? {}, trips)
+
+    // No run left with anywhere to drive: the booking is done bar the tap.
+    if (!plan.trip || plan.nothingToNavigate || plan.waypoints.length === 0) {
+      setReloading(false)
+      nothingToNavigateRef.current = true
+      return
+    }
+
+    setReloading(true)
+    waypointsRef.current = plan.waypoints
+    legsRef.current      = plan.legs
+    legIndexRef.current  = 0
+    processedRef.current = new Set()
+    stopsRef.current     = plan.stops
+    setStops(plan.stops)
+    setLegIndex(0)
+    // A route token encodes one fixed route; the next run is a different one.
+    useTokenRef.current = false
+    updateNavSession({
+      waypoints: plan.waypoints,
+      legs:      plan.legs,
+      stops:     plan.stops,
+      legIndex:  0,
+      processed: [],
+    })
+
+    try {
+      await applyDestinations()
+      guidingRef.current = true
+    } catch {
+      // Offline, most likely: the SDK cannot build a route without network. The
+      // reconnect handler already re-applies destinations, and the driver can
+      // retry from the button.
+    }
+  }, [bookingId, applyDestinations])
+
+  /**
    * The driver said the stop is done and photographed it: record stop `idx` with
    * its proof and move guidance to the next one. The single write path — the
    * proof popup is the only thing that calls it, whether the popup was opened by
@@ -400,8 +483,8 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
     // cadence as the truck closes on that stop. Null on the last leg.
     const nextStop = legCoordinates(legsRef.current[idx + 1])
     const persist = leg.type === 'pickup'
-      ? confirmPickup(bookingId, photoUri, earlyStart, proof, nextStop)
-      : confirmDelivery(bookingId, leg.destinationId, photoUri, proof, nextStop)
+      ? confirmTripPickup(bookingId, leg.tripId, photoUri, earlyStart, proof, nextStop)
+      : confirmTripStop(leg.tripStopId, photoUri, proof, nextStop)
     persist.catch(() => {})
 
     legIndexRef.current = idx + 1
@@ -413,11 +496,18 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
 
     try {
       if (idx + 1 >= legs.length) {
-        // Last stop confirmed — nothing left to guide to. Stop guidance but keep
-        // the session marker so leaving and re-opening the screen still lands on
-        // the "Mark delivery as done" button.
+        // Last stop of THIS RUN confirmed. On a shuttle that is not the end of
+        // the job — the truck drives back to the origin, loads again, and runs
+        // a new route. Stop guidance either way, then see whether another run
+        // is waiting.
         guidingRef.current = false
         await navigationController.stopGuidance().catch(() => {})
+        // Wait for the confirmation to be QUEUED before rebuilding. The rebuild
+        // reads the queue to know what the driver has already done; racing it
+        // would re-read a server that still thinks this bay is pending and route
+        // the driver straight back to it.
+        await persist.catch(() => {})
+        await startNextTripIfAny()
       } else {
         // Move to the next waypoint. startGuidance is a no-op when guidance is
         // already running; it covers the case where the SDK paused on arrival.
@@ -428,7 +518,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
       confirmingRef.current = false
       setConfirming(false)
     }
-  }, [bookingId, navigationController])
+  }, [bookingId, navigationController, startNextTripIfAny])
 
   // The SDK detected the arrival — the normal case, and still what drives the
   // flow: it opens the proof popup for this stop hands-free, so the driver only
@@ -611,58 +701,43 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
         // popup can show the driver what comes off at the stop in front of them.
         cargoRef.current = groupCargoByDestination(booking.booking_cargo_items)
 
-        const pickedUp    = ['in_transit', 'completed'].includes(booking.status)
-        const allStops    = (booking.booking_destinations ?? [])
-          .slice()
-          .sort((a: any, b: any) => a.sequence_order - b.sequence_order)
-        const dropoffs = allStops
-          .filter((d: any) => d.latitude != null && d.longitude != null && d.status === 'pending')
+        // The run the driver is on decides the route. A booking whose cargo
+        // exceeds the body is the SAME truck shuttling, so the SDK is given ONE
+        // run at a time — origin, then that run's own bays. Handing it every bay
+        // at once would route the driver from the last bay of run 1 straight to
+        // the first bay of run 2, skipping the reload that is the whole point.
+        const { trips } = await fetchTripsWithCache(bookingId)
+        tripsRef.current   = trips
+        bookingRef.current = booking
 
-        // Nothing left to drive to, but the booking is still open: every drop-off
-        // has been confirmed and only "Mark delivery as done" remains (the driver
-        // left the screen before finishing, or the app restarted). Show the map
-        // with the completion button instead of a dead-end error.
-        if (pickedUp && dropoffs.length === 0 && allStops.length > 0 && booking.status !== 'completed') {
-          const done: DisplayStop[] = allStops.map((s: any, i: number) => ({
-            kind:    'dropoff',
-            number:  i + 1,
-            label:   `Drop-off ${i + 1}`,
-            address: s.address ?? `Drop-off ${i + 1}`,
-          }))
+        const plan = buildNavPlan(booking, trips)
+
+        // Nothing left to drive to, but the booking is still open: every bay on
+        // every run has been confirmed and only "Mark delivery as done" remains
+        // (the driver left the screen before finishing, or the app restarted).
+        // Show the map with the completion button instead of a dead-end error.
+        if (plan.nothingToNavigate) {
           nothingToNavigateRef.current = true
           waypointsRef.current = []
           legsRef.current      = []
-          stopsRef.current     = done
-          legIndexRef.current  = done.length
-          setStops(done)
-          setLegIndex(done.length)
+          stopsRef.current     = plan.stops
+          legIndexRef.current  = plan.stops.length
+          setStops(plan.stops)
+          setLegIndex(plan.stops.length)
           return
         }
 
-        const waypoints: Waypoint[]   = []
-        const legs:      Leg[]        = []
-        const display:   DisplayStop[] = []
-        if (!pickedUp && booking.origin_latitude != null && booking.origin_longitude != null) {
-          waypoints.push({ title: 'Pickup', position: { lat: booking.origin_latitude, lng: booking.origin_longitude } })
-          legs.push({ type: 'pickup', latitude: booking.origin_latitude, longitude: booking.origin_longitude })
-          display.push({ kind: 'pickup', label: 'Pickup', address: booking.origin ?? 'Pickup' })
-        }
-        dropoffs.forEach((s: any, i: number) => {
-          waypoints.push({ title: s.address ?? 'Stop', position: { lat: s.latitude, lng: s.longitude } })
-          legs.push({ type: 'dropoff', destinationId: s.destination_id, latitude: s.latitude, longitude: s.longitude })
-          display.push({ kind: 'dropoff', number: i + 1, label: `Drop-off ${i + 1}`, address: s.address ?? `Drop-off ${i + 1}` })
-        })
-        if (waypoints.length === 0) {
+        if (plan.waypoints.length === 0) {
           bookingError = new Error('No stops with coordinates to navigate. Run route optimization first.')
           return
         }
 
-        waypointsRef.current = waypoints
-        legsRef.current      = legs
+        waypointsRef.current = plan.waypoints
+        legsRef.current      = plan.legs
         legIndexRef.current  = 0
         processedRef.current = new Set()
-        stopsRef.current     = display
-        setStops(display)
+        stopsRef.current     = plan.stops
+        setStops(plan.stops)
         setLegIndex(0)
       } catch (e: any) {
         bookingError = e
@@ -833,6 +908,11 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
           toAddress={currentStop?.address}
         />
       )}
+
+      {/* Emergency, without leaving navigation. A driver having an accident is
+          on this screen, not on the reports list — putting a screen transition
+          between them and the alert is the one thing this must not do. */}
+      <SosButton bookingId={bookingId} />
 
       {/* Offline banner. The SDK keeps guiding on the route it already loaded
           (~15–20 min cache) but can't reroute or render unseen areas while
