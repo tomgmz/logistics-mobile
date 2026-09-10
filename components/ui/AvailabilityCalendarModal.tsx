@@ -15,6 +15,7 @@ import { Power } from 'lucide-react-native'
 
 import { useAvailabilityStore } from '../../lib/store/availability.store'
 import { PencilCheckIcon } from './icons/AvailabilityIcons'
+import { ConfirmDialog } from './ConfirmDialog'
 
 /**
  * The month calendar behind the availability pill (Figma node 2877:221,
@@ -113,6 +114,8 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
   // and a reload mid-edit doesn't yank days out from under their thumb.
   const [draft, setDraft] = useState<string[]>([])
   const [dirty, setDirty] = useState(false)
+  // Whether the "are you sure" card is up over the calendar.
+  const [confirming, setConfirming] = useState(false)
 
   const now      = new Date()
   const year     = now.getFullYear()
@@ -126,6 +129,7 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
   useEffect(() => {
     if (!open) return
     setDirty(false)
+    setConfirming(false)
     void loadDays(monthKey)
   }, [open, monthKey, loadDays])
 
@@ -135,23 +139,56 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
     if (storedMonth === monthKey) setDraft(storedDays)
   }, [open, dirty, storedDays, storedMonth, monthKey])
 
-  const commit = useCallback(() => {
-    if (!dirty) { onClose(); return }
-    // Optimistic: the store keeps the ticks the driver just made, and a failed
-    // save surfaces the next time the calendar opens and re-reads the month.
+  /**
+   * The actual write. Only reached once the driver has said yes.
+   *
+   * Optimistic: the store keeps the ticks the driver just made, and a failed
+   * save surfaces the next time the calendar opens and re-reads the month.
+   */
+  const performCommit = useCallback(() => {
     void saveDays(monthKey, draft).catch(() => {})
     setDirty(false)
+    setConfirming(false)
     onClose()
-  }, [dirty, draft, monthKey, saveDays, onClose])
+  }, [draft, monthKey, saveDays, onClose])
+
+  /**
+   * Every way out of the calendar comes through here, and a changed month is
+   * never written without being confirmed first.
+   *
+   * The ticks are a commitment, not a preference: operations crews bookings from
+   * exactly these days, and the driver is expected to be at the origin at call
+   * time on each one. A schedule should not be set by a stray tap on the
+   * backdrop or a hardware back press — which is what all three paths used to
+   * do silently.
+   *
+   * An untouched month has nothing to confirm, so it just closes.
+   */
+  const requestCommit = useCallback(() => {
+    if (!dirty) { onClose(); return }
+    setConfirming(true)
+  }, [dirty, onClose])
 
   useEffect(() => {
     if (!open) return
-    const sub = BackHandler.addEventListener('hardwareBackPress', () => { commit(); return true })
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => { requestCommit(); return true })
     return () => sub.remove()
-  }, [open, commit])
+  }, [open, requestCommit])
 
   const cells    = useMemo(() => buildMonth(year, month), [year, month])
   const selected = useMemo(() => new Set(draft), [draft])
+
+  // Says what confirming actually does, in the driver's terms. Clearing the
+  // month is called out separately: it is the one answer that takes them out of
+  // the assignable pool entirely, and it looks identical to a stray tap.
+  const confirmMessage = useMemo(() => {
+    const label = `${MONTHS[month]} ${year}`
+    if (draft.length === 0) {
+      return `You are clearing every day in ${label}. You will not be assignable to any delivery until you tick a day.`
+    }
+    return `You can be assigned a delivery on ${draft.length} day${draft.length === 1 ? '' : 's'} in ${label}. `
+      + 'Operations can crew you on any of them.'
+  }, [draft, month, year])
 
   const toggle = (day: string) => {
     setDirty(true)
@@ -168,7 +205,7 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
       transparent
       animationType="none"
       statusBarTranslucent
-      onRequestClose={commit}
+      onRequestClose={requestCommit}
     >
       <AnimatePresence>
         {open && (
@@ -182,7 +219,7 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
           >
             <Pressable
               style={StyleSheet.absoluteFill}
-              onPress={commit}
+              onPress={requestCommit}
               accessibilityLabel="Close availability calendar"
             />
 
@@ -209,7 +246,7 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
                   <ActivityIndicator size="small" color={COLORS.cyan} />
                 ) : (
                   <Pressable
-                    onPress={commit}
+                    onPress={requestCommit}
                     hitSlop={12}
                     accessibilityRole="button"
                     accessibilityLabel="Save your availability"
@@ -287,6 +324,20 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
           </MotiView>
         )}
       </AnimatePresence>
+
+      {/* Sits over the calendar rather than replacing it, so the driver can read
+          back the days they ticked while answering. */}
+      <ConfirmDialog
+        visible={confirming}
+        title="CONFIRM YOUR SCHEDULE"
+        message={confirmMessage}
+        confirmLabel="Confirm"
+        cancelLabel="Back"
+        tone="cyan"
+        busy={savingDays}
+        onConfirm={performCommit}
+        onCancel={() => setConfirming(false)}
+      />
     </Modal>
   )
 }

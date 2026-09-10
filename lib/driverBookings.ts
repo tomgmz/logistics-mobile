@@ -66,6 +66,9 @@ export interface BookingWithRelations {
   schedule_date:       string
   call_time:           string
   status:              'pending' | 'assigned' | 'in_transit' | 'completed' | 'cancelled'
+  /** Set once the driver confirmed the vehicle was back in the company lot.
+   *  The booking is only truly finished when this is non-null. */
+  fleet_return_at:     string | null
   total_cost:          number | null
   estimated_delivery:  string | null
   required_volume_cbm: number | null
