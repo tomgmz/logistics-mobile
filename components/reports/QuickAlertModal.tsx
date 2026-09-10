@@ -4,7 +4,6 @@ import {
   Animated,
   Modal,
   PanResponder,
-  Pressable,
   Text,
   TouchableOpacity,
   View,
@@ -46,6 +45,11 @@ const D = {
   overlay: 'rgba(0,0,0,0.8)',
 }
 
+// `slide` is deliberately JS-driven throughout (useNativeDriver: false). It is
+// written from JS on every pan event anyway, so the native driver would gain
+// nothing on the drag — while mixing drivers on one value that ALSO feeds the
+// label's opacity is how an animated node gets stranded between the two.
+
 /** Seconds before the alert sends itself. */
 const COUNTDOWN_S = 20
 
@@ -85,6 +89,7 @@ export function QuickAlertModal({
 
   const sentRef  = useRef(false)
   const typeRef  = useRef<IncidentType | null>(null)
+  const sendRef  = useRef<() => void>(() => {})
   const trackW   = useRef(0)
   const slide    = useRef(new Animated.Value(0)).current
 
@@ -118,12 +123,18 @@ export function QuickAlertModal({
         e?.response?.data?.message ??
         'The alert could not be sent. Check your signal and swipe again.',
       )
-      Animated.spring(slide, { toValue: 0, useNativeDriver: true }).start()
+      Animated.spring(slide, { toValue: 0, useNativeDriver: false }).start()
     } finally {
       setSending(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookingId, ctx.latitude, ctx.longitude, ctx.accuracy_m, ctx.address, onSent])
+
+  // The PanResponder is created once and would otherwise hold the very first
+  // `send` — the one built before the GPS fix arrived, which would post the
+  // alert with no coordinates on it. Location is the most valuable thing this
+  // alert carries, so the swipe always calls the current one.
+  useEffect(() => { sendRef.current = () => { void send() } }, [send])
 
   // Every opening starts clean — no carried-over tile, error, or half-dragged
   // thumb from the last time — and restarts the countdown.
@@ -151,21 +162,57 @@ export function QuickAlertModal({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible])
 
+  /**
+   * How far the thumb can travel: the track, less the thumb and its 1px insets.
+   *
+   * Falls back to a usable distance when the track has not reported its width
+   * yet. Without the fallback the travel collapses to a single pixel and the
+   * thumb reads as jammed — the failure looks identical to a dead gesture.
+   */
+  const maxTravel = () => {
+    const measured = trackW.current - THUMB_W - 2
+    return measured > 8 ? measured : 180
+  }
+
   const pan = useRef(
     PanResponder.create({
-      onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > 4,
+      /**
+       * Claimed from touch-down, not from the first horizontal move.
+       *
+       * This is what was actually broken. With only the `onMoveShould…` hooks,
+       * the thumb declines the responder when the finger lands, and Android
+       * then does not come back to offer it the subsequent move events — so the
+       * gesture never started, while the tiles and CANCEL kept working because
+       * a Touchable claims on touch-down like this does. Nothing is lost by
+       * claiming early: the thumb has no tap behaviour to preserve.
+       */
+      onStartShouldSetPanResponder:        () => true,
+      onStartShouldSetPanResponderCapture: () => true,
+      onMoveShouldSetPanResponder:         () => true,
+      onMoveShouldSetPanResponderCapture:  () => true,
+      // Nothing may take the drag away once it has started.
+      onPanResponderTerminationRequest:    () => false,
+      onShouldBlockNativeResponder:        () => true,
+
+      onPanResponderGrant: () => { slide.setValue(0) },
+
       onPanResponderMove: (_e, g) => {
-        const max = Math.max(trackW.current - THUMB_W - 2, 1)
-        slide.setValue(Math.max(0, Math.min(g.dx, max)))
+        slide.setValue(Math.max(0, Math.min(g.dx, maxTravel())))
       },
+
       onPanResponderRelease: (_e, g) => {
-        const max = Math.max(trackW.current - THUMB_W - 2, 1)
+        const max = maxTravel()
         if (g.dx >= max * SWIPE_COMMIT) {
-          Animated.timing(slide, { toValue: max, duration: 120, useNativeDriver: true }).start()
-          void send()
+          Animated.timing(slide, { toValue: max, duration: 120, useNativeDriver: false }).start()
+          sendRef.current()
         } else {
-          Animated.spring(slide, { toValue: 0, useNativeDriver: true }).start()
+          Animated.spring(slide, { toValue: 0, useNativeDriver: false }).start()
         }
+      },
+
+      // A cancelled gesture must not leave the thumb stranded mid-track.
+      onPanResponderTerminate: () => {
+        Animated.spring(slide, { toValue: 0, useNativeDriver: false }).start()
       },
     }),
   ).current
@@ -176,8 +223,12 @@ export function QuickAlertModal({
         flex: 1, backgroundColor: D.overlay,
         alignItems: 'center', justifyContent: 'center', padding: 16,
       }}>
-        <Pressable
-          onPress={() => {}}
+        {/* A plain View, NOT a Pressable. There is no backdrop press to swallow
+            here — the overlay behind is inert — and a Pressable would claim the
+            touch responder the instant a finger lands on the card, so the send
+            thumb below would never be asked for it on move and could not be
+            dragged at all. */}
+        <View
           style={{
             width: '100%', maxWidth: 340,
             backgroundColor: D.sheet,
@@ -295,6 +346,7 @@ export function QuickAlertModal({
 
               <Animated.View
                 {...pan.panHandlers}
+                hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
                 accessibilityRole="adjustable"
                 accessibilityLabel="Swipe to send the emergency alert"
                 style={{
@@ -311,7 +363,7 @@ export function QuickAlertModal({
               </Animated.View>
             </View>
           </View>
-        </Pressable>
+        </View>
       </View>
     </Modal>
   )

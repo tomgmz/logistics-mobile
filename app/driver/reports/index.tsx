@@ -248,12 +248,20 @@ export default function ReportsScreen() {
       <QuickAlertModal
         visible={quickOpen}
         bookingId={activeBookingId}
-        onSent={(reportId) => {
+        // Sending is the END of the quick path, not the start of a form.
+        //
+        // This used to push straight into the report so the driver could
+        // describe it while fresh, which quietly turned the one gesture that
+        // exists for "no time to fill anything in" into the long way round to
+        // the same form. The alert is away; the driver is put back where they
+        // were, with the new report at the top of their list.
+        //
+        // Adding detail stays possible and stays THEIRS to start — they tap the
+        // report when the situation allows, which is the same way they add a
+        // proof photo once signal returns.
+        onSent={() => {
           setQuickOpen(false)
           load(true)
-          // Straight into the same report, so the driver can add what happened
-          // while it is fresh — the alert is already gone either way.
-          router.push(`/driver/reports/${reportId}`)
         }}
         onCancel={() => setQuickOpen(false)}
         onDetailed={() => { setQuickOpen(false); router.push('/driver/reports/new') }}
