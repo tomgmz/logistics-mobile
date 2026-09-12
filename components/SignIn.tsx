@@ -21,6 +21,7 @@ import {
   getMe,
   loginWithPassword,
   requestOtp,
+  requestPasswordReset,
   verifyOtp,
 } from '../lib/api/auth.api'
 import { useAuthStore } from '../lib/store/auth.store'
@@ -52,6 +53,19 @@ function extractMessage(err: any, fallback: string): string {
 type LockState = 'none' | 'temporary' | 'permanent'
 type Step      = 'email' | 'method' | 'otp' | 'password'
 type Method    = 'otp' | 'password'
+type ResetState = 'idle' | 'sending' | 'sent'
+
+/**
+ * Which admin approves this person's reset. Mirrors handlerGroupFor() on the
+ * backend: drivers and clients are the Company Admin's, office staff the IT
+ * Admin's. On this app it is nearly always a driver, but the label stays honest
+ * if another role ever signs in here.
+ */
+function approverLabel(role?: string | null): string {
+  if (!role)                                  return 'administrator'
+  if (role === 'driver' || role === 'client') return 'Company Admin'
+  return 'IT Admin'
+}
 
 function classifyError(message: string): LockState {
   const lower = message.toLowerCase()
@@ -173,9 +187,15 @@ function ResendTimer({
 function LockBanner({
   lockState,
   lockRemaining,
+  role,
+  resetState,
+  onRequestReset,
 }: {
-  lockState:     LockState
-  lockRemaining: number
+  lockState:       LockState
+  lockRemaining:   number
+  role?:           string | null
+  resetState:      ResetState
+  onRequestReset:  () => void
 }) {
   if (lockState === 'none') return null
 
@@ -197,9 +217,42 @@ function LockBanner({
             Account Permanently Locked
           </Text>
         </View>
-        <Text className="text-[12px] leading-5" style={{ color: 'rgba(239,68,68,0.75)' }}>
-          Too many failed attempts. Contact your administrator to regain access.
-        </Text>
+
+        {resetState === 'sent' ? (
+          <Text className="text-[12px] leading-5" style={{ color: 'rgba(239,68,68,0.75)' }}>
+            Your {approverLabel(role)} has been notified. They will email you a reset link —
+            open it to set a new password and unlock your account.
+          </Text>
+        ) : (
+          <>
+            <Text className="text-[12px] leading-5 mb-3" style={{ color: 'rgba(239,68,68,0.75)' }}>
+              Too many failed attempts. Request a reset and your {approverLabel(role)} will email
+              you a link to set a new password.
+            </Text>
+            <TouchableOpacity
+              onPress={onRequestReset}
+              disabled={resetState === 'sending'}
+              className="rounded-lg py-2.5 items-center flex-row justify-center gap-2"
+              style={{
+                backgroundColor: 'rgba(239,68,68,0.16)',
+                borderWidth:     1,
+                borderColor:     'rgba(239,68,68,0.35)',
+                opacity:         resetState === 'sending' ? 0.6 : 1,
+              }}
+            >
+              {resetState === 'sending' ? (
+                <ActivityIndicator size="small" color="#ef4444" />
+              ) : (
+                <>
+                  <MaterialIcons name="mail-outline" size={14} color="rgba(239,68,68,0.95)" />
+                  <Text className="text-[12px] font-semibold" style={{ color: 'rgba(239,68,68,0.95)' }}>
+                    Request a password reset
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </>
+        )}
       </MotiView>
     )
   }
@@ -380,6 +433,8 @@ export default function SignInScreen() {
   const [lockState, setLockState] = useState<LockState>('none')
   const lockExpiresAt             = useRef<number>(0)
 
+  const [resetState, setResetState] = useState<ResetState>('idle')
+
   const emailRef    = useRef<TextInput>(null)
   const otpRef      = useRef<TextInput>(null)
   const passwordRef = useRef<TextInput>(null)
@@ -401,6 +456,33 @@ export default function SignInScreen() {
     if (step === 'otp')      setTimeout(() => otpRef.current?.focus(), 400)
     if (step === 'password') setTimeout(() => passwordRef.current?.focus(), 400)
   }, [step])
+
+  /**
+   * Ask an administrator for a reset link.
+   *
+   * The API answers 200 with the same neutral message for every address, so a
+   * success here proves nothing about whether the account exists — and the
+   * confirmation copy is written not to claim otherwise. A failure is surfaced
+   * (it is a real one: rate limited, or the server is unreachable) rather than
+   * being dressed up as a success, which would leave someone waiting on an email
+   * that was never going to arrive.
+   */
+  const handleRequestReset = useCallback(async () => {
+    if (resetState !== 'idle') return
+    setResetState('sending')
+    setError(null)
+    try {
+      await requestPasswordReset(email)
+      setResetState('sent')
+    } catch (err: any) {
+      setResetState('idle')
+      setError(
+        err?.response
+          ? extractMessage(err, 'Could not submit your request. Please try again shortly.')
+          : 'Could not reach the server. Check your connection and try again.',
+      )
+    }
+  }, [email, resetState])
 
   const applyAuthStatus = useCallback(async (emailAddr: string) => {
     try {
@@ -599,6 +681,9 @@ export default function SignInScreen() {
     setError(null)
     setOtp('')
     setPassword('')
+    // A "request sent" confirmation belongs to one address. Stepping back could
+    // lead to a different one, so clear it rather than let it follow along.
+    setResetState('idle')
     if (step === 'method')   setStep('email')
     if (step === 'otp')      setStep(role === 'driver' ? 'method' : 'email')
     if (step === 'password') setStep('method')
@@ -796,7 +881,13 @@ export default function SignInScreen() {
                 </Pressable>
 
                 {isLocked ? (
-                  <LockBanner lockState={lockState} lockRemaining={lockRemaining} />
+                  <LockBanner
+                    lockState={lockState}
+                    lockRemaining={lockRemaining}
+                    role={role}
+                    resetState={resetState}
+                    onRequestReset={handleRequestReset}
+                  />
                 ) : (
                   error && <ErrorRow message={error} center />
                 )}
@@ -884,7 +975,13 @@ export default function SignInScreen() {
                 </InputWrap>
 
                 {isLocked ? (
-                  <LockBanner lockState={lockState} lockRemaining={lockRemaining} />
+                  <LockBanner
+                    lockState={lockState}
+                    lockRemaining={lockRemaining}
+                    role={role}
+                    resetState={resetState}
+                    onRequestReset={handleRequestReset}
+                  />
                 ) : (
                   error && <ErrorRow message={error} />
                 )}
@@ -896,6 +993,25 @@ export default function SignInScreen() {
                   loading={loading}
                   disabled={isLocked}
                 />
+
+                {/* A locked account already shows the request button inside LockBanner. */}
+                {lockState !== 'permanent' && (
+                  resetState === 'sent' ? (
+                    <Text className="text-[12px] leading-5 text-center mt-4 text-ink-secondary">
+                      Your {approverLabel(role)} has been notified. Check your email for the reset link.
+                    </Text>
+                  ) : (
+                    <TouchableOpacity
+                      onPress={handleRequestReset}
+                      disabled={resetState === 'sending'}
+                      className="mt-4 items-center"
+                    >
+                      <Text className="text-[13px] text-cyan">
+                        {resetState === 'sending' ? 'Requesting…' : 'Forgot password?'}
+                      </Text>
+                    </TouchableOpacity>
+                  )
+                )}
               </MotiView>
             )}
 

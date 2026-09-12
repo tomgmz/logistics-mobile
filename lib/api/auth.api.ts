@@ -300,6 +300,20 @@ export async function changePassword(password: string): Promise<void> {
   await api.post('/auth/change-password', { password })
 }
 
+/**
+ * Ask an administrator to send a password reset link.
+ *
+ * Drivers sign in only on this app, so for them this is the only way back from a
+ * lockout. The API answers identically whether or not the address has an account,
+ * so the UI must not read anything into a success.
+ *
+ * The reset itself happens on the web page the emailed link points at — there is
+ * no in-app reset screen, by design: the token belongs in the email, not here.
+ */
+export async function requestPasswordReset(email: string): Promise<void> {
+  await api.post('/auth/forgot-password', { email })
+}
+
 let _getMePromise: Promise<AuthUser> | null = null
 
 export async function getMe(): Promise<AuthUser> {
