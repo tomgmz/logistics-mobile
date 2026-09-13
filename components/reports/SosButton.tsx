@@ -33,9 +33,18 @@ interface Props {
   /** Nudges the button clear of whatever else the overlay has docked. */
   bottom?: number
   right?:  number
+  /**
+   * Docks the button from the top instead, for overlays that stack it in a
+   * column with their own controls. Wins over `bottom` when both are given.
+   */
+  top?: number
+  /** The disc's diameter, for lining up with a column of a different size. */
+  size?: number
 }
 
-export function SosButton({ bookingId, contextRef, contextDate, bottom = 150, right = 14 }: Props) {
+export function SosButton({
+  bookingId, contextRef, contextDate, bottom = 150, right = 14, top, size = 52,
+}: Props) {
   const router = useRouter()
   const [optionsOpen, setOptionsOpen] = useState(false)
   const [quickOpen, setQuickOpen]     = useState(false)
@@ -57,16 +66,27 @@ export function SosButton({ bookingId, contextRef, contextDate, bottom = 150, ri
         accessibilityRole="button"
         accessibilityLabel="Emergency — report a case"
         style={{
-          position: 'absolute', right, bottom, zIndex: 30,
-          width: 52, height: 52, borderRadius: 999,
+          position: 'absolute', right, zIndex: 30,
+          ...(top != null ? { top } : { bottom }),
+          width: size, height: size, borderRadius: 999,
           alignItems: 'center', justifyContent: 'center',
           backgroundColor: D.redDim,
-          borderWidth: 1.5, borderColor: D.red,
+          // The 2px ring is what the map's own round controls wear, so the disc
+          // sits in that column without looking like a different family.
+          borderWidth: 2, borderColor: D.red,
           shadowColor: '#000', shadowOpacity: 0.5, shadowRadius: 10,
           shadowOffset: { width: 0, height: 4 }, elevation: 8,
         }}
       >
-        <Text style={{ color: D.white, fontSize: 15, letterSpacing: 0.5, fontFamily: FONTS.spartan.bold }}>
+        <Text
+          style={{
+            color:         D.white,
+            // Three bold caps have to clear the ring on the smaller disc too.
+            fontSize:      size >= 52 ? 15 : 14,
+            letterSpacing: 0.5,
+            fontFamily:    FONTS.spartan.bold,
+          }}
+        >
           SOS
         </Text>
       </TouchableOpacity>

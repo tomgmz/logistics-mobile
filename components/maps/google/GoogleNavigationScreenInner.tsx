@@ -126,23 +126,47 @@ const MAP_BTN_RED  = '#f62626'
 const MAP_BTN_IDLE = '#818181'
 
 /**
- * How much of the map's bottom we declare obscured, via mapPadding.
+ * The gap we leave above the trip sheet when declaring the map's bottom
+ * obscured, via mapPadding.
  *
- * Deliberately more than the closed sheet's own height: the SDK needs room to
- * put its re-center button AND its traffic/flood callouts fully clear of the
- * sheet, not merely flush against it. Raise this if either still ends up behind
- * the sheet; the cost is that the camera frames the driver that much higher up
- * the screen, since padding is what tells it where centre is.
+ * Over the closed sheet it is deliberately generous: the SDK needs room to put
+ * its re-center button AND its traffic/flood callouts fully clear of the sheet,
+ * not merely flush against it. Raise it if either still ends up behind the
+ * sheet; the cost is that the camera frames the driver that much higher up the
+ * screen, since padding is what tells it where centre is.
+ *
+ * Over the open sheet there is no room for that luxury — the panel is already
+ * most of the screen — so the button just clears its top edge.
  */
-const SDK_BOTTOM_CLEARANCE = SHEET_PEEK_H + 140
+const SDK_GAP_CLOSED = 140
+const SDK_GAP_OPEN   = 16
 
-/** The Maps SDK compass container, matched exactly. */
+/**
+ * The Maps SDK compass container, matched exactly.
+ *
+ * The margin is measured, not assumed: on device the compass disc's centre sits
+ * ~23dp in from the right edge, not the 12dp its container margin would imply,
+ * so a column at 12 stood a noticeable 11dp to its right. Centres are what the
+ * eye reads down a vertical stack, so this is set to put ours on the compass's.
+ */
 const MAP_BTN_SIZE  = 48
-const MAP_BTN_RIGHT = 12
+const MAP_BTN_RIGHT = 23
 /** Below the compass, measured down from the top safe-area inset. */
 const MAP_BTN_TOP   = 164
 /** Disc height plus the gap between them. */
 const MAP_BTN_PITCH = MAP_BTN_SIZE + 6
+
+/**
+ * The column under the compass, one evenly spaced slot per button: SOS, the
+ * avoid-highways toggle, then confirm-stop.
+ *
+ * Every button in it is MAP_BTN_SIZE wide at MAP_BTN_RIGHT, the compass's own
+ * box — same width and same margin is what puts their centres on one line, so
+ * nothing here should be sized or inset on its own. Slots are numbered rather
+ * than offset by hand so a button can be added or reordered without the ones
+ * below it drifting.
+ */
+const mapBtnSlotTop = (slot: number) => MAP_BTN_TOP + slot * MAP_BTN_PITCH
 
 const MAP_BTN = {
   position:        'absolute' as const,
@@ -172,6 +196,18 @@ export default function GoogleNavigationScreenInner({ bookingId, routeToken, ear
 function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
   const router = useRouter()
   const insets = useSafeAreaInsets()
+
+  /**
+   * How much of the map's bottom the trip sheet is covering, as the sheet
+   * reports it — the peek while it is closed, its full height once the driver
+   * slides it open. Declaring this as mapPadding is what keeps the SDK's
+   * re-center button above the sheet instead of behind it, so it has to follow
+   * the sheet rather than assume the closed height.
+   */
+  const [sheetH, setSheetH] = useState(SHEET_PEEK_H + insets.bottom)
+  const [sheetOpen, setSheetOpen] = useState(false)
+
+  const sdkBottomClearance = sheetH + (sheetOpen ? SDK_GAP_OPEN : SDK_GAP_CLOSED)
   const {
     navigationController,
     setOnArrival,
@@ -887,7 +923,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
         // A layout declaration, not a camera call: no controller, no moveCamera,
         // no perspective. Bottom only, so the compass and the disc column keep
         // their positions.
-        mapPadding={SHOW_NATIVE_UI ? undefined : { bottom: SDK_BOTTOM_CLEARANCE + insets.bottom }}
+        mapPadding={SHOW_NATIVE_UI ? undefined : { bottom: sdkBottomClearance }}
         // Dark map: during a nav session the theme is driven by
         // navigationNightMode (not a cloud mapId/color scheme), so force night.
         navigationNightMode={NavigationNightMode.FORCE_NIGHT}
@@ -911,8 +947,17 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
 
       {/* Emergency, without leaving navigation. A driver having an accident is
           on this screen, not on the reports list — putting a screen transition
-          between them and the alert is the one thing this must not do. */}
-      <SosButton bookingId={bookingId} />
+          between them and the alert is the one thing this must not do.
+
+          It heads the right-hand disc column, directly above the avoid-highways
+          toggle: the topmost slot the compass leaves free, and the one a thumb
+          finds without looking. */}
+      <SosButton
+        bookingId={bookingId}
+        top={insets.top + mapBtnSlotTop(0)}
+        right={MAP_BTN_RIGHT}
+        size={MAP_BTN_SIZE}
+      />
 
       {/* Offline banner. The SDK keeps guiding on the route it already loaded
           (~15–20 min cache) but can't reroute or render unseen areas while
@@ -956,7 +1001,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
         accessibilityRole="switch"
         accessibilityState={{ checked: avoidHighways }}
         accessibilityLabel="Avoid highways"
-        style={[MAP_BTN, { top: insets.top + MAP_BTN_TOP, zIndex: 21, borderColor: avoidHighways ? MAP_BTN_RED : MAP_BTN_IDLE }]}
+        style={[MAP_BTN, { top: insets.top + mapBtnSlotTop(1), zIndex: 21, borderColor: avoidHighways ? MAP_BTN_RED : MAP_BTN_IDLE }]}
       >
         <Signpost size={22} color={avoidHighways ? MAP_BTN_RED : MAP_BTN_IDLE} strokeWidth={1.5} />
       </TouchableOpacity>
@@ -1010,7 +1055,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
           style={[
             MAP_BTN,
             {
-              top:         insets.top + MAP_BTN_TOP + MAP_BTN_PITCH,
+              top:         insets.top + mapBtnSlotTop(2),
               zIndex:      25,
               opacity:     confirming ? 0.6 : 1,
               borderColor: C.green,
@@ -1035,6 +1080,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
           distanceM={navInfo?.nextDistanceM}
           totalEtaSeconds={navInfo?.finalEtaS}
           onConfirmStop={(idx) => setProofFor({ idx, auto: false })}
+          onRestingHeight={(h, open) => { setSheetH(h); setSheetOpen(open) }}
         />
       )}
 

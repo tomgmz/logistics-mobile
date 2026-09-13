@@ -211,6 +211,17 @@ function dimensions(c: CargoItem): string | null {
 export default function BookingDetailsScreen({ bookingId, onStart, onPreview, onBack }: Props) {
   const insets = useSafeAreaInsets()
 
+  /**
+   * The dock's measured height, so the scroller can clear it.
+   *
+   * It can't be a constant: the dock grows a row whenever it has something
+   * extra to say — the offline banner, the preview button, and above all the
+   * lock note on a booking that isn't due yet — and a fixed guess left the last
+   * card of the details buried under it in exactly those cases. The fallback is
+   * the old guess, used only for the first frame before layout runs.
+   */
+  const [dockH, setDockH] = useState(0)
+
   const [loading,   setLoading]   = useState(true)
   const [error,     setError]     = useState<string | null>(null)
   const [booking,   setBooking]   = useState<Booking | null>(null)
@@ -560,7 +571,11 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
       </View>
 
       <ScrollView
-        contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 140, gap: 15 }}
+        contentContainerStyle={{
+          paddingHorizontal: 24,
+          paddingBottom:     (dockH || 140) + 16,
+          gap:               15,
+        }}
         showsVerticalScrollIndicator={false}
       >
         {/* Client */}
@@ -741,7 +756,13 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
       </ScrollView>
 
       {/* Start navigation */}
-      <View style={[s.dock, { paddingBottom: insets.bottom + 14 }]}>
+      <View
+        style={[s.dock, { paddingBottom: insets.bottom + 14 }]}
+        onLayout={(e) => {
+          const h = Math.round(e.nativeEvent.layout.height)
+          setDockH((prev) => (prev === h ? prev : h))
+        }}
+      >
         {offline && (
           <View style={s.offlineBanner}>
             <WifiOff size={15} color={D.amber} />
