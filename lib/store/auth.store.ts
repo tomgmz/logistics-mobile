@@ -36,7 +36,29 @@ export const useAuthStore = create<AuthStore>()(
       refreshToken: null,
       hasHydrated:  false,
 
-      setUser:   (user) => set({ user }),
+      /**
+       * Stores the signed-in user, but never downgrades one we already have.
+       *
+       * The login and verify-otp responses carry no `drivers` block — only
+       * /auth/me does — so writing one of those over a complete user strips the
+       * driver_id every driver screen keys off, and the app then looks signed
+       * out of the driver role while holding a valid session. Persisted, that
+       * survives restarts and only heals if a later /auth/me happens to get
+       * through. So a payload for the same user that is missing the role blocks
+       * keeps the ones already on file; anything else replaces wholesale, which
+       * is what a sign-in as a DIFFERENT user has to do.
+       */
+      setUser: (user) => set((s) => {
+        const prev = s.user
+        if (!prev || prev.user_id !== user.user_id) return { user }
+        return {
+          user: {
+            ...user,
+            drivers: user.drivers ?? prev.drivers ?? null,
+            clients: user.clients ?? prev.clients ?? null,
+          },
+        }
+      }),
       setTokens: (accessToken, refreshToken) => set({ accessToken, refreshToken }),
       clearUser: () => set({ user: null, accessToken: null, refreshToken: null }),
       setHasHydrated: (val) => set({ hasHydrated: val }),

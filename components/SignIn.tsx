@@ -599,7 +599,12 @@ export default function SignInScreen() {
     try {
       const auth = await verifyOtp(email, code)
       setTokens(auth.accessToken, auth.refreshToken)
-      setUser(auth.user)
+      // Only /auth/me carries the driver (or client) block the app routes on,
+      // and verifyOtp has already put the tokens where the interceptor reads
+      // them — so nothing is stored until the full user is in hand. Storing the
+      // token response first used to persist a driver-less user, which stuck
+      // around after a restart and had the driver's own screens telling them
+      // they weren't logged in as a driver.
       const me = await getMe()
       setUser(me)
       if (me.must_change_password) {
@@ -651,7 +656,8 @@ export default function SignInScreen() {
     try {
       const auth = await loginWithPassword(email, password)
       setTokens(auth.accessToken, auth.refreshToken)
-      setUser(auth.user)
+      // See the OTP path: the user is stored only once /auth/me has returned it
+      // complete.
       const me = await getMe()
       setUser(me)
       if (me.must_change_password) {

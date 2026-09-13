@@ -12,7 +12,8 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import NetInfo from '@react-native-community/netinfo'
-import { useDriverId, useAuthHydrated } from '../../../lib/store/auth.store'
+import { useDriverId, useAuthHydrated, useAuthStore } from '../../../lib/store/auth.store'
+import { getMe } from '../../../lib/api/auth.api'
 import { useAvailabilityStore } from '../../../lib/store/availability.store'
 import { FONTS } from '../../../lib/config/fonts'
 import { Package, Search, Truck, TriangleAlert, WifiOff } from 'lucide-react-native'
@@ -337,11 +338,32 @@ export default function DriverBookingList() {
     }
   }, [driverId, hasHydrated, refreshAvailability])
 
+  /**
+   * Re-fetches the signed-in user when the stored copy has no driver_id.
+   *
+   * Being here at all means the layout guard was satisfied — there IS a driver
+   * session — so a missing driver_id is an incomplete stored user, not a
+   * missing login. /auth/me is the only call that carries the driver block, so
+   * asking for it again is the repair; once it lands, driverId changes and the
+   * load below runs on its own.
+   */
+  const setUser = useAuthStore((s) => s.setUser)
+  const repairProfile = useCallback(async () => {
+    try {
+      setError(null)
+      setUser(await getMe())
+    } catch {
+      setError('Couldn’t load your driver profile. Check your connection and pull down to retry.')
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }, [setUser])
+
   useEffect(() => {
     if (!hasHydrated) return
     if (!driverId) {
-      setLoading(false)
-      setError('Not logged in as a driver')
+      void repairProfile()
       return
     }
     loadCacheThenFetch()
@@ -358,8 +380,11 @@ export default function DriverBookingList() {
 
   const onRefresh = useCallback(() => {
     setRefreshing(true)
+    // A pull with no driver_id can't fetch bookings — it retries the profile,
+    // which is the thing actually missing.
+    if (!driverId) { void repairProfile(); return }
     loadCacheThenFetch(true)
-  }, [loadCacheThenFetch])
+  }, [driverId, repairProfile, loadCacheThenFetch])
 
   const displayed = filterBookings(bookings, activeFilter)
   const countFor  = (f: FilterKey) => filterBookings(bookings, f).length
