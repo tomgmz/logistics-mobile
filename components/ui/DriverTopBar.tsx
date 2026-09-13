@@ -21,7 +21,7 @@ import {
 import { MotiView } from 'moti'
 import { useRouter, usePathname } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { Bell, MessageCircle, ChevronLeft, KeyRound, LogOut } from 'lucide-react-native'
+import { Bell, MessageCircle, ChevronLeft, LogOut } from 'lucide-react-native'
 
 import { useAuthStore } from '../../lib/store/auth.store'
 import { useAvailabilityStore } from '../../lib/store/availability.store'
@@ -209,14 +209,6 @@ export default function DriverTopBar() {
 
             <View style={styles.menuLine} />
 
-            <MenuRow
-              icon={<KeyRound size={16} color={COLORS.white} />}
-              label="Change password"
-              onPress={() => {
-                setMenuOpen(false)
-                router.push('/change-password')
-              }}
-            />
             <MenuRow
               icon={<LogOut size={16} color={COLORS.danger} />}
               label="Sign out"

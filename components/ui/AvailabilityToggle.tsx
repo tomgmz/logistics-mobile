@@ -1,6 +1,5 @@
 import React, { useState } from 'react'
 import { View, Text, Pressable } from 'react-native'
-import { Power } from 'lucide-react-native'
 
 import { useAvailabilityStore } from '../../lib/store/availability.store'
 import AvailabilityCalendarModal from './AvailabilityCalendarModal'
@@ -69,7 +68,6 @@ export default function AvailabilityToggle() {
         <Text className="text-[11px] text-ink-faint mt-0.5">{hint}</Text>
       </View>
 
-      <Power size={18} color="#818181" />
       <PencilUpIcon size={16} color="#4df9ed" />
     </Pressable>
 

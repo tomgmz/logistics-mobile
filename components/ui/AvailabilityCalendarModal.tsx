@@ -11,7 +11,6 @@ import {
 import { MotiView, AnimatePresence } from 'moti'
 import { Easing } from 'react-native-reanimated'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { Power } from 'lucide-react-native'
 
 import { useAvailabilityStore } from '../../lib/store/availability.store'
 import { PencilCheckIcon } from './icons/AvailabilityIcons'
@@ -231,10 +230,8 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
               transition={{ type: 'timing', duration: 220, easing: Easing.out(Easing.cubic) }}
               style={[styles.card, { marginBottom: insets.bottom + 12 }]}
             >
-              {/* The same power glyph and title slot as the pill it grew out of. */}
+              {/* The same title slot as the pill it grew out of. */}
               <View style={styles.header}>
-                <Power size={16} color={COLORS.cyan} />
-
                 <View style={styles.headerText}>
                   <Text style={styles.title}>Your Availability</Text>
                   <Text style={styles.subtitle}>
