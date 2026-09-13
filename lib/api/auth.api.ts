@@ -118,7 +118,12 @@ api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
     url.includes('/auth/request-otp') ||
     url.includes('/auth/status')      ||
     url.includes('/auth/login')       ||
-    url.includes('/auth/logout')
+    url.includes('/auth/logout')      ||
+    // Reset is for people who cannot sign in. Attaching a stale token here, or
+    // worse triggering a refresh that fails and wipes the session, would break
+    // the one flow that has to work without one.
+    url.includes('/auth/reset-password') ||
+    url.includes('/auth/forgot-password')
 
   if (isExcluded) return config
 
@@ -323,6 +328,33 @@ export async function getMe(): Promise<AuthUser> {
     .then(({ data }) => data.data)
     .finally(() => { _getMePromise = null })
   return _getMePromise
+}
+
+export interface ResetTokenCheck {
+  valid:       boolean
+  /** Masked, e.g. "j•••@gmail.com" — enough to recognise, not to harvest. */
+  email?:      string
+  expires_at?: string
+}
+
+/**
+ * Check an emailed reset token before showing the form.
+ *
+ * Asked first so a link that has expired or already been spent says so, rather
+ * than letting someone compose a password and lose it to an error on submit.
+ * Same two endpoints the web page uses; no session is involved either way.
+ */
+export async function verifyResetToken(token: string): Promise<ResetTokenCheck> {
+  const { data } = await api.post<{ status: string; data: ResetTokenCheck }>(
+    '/auth/reset-password/verify',
+    { token },
+  )
+  return data.data
+}
+
+/** Spend the token and set the new password. */
+export async function completePasswordReset(token: string, password: string): Promise<void> {
+  await api.post('/auth/reset-password', { token, password })
 }
 
 export async function logout(): Promise<void> {
