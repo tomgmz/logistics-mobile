@@ -123,7 +123,12 @@ api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
     // worse triggering a refresh that fails and wipes the session, would break
     // the one flow that has to work without one.
     url.includes('/auth/reset-password') ||
-    url.includes('/auth/forgot-password')
+    url.includes('/auth/forgot-password') ||
+    // Passkey enrolment and sign-in are how a driver gets a session in the first
+    // place. Attaching a stale token — or triggering a refresh that fails and
+    // clears the store mid-ceremony — would break the flow it is meant to start.
+    url.includes('/auth/passkey/enroll') ||
+    url.includes('/auth/passkey/authenticate')
 
   if (isExcluded) return config
 
@@ -166,7 +171,9 @@ api.interceptors.response.use(
       url.includes('/auth/request-otp') ||
       url.includes('/auth/status')      ||
       url.includes('/auth/login')       ||
-      url.includes('/auth/logout')
+      url.includes('/auth/logout')      ||
+      url.includes('/auth/passkey/enroll') ||
+      url.includes('/auth/passkey/authenticate')
 
     if (error.response?.status === 401 && !original?._retry && !isExcluded) {
       if (isRefreshing) {
@@ -371,6 +378,90 @@ export async function logoutAll(): Promise<void> {
   } finally {
     await TokenStore.clearAll()
   }
+}
+
+// ---------------------------------------------------------------------------
+// Passkeys — for outside-vendor drivers, who have no password at all.
+
+export interface EnrollmentInvitePreview {
+  valid:        boolean
+  firstName?:   string | null
+  emailMasked?: string
+  expiresAt?:   string
+}
+
+/**
+ * Check the emailed setup link before showing the driver a button.
+ *
+ * Always resolves — the server answers `{ valid: false }` rather than erroring,
+ * so an expired link produces a clear screen instead of a crash.
+ */
+export async function verifyEnrollmentInvite(token: string): Promise<EnrollmentInvitePreview> {
+  const { data } = await api.post<{ status: string; data: EnrollmentInvitePreview }>(
+    '/auth/passkey/enroll/verify-invite',
+    { token },
+  )
+  return data.data
+}
+
+export async function passkeyEnrollOptions(token: string): Promise<any> {
+  const { data } = await api.post<{ status: string; data: any }>(
+    '/auth/passkey/enroll/options',
+    { token },
+  )
+  return data.data
+}
+
+/**
+ * Hand the created credential back for verification.
+ *
+ * Returns a full session: the driver has just proved a single-use emailed token
+ * and a user-verified registration, so they are signed in on the spot rather
+ * than bounced to the login screen.
+ */
+export async function passkeyEnrollVerify(
+  token:      string,
+  credential: any,
+  label?:     string,
+): Promise<AuthResponse> {
+  const { data } = await api.post<{ status: string; data: AuthResponse }>(
+    '/auth/passkey/enroll/verify',
+    { token, credential, device_label: label, device_info: getDeviceInfo() },
+  )
+
+  const auth = data.data
+  if (!auth?.accessToken || !auth?.refreshToken) {
+    throw new Error('passkey setup response is missing token fields.')
+  }
+
+  await TokenStore.setAccess(auth.accessToken)
+  await TokenStore.setRefresh(auth.refreshToken)
+  return auth
+}
+
+/** No arguments, deliberately: a discoverable-credential sign-in sends no email. */
+export async function passkeyAuthOptions(): Promise<any> {
+  const { data } = await api.post<{ status: string; data: any }>(
+    '/auth/passkey/authenticate/options',
+    {},
+  )
+  return data.data
+}
+
+export async function passkeyAuthVerify(credential: any): Promise<AuthResponse> {
+  const { data } = await api.post<{ status: string; data: AuthResponse }>(
+    '/auth/passkey/authenticate/verify',
+    { credential, device_info: getDeviceInfo() },
+  )
+
+  const auth = data.data
+  if (!auth?.accessToken || !auth?.refreshToken) {
+    throw new Error('passkey sign-in response is missing token fields.')
+  }
+
+  await TokenStore.setAccess(auth.accessToken)
+  await TokenStore.setRefresh(auth.refreshToken)
+  return auth
 }
 
 export default api

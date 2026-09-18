@@ -20,7 +20,7 @@ import {
   type ReportStatus,
 } from '../../../lib/api/reports.api'
 import { ReportOptionModal } from '../../../components/reports/ReportOptionModal'
-import { QuickAlertModal } from '../../../components/reports/QuickAlertModal'
+import { sendQuickAlert } from '../../../lib/quickAlert'
 
 /**
  * REPORTS — everything this driver has raised from the road.
@@ -77,7 +77,6 @@ export default function ReportsScreen() {
   const [filter, setFilter]     = useState<FilterKey>('All')
 
   const [optionsOpen, setOptionsOpen] = useState(false)
-  const [quickOpen, setQuickOpen]     = useState(false)
 
   const load = useCallback(async (isRefresh = false) => {
     if (!isRefresh) setLoading(true)
@@ -240,31 +239,28 @@ export default function ReportsScreen() {
 
       <ReportOptionModal
         visible={optionsOpen}
-        onQuickAlert={() => { setOptionsOpen(false); setQuickOpen(true) }}
+        /*
+          Sent on the tap, with no countdown and no panel in between.
+
+          Sending is the END of the quick path, not the start of a form. It used
+          to push straight into the report so the driver could describe it while
+          fresh, which quietly turned the one gesture that exists for "no time to
+          fill anything in" into the long way round to the same form. The alert
+          is away; the driver stays where they were, and the new report is at the
+          top of their list once it reloads.
+
+          Adding detail stays possible and stays THEIRS to start — they tap the
+          report when the situation allows, the same way they add a proof photo
+          once signal returns.
+        */
+        onQuickAlert={() => {
+          setOptionsOpen(false)
+          void sendQuickAlert({ bookingId: activeBookingId }).then((id) => {
+            if (id) load(true)
+          })
+        }}
         onDetailed={() => { setOptionsOpen(false); router.push('/driver/reports/new') }}
         onClose={() => setOptionsOpen(false)}
-      />
-
-      <QuickAlertModal
-        visible={quickOpen}
-        bookingId={activeBookingId}
-        // Sending is the END of the quick path, not the start of a form.
-        //
-        // This used to push straight into the report so the driver could
-        // describe it while fresh, which quietly turned the one gesture that
-        // exists for "no time to fill anything in" into the long way round to
-        // the same form. The alert is away; the driver is put back where they
-        // were, with the new report at the top of their list.
-        //
-        // Adding detail stays possible and stays THEIRS to start — they tap the
-        // report when the situation allows, which is the same way they add a
-        // proof photo once signal returns.
-        onSent={() => {
-          setQuickOpen(false)
-          load(true)
-        }}
-        onCancel={() => setQuickOpen(false)}
-        onDetailed={() => { setQuickOpen(false); router.push('/driver/reports/new') }}
       />
     </View>
   )

@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router'
 
 import { FONTS } from '../../lib/config/fonts'
 import { ReportOptionModal } from './ReportOptionModal'
-import { QuickAlertModal } from './QuickAlertModal'
+import { sendQuickAlert } from '../../lib/quickAlert'
 
 /**
  * SOS, on the navigation map.
@@ -15,7 +15,7 @@ import { QuickAlertModal } from './QuickAlertModal'
  * transition between them and the alert, which is the one thing this must never
  * have.
  *
- * Self-contained on purpose: it owns both modals, so dropping it into either
+ * Self-contained on purpose: it owns the fork, so dropping it into either
  * provider's overlay costs one line and neither overlay grows report state it
  * would otherwise have to thread through.
  */
@@ -47,7 +47,6 @@ export function SosButton({
 }: Props) {
   const router = useRouter()
   const [optionsOpen, setOptionsOpen] = useState(false)
-  const [quickOpen, setQuickOpen]     = useState(false)
 
   const detailHref = {
     pathname: '/driver/reports/new' as const,
@@ -95,23 +94,13 @@ export function SosButton({
         visible={optionsOpen}
         contextRef={contextRef}
         contextDate={contextDate}
-        onQuickAlert={() => { setOptionsOpen(false); setQuickOpen(true) }}
+        // Straight out, with no countdown and no panel. The driver stays on the
+        // map: the alert is away and somebody is already moving, so taking them
+        // off navigation mid-incident would be the wrong thing to do with the
+        // next ten seconds. The report is in their list when they are ready.
+        onQuickAlert={() => { setOptionsOpen(false); void sendQuickAlert({ bookingId }) }}
         onDetailed={() => { setOptionsOpen(false); router.push(detailHref) }}
         onClose={() => setOptionsOpen(false)}
-      />
-
-      <QuickAlertModal
-        visible={quickOpen}
-        bookingId={bookingId}
-        contextRef={contextRef}
-        contextDate={contextDate}
-        // Left on the map deliberately. The alert is away and somebody is
-        // already moving; taking the driver off navigation to look at a form,
-        // mid-incident, would be the wrong thing to do with the next ten
-        // seconds. The report is in their list when they are ready for it.
-        onSent={() => setQuickOpen(false)}
-        onCancel={() => setQuickOpen(false)}
-        onDetailed={() => { setQuickOpen(false); router.push(detailHref) }}
       />
     </>
   )

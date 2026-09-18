@@ -23,17 +23,12 @@ import {
   requestOtp,
   requestPasswordReset,
   verifyOtp,
+  passkeyAuthOptions,
+  passkeyAuthVerify,
 } from '../lib/api/auth.api'
 import { useAuthStore } from '../lib/store/auth.store'
-
-const MOBILE_ROLE_ROUTES: Record<string, string> = {
-  admin: '/admin',
-  driver:      '/driver',
-}
-
-function getMobileRoute(role: string): string {
-  return MOBILE_ROLE_ROUTES[role] ?? '/'
-}
+import { getMobileRoute } from '../lib/config/roleRoutes'
+import { checkPasskeySupport, getPasskey, PasskeyCancelled } from '../lib/passkeys'
 
 function formatCountdown(seconds: number): string {
   const m = Math.floor(seconds / 60)
@@ -427,6 +422,9 @@ export default function SignInScreen() {
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
   const [loading,  setLoading]  = useState(false)
+  // Whether to offer passkey sign-in at all. Computed once: it depends only on
+  // the OS and the build, neither of which changes while the screen is open.
+  const [passkeySupported] = useState(() => checkPasskeySupport().supported)
   const inFlight = useRef(false)
   const [error,    setError]    = useState<string | null>(null)
 
@@ -683,6 +681,49 @@ export default function SignInScreen() {
     }
   }, [email, password, lockState, setUser, setTokens, handleLockError])
 
+  /**
+   * Passkey sign-in.
+   *
+   * Deliberately outside the email → method → code state machine. A discoverable
+   * credential means no email is ever typed: the OS shows its own account picker
+   * and the server learns who is signing in only from the signed assertion. That
+   * is also what removes the account-enumeration surface, so there is nothing
+   * for the `method` chooser to choose between here.
+   */
+  const handlePasskeySignIn = useCallback(async () => {
+    if (inFlight.current) return
+    setError(null)
+    setLoading(true)
+    inFlight.current = true
+    let navigated = false
+    try {
+      const options    = await passkeyAuthOptions()
+      const assertion  = await getPasskey(options)
+      const auth       = await passkeyAuthVerify(assertion)
+      setTokens(auth.accessToken, auth.refreshToken)
+      // Same reasoning as the OTP and password paths: only /auth/me carries the
+      // driver block the app routes on, so nothing is stored until it is in hand.
+      const me = await getMe()
+      setUser(me)
+      const route = getMobileRoute(me.role)
+      if (route === '/') {
+        setError(`Role "${me.role}" has no mobile access.`)
+        return
+      }
+      navigated = true
+      router.replace(route as any)
+    } catch (err: any) {
+      // Dismissing the OS prompt is not a failure and should not raise a banner —
+      // WebAuthn deliberately reports "no credential" and "user said no"
+      // identically, so a red error here would often be wrong as well as rude.
+      if (err instanceof PasskeyCancelled) return
+      setError(extractMessage(err, 'Could not sign you in with that passkey.'))
+    } finally {
+      inFlight.current = false
+      if (!navigated) setLoading(false)
+    }
+  }, [setTokens, setUser])
+
   const handleBack = () => {
     setError(null)
     setOtp('')
@@ -795,6 +836,36 @@ export default function SignInScreen() {
                   onPress={handleEmailSubmit}
                   loading={loading}
                 />
+
+                {/*
+                  Passkey sign-in, for drivers from outside vendors who have no
+                  password at all. Shown only when this phone can actually use
+                  one, so it is never a button that leads to a refusal. It skips
+                  the email field entirely — the OS picks the account.
+                */}
+                {passkeySupported && (
+                  <>
+                    <View className="flex-row items-center my-5">
+                      <View className="flex-1 h-px bg-white/10" />
+                      <Text className="text-[10px] tracking-[1.5px] uppercase mx-3 text-ink-muted">
+                        or
+                      </Text>
+                      <View className="flex-1 h-px bg-white/10" />
+                    </View>
+
+                    <Pressable
+                      onPress={handlePasskeySignIn}
+                      disabled={loading}
+                      className="flex-row items-center justify-center py-3.5 rounded-xl border border-cyan/40"
+                      style={{ opacity: loading ? 0.6 : 1 }}
+                    >
+                      <MaterialIcons name="fingerprint" size={18} color="#4df9ed" style={{ marginRight: 8 }} />
+                      <Text className="text-[13px] font-bold tracking-[0.5px] text-cyan">
+                        Sign in with a passkey
+                      </Text>
+                    </Pressable>
+                  </>
+                )}
               </MotiView>
             )}
 

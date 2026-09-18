@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { ActivityIndicator, Alert, Linking, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, Alert, Linking, PixelRatio, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Signpost, CheckCircle2, PackageCheck, WifiOff } from 'lucide-react-native'
@@ -29,6 +29,14 @@ import { SosButton } from '../../reports/SosButton'
 import { fetchTripsWithCache, type Trip } from '../../../lib/trips'
 import { saveBookingCache, loadBookingCache, clearBookingCache } from '../../../lib/navCache'
 import {
+  saveRouteGeometry,
+  loadRouteGeometry,
+  clearRouteGeometry,
+  type CachedRouteGeometry,
+  type GeoPoint,
+  type RouteStopMarker,
+} from '../../../lib/routeGeometryCache'
+import {
   type Leg,
   type DisplayStop,
   getActiveNavSession,
@@ -42,6 +50,7 @@ import { StopProofModal } from '../shared/StopProofModal'
 import { groupCargoByDestination, manifestFor } from '../../../lib/cargoManifest'
 import { legCoordinates } from '../../../lib/stopGeofence'
 import { GoogleNavSheet, SHEET_PEEK_H } from './GoogleNavSheet'
+import { OfflineRoutePreview } from './OfflineRoutePreview'
 import { C } from '../../../theme/navigation.theme'
 
 /**
@@ -94,6 +103,18 @@ const TOS_OPTIONS = {
 // shorter than any real drive between stops.
 const RECENT_CONFIRM_IGNORE_MS = 5_000
 
+/**
+ * How long to wait for the SDK to build the first route before giving up on it.
+ *
+ * Measured on a real dead zone, not guessed: `setDestinations` offline does NOT
+ * reject — it never settles at all. Without a deadline the screen sits on
+ * "Starting navigation…" forever, and it stays there even after the connection
+ * comes back, because the reconnect handler is watching for a failure that never
+ * arrived. A route on a live connection lands in a few seconds; anything past
+ * this is the hang, not a slow build.
+ */
+const ROUTE_BUILD_TIMEOUT_MS = 20_000
+
 // Flip to `true` to see the stock Google Navigation experience: its own header
 // and ETA card come back and EVERY overlay of ours is withheld — turn card,
 // round map controls, banners and the trip sheet. That makes it a clean A/B for
@@ -126,20 +147,21 @@ const MAP_BTN_RED  = '#f62626'
 const MAP_BTN_IDLE = '#818181'
 
 /**
- * The gap we leave above the trip sheet when declaring the map's bottom
- * obscured, via mapPadding.
+ * The gap left ABOVE the trip sheet's CLOSED height when declaring the map's
+ * bottom obscured, via mapPadding.
  *
- * Over the closed sheet it is deliberately generous: the SDK needs room to put
- * its re-center button AND its traffic/flood callouts fully clear of the sheet,
- * not merely flush against it. Raise it if either still ends up behind the
- * sheet; the cost is that the camera frames the driver that much higher up the
- * screen, since padding is what tells it where centre is.
+ * Small on purpose. The SDK already insets its own furniture ~22dp inside
+ * whatever area we leave it, so the sheet's peek height alone is enough to clear
+ * it and this is only the breathing room on top.
  *
- * Over the open sheet there is no room for that luxury — the panel is already
- * most of the screen — so the button just clears its top edge.
+ * It used to be 140, back when the padding was handed over in dp and read as px
+ * (see sdkBottomClearancePx): roughly a third of it survived the unit mismatch,
+ * so a number this large was needed to land anywhere near right. Correcting the
+ * units made all 140 of it real and threw the re-center button most of the way
+ * up the screen. Anything raised here is also camera framing, not just spacing,
+ * because padding is what tells the SDK where centre is.
  */
-const SDK_GAP_CLOSED = 140
-const SDK_GAP_OPEN   = 16
+const SDK_GAP = 8
 
 /**
  * The Maps SDK compass container, matched exactly.
@@ -197,17 +219,52 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
   const router = useRouter()
   const insets = useSafeAreaInsets()
 
-  /**
-   * How much of the map's bottom the trip sheet is covering, as the sheet
-   * reports it — the peek while it is closed, its full height once the driver
-   * slides it open. Declaring this as mapPadding is what keeps the SDK's
-   * re-center button above the sheet instead of behind it, so it has to follow
-   * the sheet rather than assume the closed height.
-   */
-  const [sheetH, setSheetH] = useState(SHEET_PEEK_H + insets.bottom)
-  const [sheetOpen, setSheetOpen] = useState(false)
 
-  const sdkBottomClearance = sheetH + (sheetOpen ? SDK_GAP_OPEN : SDK_GAP_CLOSED)
+  /**
+   * Measured from the sheet's CLOSED height, never its live one.
+   *
+   * Pinning it is the point. Tying this to the live height moved the SDK's
+   * re-center button every time the driver opened or closed the board, and moved
+   * the camera with it — padding is what tells the SDK where centre is, so the
+   * map lurched on each drag. Worse, a button that travels has to be chased: the
+   * dismiss-on-touch-outside scrim had to be cut back to wherever it had got to,
+   * against a button whose height is Google's to change and grows with the
+   * device's font and display-size settings.
+   *
+   * Held at the peek height, the button sits in one place for the whole trip and
+   * the camera never shifts underneath the driver. The cost is that an OPEN board
+   * covers it — re-centering means closing the board first, which is one tap on
+   * something that is already under the driver's thumb.
+   */
+  const sdkBottomClearance = SHEET_PEEK_H + insets.bottom + SDK_GAP
+  /**
+   * The same clearance in PIXELS, which is the unit `mapPadding` is documented
+   * in — "Sets padding on the map in pixels".
+   *
+   * Everything else in React Native is dp, so handing it the raw number silently
+   * under-pads by the device's pixel ratio: on this 560dpi phone (ratio 3.5) a
+   * 200dp strip was declared as 200px ≈ 57dp, and the SDK's re-center button
+   * came to rest UNDER the trip sheet — pushed up, but nowhere near enough. It
+   * looks correct only at 160dpi, where dp and px happen to be the same number.
+   */
+  const sdkBottomClearancePx = Math.round(sdkBottomClearance * PixelRatio.get())
+
+  /**
+   * Forces mapPadding to be re-sent to the native side.
+   *
+   * The SDK drops the padding it was given at mount somewhere in the course of
+   * starting guidance, and React will not re-send a prop whose value has not
+   * changed — so the padding is simply gone, and the SDK's re-center button
+   * comes to rest under the trip sheet where no driver can reach it. It springs
+   * back the instant anything alters the value, which is why opening the sheet
+   * has always "fixed" it, and why the button appeared to drop only sometimes.
+   *
+   * Alternating one pixel is what makes the value change. It is below the
+   * threshold of anything visible and it is the whole point: a NEW number is the
+   * only thing that reaches the native view.
+   */
+  const [padEpoch, setPadEpoch] = useState(0)
+  const bumpMapPadding = useCallback(() => setPadEpoch((e) => e + 1), [])
   const {
     navigationController,
     setOnArrival,
@@ -257,6 +314,9 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
   // use this to give honest messaging rather than a generic failure.
   const [offline, setOffline] = useState(false)
   const offlineRef = useRef(false)
+  // The cached route to draw when guidance can't be built at all (cold open in a
+  // dead zone). Non-null means the preview screen is up instead of navigation.
+  const [offlinePreview, setOfflinePreview] = useState<CachedRouteGeometry | null>(null)
 
   const legsRef       = useRef<Leg[]>([])
   // Booking cargo grouped by destination, for the stop manifest.
@@ -336,6 +396,66 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
     await navigationController.startGuidance()
   }, [navigationController, routeToken])
 
+  /**
+   * Write the route the SDK is currently guiding to disk, so a COLD OPEN in a
+   * dead zone has something to draw (OfflineRoutePreview).
+   *
+   * The in-memory session marker already covers the driver leaving this screen
+   * and coming back — the native session is still alive and gets re-attached.
+   * What it cannot survive is the process dying: a crash, a reboot, Android
+   * reclaiming the app while it sat in the yard. That driver comes back to an
+   * SDK with no route and no way to build one without signal.
+   *
+   * Called after every point where the route changes — first start, reroute,
+   * highways toggle, each stop confirmed, the next run of a shuttle — and
+   * deliberately never awaited by its callers: this is a backup, and a slow
+   * AsyncStorage write must not hold up guidance.
+   */
+  const captureRouteGeometry = useCallback(async () => {
+    try {
+      const segments = await navigationController.getRouteSegments()
+
+      // Segments run from the driver's position to each remaining waypoint, so
+      // flattening them gives the line from HERE to the end of the run — which
+      // is what a restore should draw, not the part already driven.
+      const points: GeoPoint[] = (segments ?? []).flatMap((segment: any) =>
+        (segment?.segmentLatLngList ?? []).map((p: any) => ({
+          latitude:  p?.lat,
+          longitude: p?.lng,
+        })),
+      )
+
+      // Markers come from the legs rather than the segments: a leg carries the
+      // stop's own coordinates, while a segment ends wherever the route could
+      // reach the road, which can be a block away from the bay.
+      const markers: RouteStopMarker[] = []
+      legsRef.current.forEach((leg, i) => {
+        const at = legCoordinates(leg)
+        const stop = stopsRef.current[i]
+        if (!at || !stop) return
+        markers.push({
+          ...at,
+          stopIndex: i,
+          kind:      stop.kind,
+          number:    stop.number,
+          label:     stop.label,
+        })
+      })
+
+      await saveRouteGeometry({
+        bookingId,
+        points,
+        markers,
+        legIndex: legIndexRef.current,
+        stops:    stopsRef.current,
+      })
+    } catch {
+      // No segments to read (guidance not running yet, or the SDK refused).
+      // Whatever was cached before stays put — a slightly older route still
+      // beats the blank error screen this exists to replace.
+    }
+  }, [bookingId, navigationController])
+
   const toggleAvoidHighways = useCallback(async () => {
     // Ignore taps while a previous toggle is still recomputing the route, so
     // rapid double-taps can't fire overlapping setDestinations calls.
@@ -360,6 +480,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
       await applyDestinations()
       // Persist the new preference so a resume re-applies the same route.
       updateNavSession({ avoidHighways: next })
+      captureRouteGeometry()
     } catch (e: any) {
       // The recompute failed — revert the flag AND the button so it reflects
       // the route actually being guided, then tell the driver instead of
@@ -395,6 +516,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
       applyingRef.current = true
       setRerouting(true)
       applyDestinations()
+        .then(() => captureRouteGeometry())
         .catch(() => { /* still flaky; keep coasting on the cached route */ })
         .finally(() => {
           applyingRef.current = false
@@ -402,9 +524,11 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
         })
     } else if (offlineStartErrorRef.current) {
       // Guidance never started because we were offline — retry automatically
-      // now that the connection is back.
+      // now that the connection is back. This is also what takes the offline
+      // route preview down: the retry rebuilds the real route behind it.
       offlineStartErrorRef.current = false
       setError(null)
+      setOfflinePreview(null)
       setStarting(true)
       setRetry((r) => r + 1)
     }
@@ -482,12 +606,13 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
     try {
       await applyDestinations()
       guidingRef.current = true
+      captureRouteGeometry()
     } catch {
       // Offline, most likely: the SDK cannot build a route without network. The
       // reconnect handler already re-applies destinations, and the driver can
       // retry from the button.
     }
-  }, [bookingId, applyDestinations])
+  }, [bookingId, applyDestinations, captureRouteGeometry])
 
   /**
    * The driver said the stop is done and photographed it: record stop `idx` with
@@ -549,12 +674,15 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
         // already running; it covers the case where the SDK paused on arrival.
         await navigationController.continueToNextDestination().catch(() => {})
         await navigationController.startGuidance().catch(() => {})
+        // Re-snapshot so a restore resumes at the stop ahead, not the one just
+        // finished. Offline this is a no-op and the older snapshot stands.
+        captureRouteGeometry()
       }
     } finally {
       confirmingRef.current = false
       setConfirming(false)
     }
-  }, [bookingId, navigationController, startNextTripIfAny])
+  }, [bookingId, navigationController, startNextTripIfAny, captureRouteGeometry])
 
   // The SDK detected the arrival — the normal case, and still what drives the
   // flow: it opens the proof popup for this stop hands-free, so the driver only
@@ -581,6 +709,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
     completeBooking(bookingId).catch(() => {})
 
     clearBookingCache(bookingId)
+    clearRouteGeometry(bookingId)
     endNavSession()
     guidingRef.current = false
     navigationController.stopGuidance().catch(() => {})
@@ -614,6 +743,10 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
     let cancelled = false
     let navReady  = false
     let started   = false
+    // Fires once, whichever way the start dies — the watchdog below or an
+    // outright rejection — so the driver can't be dropped to the preview twice.
+    let startResolved = false
+    let watchdog: ReturnType<typeof setTimeout> | undefined
     nothingToNavigateRef.current = false
 
     // Wire the React-side callbacks onto the SDK's (always-subscribed) event
@@ -640,7 +773,11 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
       })
       setOnRouteChanged(() => {
         if (cancelled) return
+        bumpMapPadding()
         setRerouting(true)
+        // The SDK swapped the route under us — the cached one is now wrong.
+        // Read it back after the reroute settles rather than mid-swap.
+        setTimeout(() => { if (!cancelled) captureRouteGeometry() }, 1500)
         setTimeout(() => { if (!cancelled) setRerouting(false) }, 2500)
       })
     }
@@ -666,6 +803,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
       registerListeners()
       // Re-enable turn-by-turn forwarding so the turn card refills.
       try { navigationController.setTurnByTurnLoggingEnabled(true) } catch {}
+      bumpMapPadding()
       setStarting(false)
 
       return () => {
@@ -676,42 +814,117 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
       }
     }
 
+    /**
+     * Everything that has to happen once a route exists. Shared by the normal
+     * path and by a build that came back LATE, after we had already given up and
+     * dropped to the offline preview.
+     */
+    const onRouteBuilt = () => {
+      startResolved = true
+      if (watchdog) clearTimeout(watchdog)
+      guidingRef.current = true
+      // Mark this as the live native session so leaving and re-opening the
+      // screen resumes it (offline-safe) instead of rebuilding the route.
+      startNavSession({
+        bookingId,
+        waypoints:     waypointsRef.current,
+        legs:          legsRef.current,
+        stops:         stopsRef.current,
+        legIndex:      legIndexRef.current,
+        processed:     [...processedRef.current],
+        avoidHighways: avoidHwyRef.current,
+      })
+      offlineStartErrorRef.current = false
+      // The SDK has just rebuilt its furniture; re-assert our padding over it.
+      bumpMapPadding()
+      setTimeout(() => { if (!cancelled) bumpMapPadding() }, 2000)
+      // Snapshot the route now that the SDK has actually built one, so a
+      // crash-and-reopen out of coverage still has a line to draw.
+      captureRouteGeometry()
+      if (cancelled) return
+      // Takes the offline preview down if a late build beat us to it.
+      setOfflinePreview(null)
+      setStarting(false)
+    }
+
+    /**
+     * No route: fall back to the cached one, or to the error screen when there
+     * isn't one. Shared by the two ways a start can fail — an outright rejection,
+     * and the silent hang that offline actually produces.
+     */
+    const onRouteBuildFailed = async (message: string) => {
+      if (cancelled || startResolved) return
+      startResolved = true
+      if (watchdog) clearTimeout(watchdog)
+      setStarting(false)
+
+      // Arm the auto-retry unconditionally rather than only when NetInfo admits
+      // we're offline: the hang also happens on a connection that is nominally
+      // up but going nowhere, and that driver needs the reconnect to rescue them
+      // just as much.
+      offlineStartErrorRef.current = true
+
+      // A route cached from an earlier start beats dead-ending on an error the
+      // driver can do nothing about. It is not navigation and the preview says
+      // so, but a driver mid-run with no signal needs to see where they were up
+      // to far more than they need a red screen.
+      const cachedRoute = await loadRouteGeometry(bookingId)
+      if (cancelled) return
+
+      if (cachedRoute) {
+        // The booking cache may have carried nothing (first run on this device,
+        // or it was evicted), in which case the snapshot's own stop list is all
+        // there is. Seed from it so the sheet has a board to draw.
+        if (stopsRef.current.length === 0 && cachedRoute.stops.length > 0) {
+          stopsRef.current    = cachedRoute.stops
+          legIndexRef.current = cachedRoute.legIndex
+          setStops(cachedRoute.stops)
+          setLegIndex(cachedRoute.legIndex)
+        }
+        setOfflinePreview(cachedRoute)
+        return
+      }
+
+      setError(message)
+    }
+
     // Start guidance only once BOTH the navigator is ready and the booking's
     // waypoints have loaded. Calling setDestinations before the navigator is
     // ready throws "initialize the navigator before executing".
     const maybeBegin = async () => {
       if (cancelled || started || !navReady || waypointsRef.current.length === 0) return
       started = true
-      try {
-        await applyDestinations()
-        guidingRef.current = true
-        // Mark this as the live native session so leaving and re-opening the
-        // screen resumes it (offline-safe) instead of rebuilding the route.
-        startNavSession({
-          bookingId,
-          waypoints:     waypointsRef.current,
-          legs:          legsRef.current,
-          stops:         stopsRef.current,
-          legIndex:      legIndexRef.current,
-          processed:     [...processedRef.current],
-          avoidHighways: avoidHwyRef.current,
-        })
-        offlineStartErrorRef.current = false
-        if (!cancelled) setStarting(false)
-      } catch (e: any) {
-        if (!cancelled) {
-          setStarting(false)
-          // The SDK needs the network to build a route; if we're offline that's
-          // the real reason, not a generic failure. Remember it so we can
-          // auto-retry the moment the connection returns.
-          offlineStartErrorRef.current = offlineRef.current
-          setError(
-            offlineRef.current
-              ? 'Can’t start a new route while offline — navigation needs a connection to build it. Reconnecting will resume automatically.'
-              : (e?.message ?? 'Failed to start guidance.'),
-          )
-        }
+
+      const attempt = applyDestinations()
+      // Claim the rejection now so the race below can't leave it unhandled.
+      const settled = attempt.then(() => 'built' as const, (e: any) => e ?? new Error('failed'))
+
+      const outcome = await Promise.race([
+        settled,
+        new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), ROUTE_BUILD_TIMEOUT_MS)),
+      ])
+
+      if (outcome === 'built') {
+        onRouteBuilt()
+        return
       }
+
+      if (outcome === 'timeout') {
+        // The SDK is still chewing on a route it will probably never produce.
+        // Show the driver something usable now, but DON'T abandon the attempt:
+        // if it does land, onRouteBuilt takes the preview back down.
+        await onRouteBuildFailed(
+          'Navigation is taking too long to start — it needs a connection to build the route. It will resume automatically once you reconnect.',
+        )
+        settled.then((late) => { if (late === 'built') onRouteBuilt() })
+        return
+      }
+
+      await onRouteBuildFailed(
+        offlineRef.current
+          ? 'Can’t start a new route while offline — navigation needs a connection to build it. Reconnecting will resume automatically.'
+          : (outcome?.message ?? 'Failed to start guidance.'),
+      )
     }
 
     // Load the booking in PARALLEL so the Terms dialog isn't gated behind this
@@ -811,9 +1024,38 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
         registerListeners()
         setOnNavigationReady(() => { navReady = true; maybeBegin() })
 
+        /**
+         * One deadline over the ENTIRE start sequence.
+         *
+         * An earlier version put the timeout around the routing call alone, and
+         * a real dead zone walked straight past it: offline the SDK never gets
+         * as far as routing — `init()` doesn't return and onNavigationReady
+         * never fires — so a deadline scoped to routing is never even armed, and
+         * the screen sits on "Starting navigation…" forever.
+         *
+         * Armed here, after the Terms dialog and the permission prompts, so the
+         * clock measures the SDK and not how long the driver took to read
+         * something.
+         */
+        const armWatchdog = () => {
+          if (watchdog) clearTimeout(watchdog)
+          watchdog = setTimeout(() => {
+            if (cancelled || guidingRef.current) return
+            void onRouteBuildFailed(
+              'Navigation is taking too long to start — it needs a connection to build the route. It will resume automatically once you reconnect.',
+            )
+          }, ROUTE_BUILD_TIMEOUT_MS)
+        }
+
         // Show Terms immediately — independent of the booking fetch.
+        armWatchdog()
         const accepted = await navigationController.areTermsAccepted()
-        if (!accepted) await navigationController.showTermsAndConditionsDialog()
+        if (!accepted) {
+          await navigationController.showTermsAndConditionsDialog()
+          // The driver just spent an unbounded amount of time reading; none of
+          // it should count against the SDK.
+          armWatchdog()
+        }
         if (cancelled) return
 
         await navigationController.init()
@@ -846,6 +1088,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
 
     return () => {
       cancelled = true
+      if (watchdog) clearTimeout(watchdog)
       removeAllListeners()
       try { navigationController.setTurnByTurnLoggingEnabled(false) } catch {}
       // If a session is still live (driver is just leaving the screen, not
@@ -901,6 +1144,90 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
   // proof popup, or it never opened. Highlight the button that reopens it.
   const atCurrentStop = arrivedIdx !== null && arrivedIdx === legIndex
 
+  /**
+   * Where the stop being confirmed actually is.
+   *
+   * Normally straight off the leg. On the offline preview the legs may never
+   * have been built (no booking cached on this device), and the snapshot's
+   * markers are the only coordinates left — looked up by the stop index they
+   * carry, since a stop without coordinates leaves a hole in that list.
+   */
+  const stopCoordinatesFor = (idx: number) =>
+    legCoordinates(legsRef.current[idx]) ??
+    offlinePreview?.markers.find((m) => m.stopIndex === idx) ??
+    null
+
+  /**
+   * The stop confirmation popup + proof photo. Opened by arrival detection or by
+   * the confirm button; both go through advanceStop. Declared here rather than
+   * inline because the offline preview shows the SAME popup — a stop confirmed
+   * in a dead zone is the case the offline queue exists for, and the preview
+   * would be a poor substitute if it could only be looked at.
+   */
+  const proofModal = proofFor !== null && stops[proofFor.idx] ? (
+    <StopProofModal
+      visible
+      kind={stops[proofFor.idx].kind}
+      title={
+        stops[proofFor.idx].kind === 'pickup'
+          ? 'Pickup'
+          : dropoffCount > 1
+            ? `Drop-off ${stops[proofFor.idx].number} of ${dropoffCount}`
+            : 'Drop-off'
+      }
+      address={stops[proofFor.idx].address}
+      autoOpened={proofFor.auto}
+      stopCoordinates={stopCoordinatesFor(proofFor.idx)}
+      manifest={manifestForLeg(legsRef.current[proofFor.idx])}
+      onCancel={() => setProofFor(null)}
+      onConfirm={(photoUri, proof) => {
+        const idx = proofFor.idx
+        setProofFor(null)
+        advanceStop(idx, photoUri, proof)
+      }}
+    />
+  ) : null
+
+  // No guidance to show: the SDK couldn't build a route and we're offline, but a
+  // route from an earlier start is cached. Draw that — the line, the stops and
+  // the board — instead of the error screen. Retry is both manual (the header
+  // button) and automatic (handleReconnectRef, on the connection returning).
+  if (offlinePreview) {
+    return (
+      <View style={{ flex: 1 }}>
+        <OfflineRoutePreview
+          geometry={offlinePreview}
+          stops={stops}
+          legIndex={legIndex}
+          retrying={starting}
+          onRetry={() => {
+            offlineStartErrorRef.current = false
+            setOfflinePreview(null)
+            setError(null)
+            setStarting(true)
+            setRetry((r) => r + 1)
+          }}
+          onBack={() => router.back()}
+          onConfirmStop={(idx) => {
+            // A stop can only be recorded against the leg that names its trip
+            // stop. Without the legs there is nothing to confirm AGAINST, and a
+            // photo taken here would have nowhere to go — so say that plainly
+            // rather than opening a popup that silently loses the driver's work.
+            if (!legsRef.current[idx]) {
+              Alert.alert(
+                'Can’t confirm while offline',
+                'This booking’s details were never saved on this phone, so the stop can’t be recorded yet. It will work as soon as you have a signal.',
+              )
+              return
+            }
+            setProofFor({ idx, auto: false })
+          }}
+        />
+        {proofModal}
+      </View>
+    )
+  }
+
   // Google owns the map and its own nav chrome. We withhold its instruction
   // header and ETA card, draw our turn card and trip sheet in their place, and
   // declare the sheet's strip as map padding so the SDK moves its remaining
@@ -923,7 +1250,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
         // A layout declaration, not a camera call: no controller, no moveCamera,
         // no perspective. Bottom only, so the compass and the disc column keep
         // their positions.
-        mapPadding={SHOW_NATIVE_UI ? undefined : { bottom: sdkBottomClearance }}
+        mapPadding={SHOW_NATIVE_UI ? undefined : { bottom: sdkBottomClearancePx + (padEpoch % 2) }}
         // Dark map: during a nav session the theme is driven by
         // navigationNightMode (not a cloud mapId/color scheme), so force night.
         navigationNightMode={NavigationNightMode.FORCE_NIGHT}
@@ -1080,35 +1407,10 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
           distanceM={navInfo?.nextDistanceM}
           totalEtaSeconds={navInfo?.finalEtaS}
           onConfirmStop={(idx) => setProofFor({ idx, auto: false })}
-          onRestingHeight={(h, open) => { setSheetH(h); setSheetOpen(open) }}
         />
       )}
 
-      {/* The stop confirmation popup + proof photo. Opened by arrival detection
-          or by the button above; both go through advanceStop on confirm. */}
-      {proofFor !== null && stops[proofFor.idx] && (
-        <StopProofModal
-          visible
-          kind={stops[proofFor.idx].kind}
-          title={
-            stops[proofFor.idx].kind === 'pickup'
-              ? 'Pickup'
-              : dropoffCount > 1
-                ? `Drop-off ${stops[proofFor.idx].number} of ${dropoffCount}`
-                : 'Drop-off'
-          }
-          address={stops[proofFor.idx].address}
-          autoOpened={proofFor.auto}
-          stopCoordinates={legCoordinates(legsRef.current[proofFor.idx])}
-          manifest={manifestForLeg(legsRef.current[proofFor.idx])}
-          onCancel={() => setProofFor(null)}
-          onConfirm={(photoUri, proof) => {
-            const idx = proofFor.idx
-            setProofFor(null)
-            advanceStop(idx, photoUri, proof)
-          }}
-        />
-      )}
+      {proofModal}
 
       {/* Closing card — shown once the driver marks the delivery done. The
           status update may still be queued (dead zone); it syncs on reconnect,

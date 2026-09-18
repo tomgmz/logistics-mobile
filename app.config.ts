@@ -89,10 +89,19 @@ export default {
         },
       ],
       // Google Navigation SDK requirements (Android minSdk 24, iOS 16.0).
+      // Google Navigation SDK needs minSdk 24 / iOS 16.
+      //
+      // compileSdkVersion 34 is required by react-native-passkeys, which builds
+      // against the AndroidX Credential Manager APIs. Note the split: compiling
+      // against 34 is a build-time requirement, while a passkey can only be
+      // CREATED on Android 9 (API 28) or newer at runtime. minSdk stays at 24 so
+      // the app still installs for company drivers on older handsets — they sign
+      // in with OTP — and lib/passkeys.ts refuses enrolment below 28 with a
+      // message rather than letting it fail at the biometric prompt.
       [
         "expo-build-properties",
         {
-          android: { minSdkVersion: 24 },
+          android: { minSdkVersion: 24, compileSdkVersion: 34 },
           ios:     { deploymentTarget: "16.0" },
         },
       ],
