@@ -114,10 +114,16 @@ function isCancellation(err: unknown): boolean {
  */
 export async function createPasskey(options: any): Promise<any> {
   try {
+    // TEMP DIAGNOSTIC — remove after debugging RP ID validation
+    console.log('PASSKEY_DEBUG options =', JSON.stringify(options))
     const result = await Passkeys.create(options)
     if (!result) throw new PasskeyCancelled()
     return result
   } catch (err) {
+    // TEMP DIAGNOSTIC — remove after debugging RP ID validation
+    console.log('PASSKEY_DEBUG error name =', (err as any)?.name,
+                '| code =', (err as any)?.code,
+                '| message =', (err as any)?.message)
     if (err instanceof PasskeyCancelled) throw err
     if (isCancellation(err)) throw new PasskeyCancelled()
     throw err
