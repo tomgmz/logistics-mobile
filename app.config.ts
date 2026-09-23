@@ -32,6 +32,14 @@ export default {
       supportsTablet: true,
       bundleIdentifier: 'ph.logistics8338.mobile',
       buildNumber: '1',
+      // NOTE: passkeys on iOS would need
+      //   associatedDomains: ['webcredentials:<WEBAUTHN_RP_ID>']
+      // here, plus /.well-known/apple-app-site-association on that host (the file
+      // and its Content-Type header are already prepared in logistics-frontend).
+      // It is deliberately NOT set: Associated Domains is unavailable on a free
+      // provisioning profile, so declaring it fails the build outright. The app
+      // runs fine on iOS without it — vendor-driver passkey sign-in is simply
+      // Android-only, which checkPasskeySupport() in lib/passkeys.ts says plainly.
       config: {
         googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
       },

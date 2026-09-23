@@ -24,6 +24,22 @@ import * as Passkeys from 'react-native-passkeys'
  */
 const MIN_ANDROID_API = 28
 
+/**
+ * iOS cannot enrol a passkey in this app, and that is a provisioning fact
+ * rather than a code one.
+ *
+ * A passkey ceremony on iOS requires the Associated Domains entitlement
+ * (`webcredentials:<rp id>`), which Apple only grants on a PAID Developer
+ * Program membership — a free provisioning profile cannot carry it, and a build
+ * that declares it fails. The rest of the app runs on iOS perfectly well, so
+ * the app is not blocked; only this one feature is.
+ *
+ * It is refused up front, in the same spirit as Android 8: say so at the button
+ * rather than at the biometric prompt. The OS version is not the issue (iOS 16
+ * would be the bar if it were), so there is no version check here to soften.
+ */
+const IOS_PASSKEYS_UNAVAILABLE = true
+
 export type PasskeySupport =
   | { supported: true }
   | { supported: false; reason: 'os-too-old' | 'unavailable' | 'wrong-platform'; message: string }
@@ -58,6 +74,16 @@ export function checkPasskeySupport(): PasskeySupport {
           'This phone runs a version of Android that cannot store a passkey ' +
           '(Android 9 or newer is required). Ask your dispatcher to assign a company driver.',
       }
+    }
+  }
+
+  if (Platform.OS === 'ios' && IOS_PASSKEYS_UNAVAILABLE) {
+    return {
+      supported: false,
+      reason:    'wrong-platform',
+      message:
+        'Passkey setup is not available on iPhone. Vendor drivers need an Android ' +
+        'phone, or ask your dispatcher to assign a company driver.',
     }
   }
 
