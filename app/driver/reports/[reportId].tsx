@@ -166,7 +166,7 @@ export default function ReportDetailScreen() {
               ALERT SENT
             </Text>
             <Text style={{ color: D.white, fontSize: 12, lineHeight: 17, marginTop: 3, fontFamily: FONTS.spartan.medium }}>
-              Operations has your location and vehicle. Add what happened below — it goes onto this
+              The Operations Manager has your location and vehicle. Add what happened below — it goes onto this
               same report, so nobody is looking at two.
             </Text>
           </View>

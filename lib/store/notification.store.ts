@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { notificationApi, AppNotification } from '../api/notification.api'
+import { notificationApi, AppNotification, normalizeNotification } from '../api/notification.api'
 
 interface NotificationStore {
   items:       AppNotification[]
@@ -31,7 +31,8 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
     }
   },
 
-  pushNew: (n) => {
+  pushNew: (raw) => {
+    const n = normalizeNotification(raw)
     const { items } = get()
     if (items.some((i) => i.notification_id === n.notification_id)) return
     set({ items: [n, ...items], unreadCount: get().unreadCount + (n.read_at ? 0 : 1) })

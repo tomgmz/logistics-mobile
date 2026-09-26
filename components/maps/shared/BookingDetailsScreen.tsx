@@ -325,7 +325,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
     if (gate.reason === 'not_assigned') {
       Alert.alert(
         'Not ready to start',
-        'This booking hasn’t been assigned for delivery yet. It will open once operations releases it.',
+        'This booking hasn’t been assigned for delivery yet. It will open once the Operations Manager releases it.',
       )
       return
     }
@@ -784,7 +784,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
               {gate.reason === 'cancelled'
                 ? 'This booking has been cancelled.'
                 : gate.reason === 'not_assigned'
-                  ? 'Waiting on operations to release this booking.'
+                  ? 'Waiting on the Operations Manager to release this booking.'
                   : `Navigation opens ${gate.scheduledFor ? formatGateDate(gate.scheduledFor) : 'on the scheduled day'}.`}
             </Text>
           </View>

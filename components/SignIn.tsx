@@ -57,9 +57,9 @@ type ResetState = 'idle' | 'sending' | 'sent'
  * if another role ever signs in here.
  */
 function approverLabel(role?: string | null): string {
-  if (!role)                                  return 'administrator'
-  if (role === 'driver' || role === 'client') return 'Company Admin'
-  return 'IT Admin'
+  if (!role)                                  return 'Administrator'
+  if (role === 'driver' || role === 'client') return 'Company Administrator'
+  return 'IT Administrator'
 }
 
 function classifyError(message: string): LockState {

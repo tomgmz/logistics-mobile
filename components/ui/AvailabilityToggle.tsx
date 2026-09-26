@@ -39,7 +39,7 @@ export default function AvailabilityToggle() {
     : 'Not working today'
 
   const hint = onDelivery ? 'Locked until this delivery is done'
-    : blocked ? 'Contact operations to change this'
+    : blocked ? 'Contact the Operations Manager to change this'
     : !known ? 'Tap to pick the days you can work'
     : workingToday ? 'You can be given a delivery today'
     : 'Tap to pick the days you can work'

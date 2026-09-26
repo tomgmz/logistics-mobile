@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { X, Search, Users, MessageCirclePlus, Check } from 'lucide-react-native'
 import { messagingApi } from '../../lib/api/messaging.api'
 import type { MessagableUser } from '../../types/messaging.types'
+import { roleLabel } from '../../lib/roles'
 
 const C = {
   bg:       '#0a0a0a',
@@ -206,7 +207,7 @@ export default function ComposeModal({
                     </View>
                     <View style={styles.userBody}>
                       <Text style={styles.userName} numberOfLines={1}>{u.first_name} {u.last_name}</Text>
-                      <Text style={styles.userRole} numberOfLines={1}>{u.role.replace(/_/g, ' ')}</Text>
+                      <Text style={styles.userRole} numberOfLines={1}>{roleLabel(u.role)}</Text>
                     </View>
                     {mode === 'dm'
                       ? (isStarting && <ActivityIndicator size="small" color={C.cyan} />)

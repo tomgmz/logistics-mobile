@@ -111,7 +111,7 @@ export default function ResetPasswordScreen() {
           Link expired
         </Text>
         <Text style={{ color: MUTED, fontSize: 13, textAlign: 'center', lineHeight: 19 }}>
-          This reset link is invalid or has already been used. Ask operations to
+          This reset link is invalid or has already been used. Ask the Company Administrator to
           send you a new one.
         </Text>
         <Pressable

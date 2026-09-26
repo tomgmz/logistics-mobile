@@ -1,4 +1,5 @@
 import api from './auth.api'
+import { expandText } from '../roles'
 
 export interface AppNotification {
   notification_id: string
@@ -12,10 +13,17 @@ export interface AppNotification {
   created_at:      string
 }
 
+// Spell out abbreviations in text stored before the UI stopped using them.
+export const normalizeNotification = (n: AppNotification): AppNotification => ({
+  ...n,
+  title: expandText(n.title),
+  body:  expandText(n.body),
+})
+
 export const notificationApi = {
   list: async (params?: { limit?: number; before?: string }): Promise<AppNotification[]> => {
     const { data } = await api.get('/notifications', { params })
-    return data?.data ?? []
+    return ((data?.data ?? []) as AppNotification[]).map(normalizeNotification)
   },
 
   unreadCount: async (): Promise<number> => {

@@ -31,6 +31,7 @@ import { logout } from '../../lib/api/auth.api'
 import { unregisterPushNotifications } from '../../lib/push'
 import { FONTS } from '../../lib/config/fonts'
 import ReusableModal from './ReusableModal'
+import { roleLabel } from '../../lib/roles'
 
 const logoImg = require('../../assets/Final_Logo.png')
 
@@ -89,7 +90,7 @@ export default function DriverTopBar() {
       ? `${user.first_name} ${user.last_name}`
       : user?.username ?? 'Driver'
 
-  const roleLabel = user?.role?.replace(/_/g, ' ') ?? ''
+  const roleName = roleLabel(user?.role)
 
   // "D1" in the design — a driver reads their own badge faster than one letter.
   const initials = (
@@ -201,8 +202,8 @@ export default function DriverTopBar() {
               </View>
               <View style={styles.menuIdentity}>
                 <Text style={styles.menuName} numberOfLines={1}>{displayName}</Text>
-                {!!roleLabel && (
-                  <Text style={styles.menuRole} numberOfLines={1}>{roleLabel}</Text>
+                {!!roleName && (
+                  <Text style={styles.menuRole} numberOfLines={1}>{roleName}</Text>
                 )}
               </View>
             </View>

@@ -12,6 +12,7 @@ import { LogOut } from 'lucide-react-native'
 import { useAuthStore } from '../../lib/store/auth.store'
 import ReusableModal from './ReusableModal'
 import { Easing } from 'react-native-reanimated'
+import { roleLabel } from '../../lib/roles'
 
 
 const COLORS = {
@@ -66,7 +67,7 @@ export default function ReusableSidebar({
     user?.username?.[0]?.toUpperCase()   ??
     '?'
 
-  const roleLabel = user?.role?.replace(/_/g, ' ') ?? ''
+  const roleName = roleLabel(user?.role)
 
   return (
     <>
@@ -120,7 +121,7 @@ export default function ReusableSidebar({
                     {displayName}
                   </Text>
                   <Text style={styles.userRole} numberOfLines={1}>
-                    {roleLabel}
+                    {roleName}
                   </Text>
                 </View>
               </MotiView>

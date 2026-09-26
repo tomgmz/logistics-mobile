@@ -186,7 +186,7 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
       return `You are clearing every day in ${label}. You will not be assignable to any delivery until you tick a day.`
     }
     return `You can be assigned a delivery on ${draft.length} day${draft.length === 1 ? '' : 's'} in ${label}. `
-      + 'Operations can crew you on any of them.'
+      + 'The Operations Manager can crew you on any of them.'
   }, [draft, month, year])
 
   const toggle = (day: string) => {
