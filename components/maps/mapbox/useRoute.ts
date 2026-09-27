@@ -218,7 +218,7 @@ export function useRoute({
 
       if (!allStops.length) throw new Error('No stops with coordinates found. Run route optimization first.')
 
-      const isPickedUp   = ['in_transit', 'completed'].includes(booking.status)
+      const isPickedUp   = ['in_transit', 'delivered', 'completed'].includes(booking.status)
       const pendingStops = allStops.filter((s) => s.status === 'pending')
 
       if (isPickedUp) arrivedPickupRef.current = true

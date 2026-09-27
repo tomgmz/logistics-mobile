@@ -161,7 +161,7 @@ function BookingCard({ booking, onPress, index }: BookingCardProps) {
               <View className="flex-row items-center gap-2">
                 <View
                   className={`w-2.5 h-2.5 rounded-sm border-2 ${
-                    booking.status === 'completed'
+                    booking.status === 'delivered' || booking.status === 'completed'
                       ? 'bg-emerald-500 border-emerald-500'
                       : 'bg-transparent border-ink-disabled'
                   }`}
