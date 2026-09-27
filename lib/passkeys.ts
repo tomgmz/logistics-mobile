@@ -117,6 +117,27 @@ export class PasskeyCancelled extends Error {
 }
 
 /**
+ * Raised when this phone already holds an active passkey for the account.
+ *
+ * The server lists the account's live credentials in excludeCredentials, and
+ * Android refuses to create a duplicate with InvalidStateError ("One of the
+ * excluded credentials exists on the local device"). That is not a failure —
+ * the driver is already set up and should just sign in.
+ */
+export class PasskeyAlreadyOnDevice extends Error {
+  constructor() {
+    super('This phone already has a passkey for this account')
+    this.name = 'PasskeyAlreadyOnDevice'
+  }
+}
+
+function isAlreadyRegistered(err: unknown): boolean {
+  const name    = (err as any)?.name ?? ''
+  const message = String((err as any)?.message ?? '')
+  return name === 'InvalidStateError' || /InvalidStateError|excluded credential/i.test(message)
+}
+
+/**
  * A dismissed prompt and a real failure arrive the same way from the platform,
  * so they are told apart here rather than at each call site. WebAuthn collapses
  * "the user said no", "there was no matching credential" and several genuine
@@ -145,6 +166,7 @@ export async function createPasskey(options: any): Promise<any> {
     return result
   } catch (err) {
     if (err instanceof PasskeyCancelled) throw err
+    if (isAlreadyRegistered(err)) throw new PasskeyAlreadyOnDevice()
     if (isCancellation(err)) throw new PasskeyCancelled()
     throw err
   }

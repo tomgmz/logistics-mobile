@@ -14,6 +14,7 @@ import {
   checkPasskeySupport,
   createPasskey,
   deviceLabel,
+  PasskeyAlreadyOnDevice,
   PasskeyCancelled,
 } from '../../lib/passkeys'
 import { getMobileRoute } from '../../lib/config/roleRoutes'
@@ -57,6 +58,7 @@ export default function DriverSetupScreen() {
   const [blocker,    setBlocker]    = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error,      setError]      = useState<string | null>(null)
+  const [alreadySet, setAlreadySet] = useState(false)
 
   // Two checks before the driver is shown a button, in this order.
   //
@@ -110,6 +112,14 @@ export default function DriverSetupScreen() {
         setSubmitting(false)
         return
       }
+      // The phone already holds a live passkey for this account — typically a
+      // "Resend setup link" opened on the same phone. Nothing to set up; point
+      // the driver at sign-in instead of showing the raw platform error.
+      if (err instanceof PasskeyAlreadyOnDevice) {
+        setAlreadySet(true)
+        setSubmitting(false)
+        return
+      }
       setError(extractMessage(err, 'Could not finish setting up your sign-in. Please try again.'))
       setSubmitting(false)
     }
@@ -131,6 +141,17 @@ export default function DriverSetupScreen() {
       <Centered title="Phone not supported">
         <Text style={{ color: MUTED, fontSize: 13, textAlign: 'center', lineHeight: 19 }}>
           {blocker}
+        </Text>
+      </Centered>
+    )
+  }
+
+  if (alreadySet) {
+    return (
+      <Centered title="Already set up">
+        <Text style={{ color: MUTED, fontSize: 13, textAlign: 'center', lineHeight: 19 }}>
+          This phone already has a passkey for your account. Go back and tap
+          "Sign in with a passkey" to open the app.
         </Text>
       </Centered>
     )
@@ -202,7 +223,7 @@ export default function DriverSetupScreen() {
   )
 }
 
-/** The dead-end layout, shared by the two states the driver cannot act their way out of. */
+/** The dead-end layout, shared by the states that end in a trip back to sign-in. */
 function Centered({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <View style={{ flex: 1, backgroundColor: BG_MAIN, alignItems: 'center', justifyContent: 'center', gap: 16, paddingHorizontal: 28 }}>
