@@ -27,10 +27,10 @@ import AvailabilityToggle from '../../../components/ui/AvailabilityToggle'
 import { FONTS } from '../../../lib/config/fonts'
 import {
   BookingWithRelations,
-  STATUS_CONFIG,
   bookingRef,
   fetchDriverBookings,
   filterBookings,
+  statusConfigFor,
   formatDate,
   formatTime,
   getProgress,
@@ -288,7 +288,7 @@ function QuickAction({
 function ActiveOrderCard({
   booking, onPress,
 }: { booking: BookingWithRelations; onPress: () => void }) {
-  const cfg                  = STATUS_CONFIG[booking.status] ?? STATUS_CONFIG.assigned
+  const cfg                  = statusConfigFor(booking, 'assigned')
   const { done, total, pct } = getProgress(booking.booking_destinations)
 
   const ref = bookingRef(booking)

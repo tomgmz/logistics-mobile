@@ -21,10 +21,10 @@ import {
   BookingWithRelations,
   FILTERS,
   FilterKey,
-  STATUS_CONFIG,
   bookingRef,
   fetchDriverBookings,
   filterBookings,
+  statusConfigFor,
   formatCacheAge,
   formatDate,
   formatTime,
@@ -62,7 +62,7 @@ function BookingCard({ booking, onPress, index }: BookingCardProps) {
   const onPressOut = () =>
     Animated.spring(scaleAnim, { toValue: 1, tension: 220, friction: 14, useNativeDriver: true }).start()
 
-  const cfg            = STATUS_CONFIG[booking.status] ?? STATUS_CONFIG.pending
+  const cfg            = statusConfigFor(booking, 'pending')
   const { done, total, pct } = getProgress(booking.booking_destinations)
 
   const firstAssignment = booking.truck_assignments?.[0]

@@ -106,6 +106,25 @@ export const STATUS_CONFIG: Record<StatusKey, {
   cancelled:  { label: 'Cancelled', badgeCn: 'bg-red-950',     textCn: 'text-red-400',     dotCn: 'bg-red-500'     },
 }
 
+/**
+ * Every drop-off is done but the driver has not yet confirmed the vehicle is
+ * back in the parking lot. The job is not over for the driver — the return
+ * confirmation is still owed — so it stays an active order until then.
+ */
+export function awaitingFleetReturn(b: BookingWithRelations): boolean {
+  return b.status === 'completed' && !b.fleet_return_at
+}
+
+const RETURNING_CONFIG = {
+  label: 'Return to Base', badgeCn: 'bg-violet-950', textCn: 'text-violet-400', dotCn: 'bg-violet-400',
+}
+
+/** Badge for a booking, telling a delivered-but-not-returned job apart from a finished one. */
+export function statusConfigFor(b: BookingWithRelations, fallback: StatusKey = 'pending') {
+  if (awaitingFleetReturn(b)) return RETURNING_CONFIG
+  return STATUS_CONFIG[b.status] ?? STATUS_CONFIG[fallback]
+}
+
 export function cacheKey(driverId: string) {
   return `bookings_driver_${driverId}`
 }
@@ -204,9 +223,9 @@ export function isFilterKey(value: unknown): value is FilterKey {
 
 export function filterBookings(bookings: BookingWithRelations[], filter: FilterKey) {
   switch (filter) {
-    case 'Active':    return bookings.filter((b) => b.status === 'in_transit' || b.status === 'assigned')
+    case 'Active':    return bookings.filter((b) => b.status === 'in_transit' || b.status === 'assigned' || awaitingFleetReturn(b))
     case 'Pending':   return bookings.filter((b) => b.status === 'pending')
-    case 'Completed': return bookings.filter((b) => b.status === 'completed'  || b.status === 'cancelled')
+    case 'Completed': return bookings.filter((b) => (b.status === 'completed' && !awaitingFleetReturn(b)) || b.status === 'cancelled')
     default:          return bookings
   }
 }
