@@ -82,9 +82,6 @@ export default function GoogleNavOverlay({
     stops,
     total_duration: etaSeconds ? etaSeconds / 60 : 0,
     total_distance: destDistanceM ? destDistanceM / 1000 : 0,
-    polyline: [],
-    trafficSegments: [],
-    steps: [],
   }), [origin, stops, etaSeconds, destDistanceM])
 
   const stopListData: Stop[] = useMemo(() => {
