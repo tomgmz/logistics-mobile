@@ -11,9 +11,9 @@ import { fmtDistance, fmtDuration } from '../../../utils/geo'
 import type { BookingRoute, Stop } from '../../../types/navigation.types'
 
 /**
- * Full custom navigation overlay for the Google path — mirrors the Mapbox UI
- * (turn card + bottom sheet with stop list + trip-complete) but is fed by the
- * Google Navigation SDK's turn-by-turn callbacks and your booking data.
+ * Full custom navigation overlay (turn card + bottom sheet with stop list +
+ * trip-complete), fed by the Google Navigation SDK's turn-by-turn callbacks and
+ * the booking data.
  *
  * Google still owns the map, route line, camera-follow, voice and rerouting.
  */

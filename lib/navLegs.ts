@@ -17,8 +17,8 @@ import { currentTrip, isMultiTrip, type Trip } from './trips'
  * outstanding bays. When the run finishes, the screen rebuilds against the next
  * one.
  *
- * Both nav providers derive their route through here, so the Google and Mapbox
- * screens cannot drift apart on the thing that decides where the truck goes.
+ * The one place the route handed to navigation is decided, so every run is
+ * built by the same rule.
  */
 
 export interface BookingLike {

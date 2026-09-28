@@ -20,11 +20,9 @@ import { distanceInMetres, type Coordinates } from './stopGeofence'
  * dropped on any failure, newest wins. Do not "fix" this by routing them through
  * the queue.
  *
- * WHY A BACKGROUND TASK, not the existing `useGps` watcher: `useGps` runs only
- * on the Mapbox custom-map path. The Google Nav SDK and Mapbox Nav SDK paths
- * hand guidance to native code and expose no JS position stream at all, and the
- * provider is a runtime switch (EXPO_PUBLIC_NAV_PROVIDER). Reporting from a
- * background task is what makes tracking work on all three — and it keeps
+ * WHY A BACKGROUND TASK, not a foreground position watcher: the Google Nav SDK
+ * hands guidance to native code and exposes no JS position stream. Reporting
+ * from a background task is what makes tracking work at all — and it keeps
  * working when the driver locks the screen, which is most of a long haul.
  */
 

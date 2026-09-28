@@ -11,14 +11,12 @@
     "web": "expo start --web"
   },
   "dependencies": {
-    "@badatgil/expo-mapbox-navigation": "^1.6.2",
     "@emoji-mart/data": "^1.2.1",
     "@expo/vector-icons": "^15.1.1",
     "@googlemaps/react-native-navigation-sdk": "^0.16.1",
     "@gorhom/bottom-sheet": "^5.2.9",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/netinfo": "11.4.1",
-    "@rnmapbox/maps": "^10.3.0",
     "@supabase/supabase-js": "^2.106.2",
     "axios": "^1.15.0",
     "expo": "~54.0.34",

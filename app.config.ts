@@ -73,29 +73,6 @@ export default {
       'expo-router',
       'expo-font',
       'expo-secure-store',
-      [
-        "@rnmapbox/maps",
-        {
-          "RNMapboxMapsImpl": "mapbox",
-          "RNMapboxMapsVersion": "11.18.2",
-          "RNMAPBOX_MAPS_DOWNLOAD_TOKEN":
-            process.env.RNMAPBOX_MAPS_DOWNLOAD_TOKEN ?? process.env.MAPBOX_DOWNLOADS_TOKEN,
-          "RNMapboxMapsLibs":
-            "com.mapbox.maps:android:11.18.2;com.mapbox.mapboxsdk:mapbox-sdk-turf:6.11.0;androidx.asynclayoutinflater:asynclayoutinflater:1.0.0",
-        }
-      ],
-      // Mapbox Navigation SDK drop-in UI (turn-by-turn). Reuses the @rnmapbox/maps
-      // Maven repo + download token configured above; accessToken must be a
-      // public pk. token. mapboxMapsVersion only feeds the iOS Podfile/xcframework
-      // (which is built against Mapbox Maps 11.11.0); Android resolves the Maps
-      // SDK from the @rnmapbox/maps libs (11.18.2) which satisfies nav-core 3.11.0.
-      [
-        "@badatgil/expo-mapbox-navigation",
-        {
-          accessToken:       process.env.EXPO_PUBLIC_MAPBOX_TOKEN,
-          mapboxMapsVersion: "11.11.0",
-        },
-      ],
       // Google Navigation SDK requirements (Android minSdk 24, iOS 16.0).
       //
       // compileSdkVersion is deliberately NOT pinned here. react-native-passkeys

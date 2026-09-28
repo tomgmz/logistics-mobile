@@ -3,10 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 /**
  * Lightweight cache of the raw GET /booking/:id payload, so navigation can
  * derive its waypoints/markers when the network is flaky or briefly down at
- * start. Deliberately AsyncStorage-only and kept out of the Mapbox cache
- * (components/maps/mapbox/cache.ts), which
- * pulls in @rnmapbox/maps — nothing here should drag the Mapbox native module
- * into the Google navigation path.
+ * start. Deliberately AsyncStorage-only.
  *
  * This does NOT make navigation work fully offline: the Google SDK still needs
  * the network to compute a route. It only removes the booking fetch as a hard
