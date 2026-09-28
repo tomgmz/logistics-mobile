@@ -61,7 +61,6 @@ export interface BookingWithRelations {
   origin_latitude:     number | null
   origin_longitude:    number | null
   truck_type_needed:   string
-  cargo_details:       string | null
   schedule_date:       string
   call_time:           string
   // 'delivered': every drop-off done, waiting on the client to confirm completion.
