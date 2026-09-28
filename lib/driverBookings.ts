@@ -46,7 +46,6 @@ export interface BookingClient {
   client_id:       string
   company_name:    string | null
   billing_address: string | null
-  payment_terms:   number
   users: {
     first_name: string
     last_name:  string
@@ -76,7 +75,6 @@ export interface BookingWithRelations {
   required_weight_kg:  number | null
   required_length_cm:  number | null
   stackable_required:  boolean | null
-  payment_terms:       string | null
   created_at:          string
   updated_at:          string
   // The booking number people actually quote. Server-assigned, so it can be
