@@ -2,7 +2,7 @@ import NetInfo from '@react-native-community/netinfo'
 
 import { enqueue, flush } from './offlineQueue'
 import { uploadProofPhoto } from './proofPhoto'
-import { startTracking, stopTracking, setNextStop } from './locationTracking'
+import { startTracking, stopTracking, setNextStop, explainTrackingDenied } from './locationTracking'
 import type { StopFix, Coordinates } from './stopGeofence'
 
 /**
@@ -111,8 +111,11 @@ export function confirmTripPickup(
   // should still see the truck moving in the meantime.
   //
   // Not awaited, and failures are swallowed: a driver who declined the
-  // background-location prompt must still be able to run the delivery.
-  void startTracking(bookingId, firstDropoff ?? null).catch(() => {})
+  // background-location prompt must still be able to run the delivery. They are
+  // told, though — otherwise nothing explains the customer's empty map.
+  void startTracking(bookingId, firstDropoff ?? null)
+    .then((result) => { if (result === 'denied') explainTrackingDenied(bookingId) })
+    .catch(() => {})
 
   return queueStop(
     `trip-pickup:${tripId}`,

@@ -2,7 +2,7 @@ import * as Location from 'expo-location'
 import * as TaskManager from 'expo-task-manager'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import NetInfo from '@react-native-community/netinfo'
-import { AppState } from 'react-native'
+import { Alert, AppState, Linking } from 'react-native'
 
 import api from './api/auth.api'
 import { distanceInMetres, type Coordinates } from './stopGeofence'
@@ -180,13 +180,16 @@ async function considerFix(location: Location.LocationObject): Promise<void> {
   try {
     const res = await api.post(`/driver/bookings/${context.bookingId}/location`, body)
 
-    // 202 means the server took the ping and deliberately did nothing with it —
-    // the booking is no longer `in_transit`. That is the authoritative "stop
-    // tracking" signal, and it covers the cases the app cannot see for itself:
-    // operations cancelled the trip, or an admin closed it out. Without this the
-    // phone would keep sampling GPS for a delivery that ended.
+    // 202 means the server took the ping and deliberately did nothing with it.
+    // Only `booking_ended` is the authoritative "stop tracking" signal — it
+    // covers what the app cannot see for itself: operations cancelled the trip,
+    // or an admin closed it out. Every other reason is transient and must NOT
+    // stop the task. In particular `not_started`: the first fixes after a pickup
+    // routinely beat the pickup confirmation to the server (it uploads a photo
+    // first, or sits in the offline queue), and stopping on those switched
+    // tracking off at the start of every trip.
     if (res.status === 202) {
-      await stopTracking()
+      if (res.data?.reason === 'booking_ended') await stopTracking()
       return
     }
   } catch {
@@ -239,26 +242,34 @@ export async function requestTrackingPermissions(): Promise<boolean> {
 }
 
 /**
+ * What `startTracking` ended up doing. `denied` is the one the driver needs to
+ * hear about: the delivery runs fine without it, but the customer's map stays
+ * empty, and nothing else on the phone would tell them why.
+ */
+export type TrackingStart = 'started' | 'already_running' | 'denied'
+
+/**
  * Begin reporting position for a booking that is now in transit.
  *
- * Safe to call again for the same booking — a remount of the navigation screen
- * must not restart the task and reset the gate.
+ * Safe to call again for the same booking — a remount of the navigation screen,
+ * or the resume check on every app launch, must not restart the task and reset
+ * the gate.
  */
 export async function startTracking(
   bookingId: string,
   nextStop: Coordinates | null = null,
-): Promise<void> {
+): Promise<TrackingStart> {
   const existing = await readContext()
   const already  = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK).catch(() => false)
 
   if (already && existing?.bookingId === bookingId) {
     // Same trip, new leg: keep the gate, just update where we're heading.
     if (nextStop) await writeContext({ ...existing, nextStop })
-    return
+    return 'already_running'
   }
 
   const granted = await requestTrackingPermissions()
-  if (!granted) return
+  if (!granted) return 'denied'
 
   await writeContext({ bookingId, nextStop, lastSent: null })
 
@@ -269,7 +280,11 @@ export async function startTracking(
     // The floor the OS delivers on, not the rate we upload at — `considerFix`
     // decides that. Sampling is already paid for by turn-by-turn.
     timeInterval:     5_000,
-    distanceInterval: MIN_MOVE_M,
+    // Zero, not MIN_MOVE_M: with a distance filter the OS delivers nothing at
+    // all while the truck stands still, so `considerFix` never runs and the
+    // MAX_SILENCE_MS heartbeat never fires — a parked truck went "stale" on the
+    // client's map after two minutes. The distance gate lives in `considerFix`.
+    distanceInterval: 0,
     // Android stops delivering to a backgrounded app without one of these, and
     // a truck being tracked should be visible to the driver as a notification
     // rather than a surprise.
@@ -284,6 +299,35 @@ export async function startTracking(
     activityType: Location.ActivityType.AutomotiveNavigation,
     showsBackgroundLocationIndicator: true,
   })
+  return 'started'
+}
+
+/** Bookings already told about in this app session — see below. */
+const deniedWarned = new Set<string>()
+
+/**
+ * Tell the driver their location isn't being shared, once per booking per app
+ * session. The delivery runs fine without it — refusing background location is
+ * the driver's call — but otherwise nothing on the phone says why the customer's
+ * map is empty. Repeating it on every foreground would turn a choice already
+ * made into nagging.
+ */
+export function explainTrackingDenied(bookingId: string): void {
+  if (deniedWarned.has(bookingId)) return
+  deniedWarned.add(bookingId)
+  Alert.alert(
+    'Location sharing is off',
+    'The customer cannot see where your truck is. To share it, allow location access "All the time" for this app in Settings.',
+    [
+      { text: 'Not now', style: 'cancel' },
+      { text: 'Open Settings', onPress: () => { void Linking.openSettings() } },
+    ],
+  )
+}
+
+/** Whether the task is running right now — for the resume check. */
+export async function isTracking(): Promise<boolean> {
+  return Location.hasStartedLocationUpdatesAsync(LOCATION_TASK).catch(() => false)
 }
 
 /** The stop the driver is now driving to, which moves the "arriving" tier along. */

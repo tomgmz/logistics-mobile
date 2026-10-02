@@ -7,6 +7,8 @@ import { useAuthStore, useAuthHydrated } from '../../lib/store/auth.store'
 import { useMessagingBadgeSync } from '../../hooks/useMessagingBadgeSync'
 import { useGlobalPresence } from '../../hooks/useGlobalPresence'
 import { useNotificationsRealtime } from '../../hooks/useNotificationsRealtime'
+import { useTrackingResume } from '../../hooks/useTrackingResume'
+import { useDriverId } from '../../lib/store/auth.store'
 import { startAutoFlush, flushOnAppForeground } from '../../lib/offlineQueue'
 // Imported for its side effect: defining the background location task at module
 // scope. The OS can invoke that task before any screen has mounted — including
@@ -47,6 +49,10 @@ export default function DriverLayout() {
   useGlobalPresence(currentUserId)
 
   useNotificationsRealtime(currentUserId)
+
+  // Live tracking only starts at a pickup confirmation; this puts it back after
+  // anything that interrupted it mid-delivery (app killed, signed out and back in).
+  useTrackingResume(useDriverId())
 
   // Drain any queued offline status updates (arrivals confirmed in a dead zone)
   // on reconnect and on app foreground, even after the nav screen has unmounted.
