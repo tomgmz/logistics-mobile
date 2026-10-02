@@ -19,18 +19,18 @@ export function roleLabel(role: string | null | undefined): string {
 // Notification text is stored at send time, so rows written before the UI
 // dropped abbreviations still say "GM" / "Admin" / "Ops". Expand on display.
 const TEXT_TOKENS: [RegExp, string][] = [
-  [/(Fleet|Operations) Admin(istrator)?s/g, '$1 Managers'],
-  [/(Fleet|Operations) Admin(istrator)?/g,  '$1 Manager'],
-  [/selected by operations/g,              'selected by the Operations Manager'],
-  [/GMs/g,               'General Managers'],
-  [/GM/g,                'General Manager'],
-  [/[Aa]dmin(istrator)?s/g, 'Administrators'],
-  [/[Aa]dmin(istrator)?(?!-)/g, 'Administrator'],
-  [/Ops/g,               'Operations'],
+  [/\b(Fleet|Operations) Admin(istrator)?s\b/g, '$1 Managers'],
+  [/\b(Fleet|Operations) Admin(istrator)?\b/g,  '$1 Manager'],
+  [/\bselected by operations\b/g,              'selected by the Operations Manager'],
+  [/\bGMs\b/g,               'General Managers'],
+  [/\bGM\b/g,                'General Manager'],
+  [/\b[Aa]dmin(istrator)?s\b/g, 'Administrators'],
+  [/\b[Aa]dmin(istrator)?\b(?!-)/g, 'Administrator'],
+  [/\bOps\b/g,               'Operations'],
   // Role names are always capitalized, e.g. "the Operations Manager".
-  [/[Oo]perations manager(s?)/g, 'Operations Manager$1'],
-  [/[Gg]eneral manager(s?)/g,    'General Manager$1'],
-  [/[Ff]leet manager(s?)/g,      'Fleet Manager$1'],
+  [/\b[Oo]perations manager(s?)\b/g, 'Operations Manager$1'],
+  [/\b[Gg]eneral manager(s?)\b/g,    'General Manager$1'],
+  [/\b[Ff]leet manager(s?)\b/g,      'Fleet Manager$1'],
 ]
 
 export function expandText(text: string): string {
