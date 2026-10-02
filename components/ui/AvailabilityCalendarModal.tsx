@@ -25,9 +25,9 @@ import { ConfirmDialog } from './ConfirmDialog'
  * schedules against. It opens upward from the pill and covers it, because it is
  * the same control expanded — not a separate screen.
  *
- * Three kinds of day cannot be ticked, and all three are drawn in the muted grey
- * the design uses: days outside this month, days already past (the driver cannot
- * re-plan yesterday), and Sundays, which the design treats as a rest day.
+ * Two kinds of day cannot be ticked, and both are drawn in the muted grey the
+ * design uses: days outside this month, and days already past (the driver cannot
+ * re-plan yesterday). Sundays are tickable — transit runs seven days a week.
  */
 
 const COLORS = {
@@ -41,9 +41,6 @@ const COLORS = {
   overlay:  'rgba(0,0,0,0.55)',
   error:    '#ff4d4d',
 }
-
-/** Sunday. The calendar cannot express it, so the driver is never asked to. */
-const REST_WEEKDAY = 0
 
 const WEEKDAYS = ['S', 'M', 'T', 'W', 'TH', 'F', 'S']
 const MONTHS   = [
@@ -263,7 +260,7 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
                 <View style={styles.week}>
                   {WEEKDAYS.map((label, index) => (
                     <View key={`weekday-${index}`} style={styles.cell}>
-                      <Text style={[styles.weekday, index === REST_WEEKDAY && styles.weekdayRest]}>
+                      <Text style={styles.weekday}>
                         {label}
                       </Text>
                     </View>
@@ -275,7 +272,7 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
                     {week.map((cell) => {
                       const isSelected = cell.day != null && selected.has(cell.day)
                       const isPast     = cell.day != null && cell.day < today
-                      const editable   = cell.day != null && !isPast && cell.weekday !== REST_WEEKDAY
+                      const editable   = cell.day != null && !isPast
 
                       return (
                         <Pressable
@@ -406,7 +403,6 @@ const styles = StyleSheet.create({
     fontSize:   14,
     fontWeight: '500',
   },
-  weekdayRest: { color: COLORS.dim },
 
   dayCircle: {
     width:          28,
