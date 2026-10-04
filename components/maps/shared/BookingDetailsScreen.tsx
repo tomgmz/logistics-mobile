@@ -26,6 +26,7 @@ import {
   Road,
   Truck,
   User,
+  UserCheck,
   Warehouse,
   WifiOff,
 } from 'lucide-react-native'
@@ -145,6 +146,15 @@ interface Booking {
   truck_assignments?: Array<{
     trucks?: { plate_number?: string; truck_models?: { name?: string; vehicle_type?: string } | null } | null
   }>
+  driver_assignments?: Array<{
+    crew_role?: 'lead' | 'second'
+    drivers?: { users?: { first_name?: string; last_name?: string } | null } | null
+  }>
+  /**
+   * The seat this driver holds. 'second' means another driver runs the trip in
+   * the app; this one sees the booking and its stops but cannot confirm anything.
+   */
+  my_crew_role?: 'lead' | 'second'
 }
 
 const D = {
@@ -507,6 +517,13 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
   const inTransit  = !isDone && booking.status === 'in_transit'
   const hasReturned = returned || !!booking.fleet_return_at
 
+  // The second driver rides along: the main driver confirms pickup, stops and
+  // proof, and only their phone sends the truck's position. The server refuses
+  // those writes from the second driver anyway; this keeps the buttons away.
+  const isSecondDriver = booking.my_crew_role === 'second'
+  const leadUser = booking.driver_assignments?.find((a) => a.crew_role !== 'second')?.drivers?.users
+  const leadName = leadUser ? `${leadUser.first_name ?? ''} ${leadUser.last_name ?? ''}`.trim() : ''
+
   const shuttle = isMultiTrip(trips)
   const counts  = tripProgressCounts(trips)
 
@@ -728,6 +745,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
                   <StopProofSection
                     visits={visitsByDestination.get(destination.destination_id) ?? []}
                     shuttle={shuttle}
+                    readOnly={isSecondDriver}
                     label={label}
                     uploading={uploading}
                     onUpload={openProof}
@@ -798,6 +816,29 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
             is in there is exactly one thing the driver should do next, and a
             phone in a cab is the worst place to offer a choice between similar
             green buttons. */}
+        {isSecondDriver ? (
+          <>
+            <View style={s.doneNote}>
+              <UserCheck size={15} color={D.cyan} strokeWidth={2} />
+              <Text style={s.doneNoteText}>
+                {`You are the second driver on this booking. ${leadName || 'The main driver'} confirms the pickup, stops and proof photos in the app.`}
+              </Text>
+            </View>
+            {onPreview && (
+              <TouchableOpacity
+                activeOpacity={0.75}
+                onPress={onPreview}
+                accessibilityRole="button"
+                accessibilityLabel="View the route on a map, view only"
+                style={s.previewBtn}
+              >
+                <Eye size={16} color={D.white} strokeWidth={2} />
+                <Text style={s.previewText}>View route</Text>
+              </TouchableOpacity>
+            )}
+          </>
+        ) : (
+        <>
         {isDone && hasReturned ? (
           <View style={s.doneNote}>
             <Check size={15} color={D.green} strokeWidth={3} />
@@ -868,6 +909,8 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
             <Eye size={16} color={D.white} strokeWidth={2} />
             <Text style={s.previewText}>Preview route</Text>
           </TouchableOpacity>
+        )}
+        </>
         )}
       </View>
 
@@ -1009,10 +1052,12 @@ function Stop({
  *   grey   nothing is owed; the row shows the document instead
  */
 function StopProofSection({
-  visits, shuttle, label, uploading, onUpload,
+  visits, shuttle, label, uploading, onUpload, readOnly = false,
 }: {
   visits:    Array<{ trip: Trip; stop: TripStop }>
   shuttle:   boolean
+  /** The second driver: show what is done, never the upload button. */
+  readOnly?: boolean
   label:     string
   /** trip_stop_id currently uploading, if any. */
   uploading: string | null
@@ -1047,6 +1092,10 @@ function StopProofSection({
                   Proof of delivery uploaded
                 </Text>
               </View>
+            ) : readOnly ? (
+              <Text style={s.proofPending} numberOfLines={2}>
+                {done ? 'Delivered. The main driver uploads the proof photo.' : 'Not delivered yet.'}
+              </Text>
             ) : (
               <TouchableOpacity
                 onPress={() => onUpload(stop, label)}
@@ -1073,7 +1122,7 @@ function StopProofSection({
                 recorded and the client has been told it arrived — it is only the
                 paperwork that is outstanding, and a driver should not think they
                 still have to drive back. */}
-            {done && !hasPhoto && !busy ? (
+            {done && !hasPhoto && !busy && !readOnly ? (
               <Text style={s.proofPending} numberOfLines={2}>
                 Delivered — the photo never made it out. Upload it whenever you have signal.
               </Text>

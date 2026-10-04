@@ -181,15 +181,19 @@ async function considerFix(location: Location.LocationObject): Promise<void> {
     const res = await api.post(`/driver/bookings/${context.bookingId}/location`, body)
 
     // 202 means the server took the ping and deliberately did nothing with it.
-    // Only `booking_ended` is the authoritative "stop tracking" signal — it
+    // `booking_ended` is the authoritative "stop tracking" signal — it
     // covers what the app cannot see for itself: operations cancelled the trip,
     // or an admin closed it out. Every other reason is transient and must NOT
     // stop the task. In particular `not_started`: the first fixes after a pickup
     // routinely beat the pickup confirmation to the server (it uploads a photo
     // first, or sits in the offline queue), and stopping on those switched
     // tracking off at the start of every trip.
+    //
+    // `not_lead` is final too: this phone belongs to the booking's second driver,
+    // and only the main driver's phone is the truck's position.
     if (res.status === 202) {
-      if (res.data?.reason === 'booking_ended') await stopTracking()
+      const reason = res.data?.reason
+      if (reason === 'booking_ended' || reason === 'not_lead') await stopTracking()
       return
     }
   } catch {

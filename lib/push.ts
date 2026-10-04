@@ -107,6 +107,11 @@ function routeFromNotification(data: Record<string, unknown> | undefined): void 
     }
     return
   }
+  // License expiry reminder: open the list, where the full notice is shown.
+  if (data.type === 'driver.license_expiring') {
+    router.push('/driver/notifications')
+    return
+  }
   // Chat notifications.
   if (data.type === 'group' && data.group_id) {
     router.push(`/driver/messages/group/${data.group_id}`)

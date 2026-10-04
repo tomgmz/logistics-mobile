@@ -43,7 +43,7 @@ function NotifRow({ n, onPress }: { n: AppNotification; onPress: () => void }) {
           </Text>
           <Text style={styles.rowTime}>{timeAgo(n.created_at)}</Text>
         </View>
-        <Text style={styles.rowBodyText} numberOfLines={2}>{n.body}</Text>
+        <Text style={styles.rowBodyText} numberOfLines={n.type === 'driver.license_expiring' ? undefined : 2}>{n.body}</Text>
       </View>
     </TouchableOpacity>
   )
@@ -66,6 +66,9 @@ export default function NotificationsScreen() {
 
   const onPressItem = useCallback((n: AppNotification) => {
     if (!n.read_at) markRead(n.notification_id)
+    // A license expiry notice is about the driver, not a delivery; the row itself
+    // is the whole message, so tapping it only marks it read.
+    if (n.type === 'driver.license_expiring') return
     // Deep-link to the specific booking; fall back to the assignment list.
     const bookingId =
       n.booking_id ?? (typeof n.data?.booking_id === 'string' ? n.data.booking_id : null)
