@@ -54,7 +54,8 @@ import {
 import { attachStopProof } from '../../../lib/api/stopProof.api'
 import { StopProofModal } from './StopProofModal'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
-import { captureProofPhoto, CameraPermissionError, uploadProofPhoto } from '../../../lib/proofPhoto'
+import { captureProofPhoto, CameraPermissionError, photoTakenAt, uploadProofPhoto } from '../../../lib/proofPhoto'
+import { readCurrentFix } from '../../../lib/stopGeofence'
 
 /**
  * Assignment details — the screen a driver lands on from their booking list, and
@@ -396,7 +397,13 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
       if (!uri) return
 
       setUploading(stop.trip_stop_id)
-      const url = await uploadProofPhoto(uri)
+      // Where the phone is now goes onto the photo's stamp only — never onto the
+      // stop, whose position was recorded at the bay. The stamp also says the
+      // picture was added after the stop was confirmed.
+      const fix = await readCurrentFix()
+      const url = await uploadProofPhoto(uri, {
+        stop: 'trip_stop', refId: stop.trip_stop_id, takenAt: photoTakenAt(uri), fix, addedLater: true,
+      })
       await attachStopProof(stop.trip_stop_id, url)
 
       // Reflect it without a round trip, so the row settles under the driver's

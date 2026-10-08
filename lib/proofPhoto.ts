@@ -1,6 +1,7 @@
 import * as ImagePicker from 'expo-image-picker'
 
 import api from './api/auth.api'
+import type { StopFix } from './stopGeofence'
 
 /**
  * Proof-of-pickup / proof-of-delivery photos.
@@ -18,6 +19,32 @@ import api from './api/auth.api'
 // Proof photos are evidence, not portfolio pieces: quality 0.6 at a capped size
 // keeps them readable while staying small enough to upload over a weak signal.
 const QUALITY = 0.6
+
+/**
+ * What the server needs to burn the time-and-place stamp into a proof photo:
+ * which stop it is, when the shutter fired, and where the phone was. Plate,
+ * booking number, driver and street address are looked up server-side.
+ *
+ * Plain JSON on purpose — it is persisted with the offline queue entry, so a
+ * photo uploaded hours later still carries the moment and place it was taken.
+ */
+export interface ProofStamp {
+  stop:        'trip_pickup' | 'trip_stop'
+  refId:       string            // trip_id for a pickup, trip_stop_id for a drop-off
+  takenAt:     string            // ISO
+  fix?:        StopFix | null
+  addedLater?: boolean           // photo attached to a stop already confirmed
+}
+
+// When each captured file was shot, keyed by its URI. The capture happens a few
+// seconds to a minute before the stop is confirmed, and the stamp should say
+// when the picture was taken rather than when the button was pressed.
+const takenAtByUri = new Map<string, string>()
+
+/** When the photo at `uri` was taken, or now if this session never saw it captured. */
+export function photoTakenAt(uri: string): string {
+  return takenAtByUri.get(uri) ?? new Date().toISOString()
+}
 
 export class CameraPermissionError extends Error {
   constructor() {
@@ -42,15 +69,32 @@ export async function captureProofPhoto(): Promise<string | null> {
   })
 
   if (result.canceled || !result.assets?.length) return null
-  return result.assets[0].uri
+  const uri = result.assets[0].uri
+  takenAtByUri.set(uri, new Date().toISOString())
+  return uri
 }
 
 /**
  * Upload a captured photo and return its hosted URL. Rejects on network failure
  * so callers (and the offline queue) can retry with the same local file.
+ *
+ * With a `stamp`, the server burns the time / place / plate overlay into the
+ * stored photo. Without one (the report form) the photo is stored as taken.
  */
-export async function uploadProofPhoto(localUri: string): Promise<string> {
+export async function uploadProofPhoto(localUri: string, stamp?: ProofStamp | null): Promise<string> {
   const form = new FormData()
+  if (stamp) {
+    // Text fields before the file, so they are parsed before the image arrives.
+    form.append('stamp_stop', stamp.stop)
+    form.append('stamp_ref',  stamp.refId)
+    form.append('taken_at',   stamp.takenAt)
+    if (stamp.fix) {
+      form.append('latitude',  String(stamp.fix.latitude))
+      form.append('longitude', String(stamp.fix.longitude))
+      if (stamp.fix.accuracy_m != null) form.append('accuracy_m', String(stamp.fix.accuracy_m))
+    }
+    if (stamp.addedLater) form.append('added_later', '1')
+  }
   // React Native's FormData takes this {uri, name, type} shape for files.
   form.append('image', {
     uri:  localUri,

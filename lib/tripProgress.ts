@@ -1,7 +1,7 @@
 import NetInfo from '@react-native-community/netinfo'
 
 import { enqueue, flush } from './offlineQueue'
-import { uploadProofPhoto } from './proofPhoto'
+import { uploadProofPhoto, photoTakenAt, type ProofStamp } from './proofPhoto'
 import { startTracking, stopTracking, setNextStop, explainTrackingDenied } from './locationTracking'
 import type { StopFix, Coordinates } from './stopGeofence'
 
@@ -18,7 +18,8 @@ import type { StopFix, Coordinates } from './stopGeofence'
  *   confirmFleetReturn()     → the truck is back in the 8338 lot
  *
  * Every pickup and drop-off carries a proof photo taken at the stop; the backend
- * refuses the confirmation without one. Every run needs its OWN loading photo —
+ * refuses the confirmation without one. The server burns a time / place / plate
+ * stamp into each photo from the `ProofStamp` sent with it. Every run needs its OWN loading photo —
  * a single picture cannot evidence the second time the truck was filled.
  *
  * Every confirmation goes through the durable offline queue, so a stop confirmed
@@ -64,6 +65,7 @@ async function queueStop(
   kind: 'pickup' | 'delivery',
   url: string,
   photoUri: string,
+  stamp: ProofStamp,
   extraBody?: Record<string, unknown>,
 ): Promise<void> {
   let uploadedUrl: string | null = null
@@ -71,7 +73,7 @@ async function queueStop(
   const net = await NetInfo.fetch().catch(() => null)
   if (net?.isConnected) {
     // Best effort: a failure here just means the queue uploads it later.
-    uploadedUrl = await uploadProofPhoto(photoUri).catch(() => null)
+    uploadedUrl = await uploadProofPhoto(photoUri, stamp).catch(() => null)
   }
 
   await enqueue({
@@ -80,6 +82,7 @@ async function queueStop(
     url,
     body:     { ...extraBody, ...(uploadedUrl ? { proof_photo_url: uploadedUrl } : {}) },
     photoUri: uploadedUrl ? undefined : photoUri,
+    stamp:    uploadedUrl ? undefined : stamp,
   })
   await flush()
 }
@@ -122,6 +125,7 @@ export function confirmTripPickup(
     'pickup',
     `/driver/trips/${tripId}/pickup`,
     photoUri,
+    { stop: 'trip_pickup', refId: tripId, takenAt: photoTakenAt(photoUri), fix: proof?.fix ?? null },
     { ...(earlyStart ? { early_start: true } : {}), ...stopProofBody(proof) },
   )
 }
@@ -148,6 +152,7 @@ export function confirmTripStop(
     'delivery',
     `/driver/trip-stops/${tripStopId}/delivered`,
     photoUri,
+    { stop: 'trip_stop', refId: tripStopId, takenAt: photoTakenAt(photoUri), fix: proof?.fix ?? null },
     stopProofBody(proof),
   )
 }

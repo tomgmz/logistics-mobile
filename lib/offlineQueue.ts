@@ -3,7 +3,7 @@ import NetInfo from '@react-native-community/netinfo'
 import { AppState, AppStateStatus } from 'react-native'
 
 import api from './api/auth.api'
-import { uploadProofPhoto } from './proofPhoto'
+import { uploadProofPhoto, type ProofStamp } from './proofPhoto'
 
 /**
  * Durable, offline-tolerant queue for booking/destination status updates.
@@ -49,6 +49,9 @@ export interface QueuedAction {
   // Local file URI of a proof photo that still needs uploading. Once uploaded,
   // its hosted URL is merged into `body` as proof_photo_url and this is cleared.
   photoUri?: string
+  // What to stamp onto that photo when it is finally uploaded. Captured at the
+  // stop, like the position in `body` — by drain time the driver is elsewhere.
+  stamp?:    ProofStamp
   createdAt: number
   attempts:  number
 }
@@ -118,8 +121,8 @@ export function flush(): Promise<void> {
       let item = queued
       if (item.photoUri) {
         try {
-          const url = await uploadProofPhoto(item.photoUri)
-          item = { ...item, body: { ...item.body, proof_photo_url: url }, photoUri: undefined }
+          const url = await uploadProofPhoto(item.photoUri, item.stamp)
+          item = { ...item, body: { ...item.body, proof_photo_url: url }, photoUri: undefined, stamp: undefined }
           // Persist the URL right away: if the PATCH below fails we retry the
           // request, not the (already successful) upload.
           await writeQueue(queue.map((a) => (a.id === item.id ? item : a)))
