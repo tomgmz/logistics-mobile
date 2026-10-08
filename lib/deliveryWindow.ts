@@ -21,14 +21,27 @@ export interface NavigationGate {
   /** `YYYY-MM-DD` the booking is scheduled for, when it is still ahead. */
   scheduledFor: string | null
   /** Why navigation can't start, if it can't. */
-  reason: 'not_yet' | 'not_assigned' | 'cancelled' | null
+  reason: 'not_yet' | 'not_assigned' | 'cancelled' | 'vehicle_out_of_service' | null
 }
+
+/**
+ * Statuses the Fleet Manager sets to pull a vehicle. A booking whose vehicle has
+ * one can't leave the yard until Operations assigns another.
+ */
+const OUT_OF_SERVICE = ['under_maintenance', 'inactive', 'archived']
 
 const OPEN: NavigationGate = { locked: false, scheduledFor: null, reason: null }
 
 interface GateInput {
   status?:        string | null
   schedule_date?: string | null
+  truck_assignments?: Array<{ trucks?: { status?: string | null } | null }> | null
+}
+
+/** The booking's vehicle was taken out of service. */
+export function vehicleOutOfService(booking: GateInput | null | undefined): boolean {
+  const status = booking?.truck_assignments?.[0]?.trucks?.status
+  return !!status && OUT_OF_SERVICE.includes(status)
 }
 
 export function navigationGate(booking: GateInput | null | undefined): NavigationGate {
@@ -44,6 +57,14 @@ export function navigationGate(booking: GateInput | null | undefined): Navigatio
 
   if (booking.status && booking.status !== 'assigned') {
     return { locked: true, scheduledFor: booking.schedule_date ?? null, reason: 'not_assigned' }
+  }
+
+  // Still in the yard and the vehicle was pulled: nothing to drive yet. Only
+  // before the pickup — a truck already on the road keeps its navigation (see
+  // above), and Operations decides what happens to that run. No override: the
+  // server refuses the pickup too.
+  if (vehicleOutOfService(booking)) {
+    return { locked: true, scheduledFor: null, reason: 'vehicle_out_of_service' }
   }
 
   // Never reached the server, so we don't actually know what day it is. Staying

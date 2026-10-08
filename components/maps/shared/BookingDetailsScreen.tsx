@@ -145,7 +145,7 @@ interface Booking {
   booking_destinations?: Destination[]
   booking_cargo_items?:  CargoItem[]
   truck_assignments?: Array<{
-    trucks?: { plate_number?: string; truck_models?: { name?: string; vehicle_type?: string } | null } | null
+    trucks?: { plate_number?: string; status?: string | null; truck_models?: { name?: string; vehicle_type?: string } | null } | null
   }>
   driver_assignments?: Array<{
     crew_role?: 'lead' | 'second'
@@ -308,6 +308,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
   }, [])
 
   const gate = navigationGate(booking)
+  const currentGate = gate
 
   /** The offline caveat, asked last so it wraps whichever start we're doing. */
   const startWithOfflineCheck = useCallback((earlyStart: boolean) => {
@@ -326,11 +327,36 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
     onStart(earlyStart)
   }, [offline, onStart])
 
-  const handleStart = useCallback(() => {
+  const handleStart = useCallback(async () => {
+    // The screen was loaded once, maybe long before this tap — and the Fleet
+    // Manager may have pulled the vehicle since. Re-read the booking first when
+    // online, so the gate below decides on what is true now. Offline, the copy
+    // on screen stands and the server still refuses the pickup.
+    let gate = currentGate
+    if (!offline) {
+      try {
+        const { data } = await api.get(`/booking/${bookingId}`)
+        setBooking(data.data)
+        saveBookingCache(bookingId, data.data)
+        gate = navigationGate(data.data)
+      } catch {
+        // Keep the gate we have.
+      }
+    }
+
     // Locked because the booking isn't the driver's to run at all — not
     // something an override should be able to talk its way past.
     if (gate.reason === 'cancelled') {
       Alert.alert('Booking cancelled', 'This booking has been cancelled and can’t be delivered.')
+      return
+    }
+
+    if (gate.reason === 'vehicle_out_of_service') {
+      Alert.alert(
+        'Vehicle out of service',
+        'The Fleet Manager took this vehicle out of service. Don’t drive or load it — ' +
+        'the Operations Manager will assign another vehicle, and navigation opens once they do.',
+      )
       return
     }
 
@@ -362,7 +388,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
     }
 
     startWithOfflineCheck(false)
-  }, [gate.reason, gate.scheduledFor, startWithOfflineCheck])
+  }, [currentGate, offline, bookingId, startWithOfflineCheck])
 
   /* ── Proof of delivery, supplied from here ──────────────────────────────
    *
@@ -779,6 +805,12 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
             {plate ? <Text style={{ color: D.cyan }}>{plate} </Text> : null}
             <Text style={{ color: plate ? D.faint : D.cyan }}>{truckModel}</Text>
           </Text>
+          {/* Only while still in the yard: on the road it is Operations' call. */}
+          {gate.reason === 'vehicle_out_of_service' && (
+            <Text style={{ color: D.red, fontSize: 12, fontWeight: '700', marginTop: 6 }}>
+              OUT OF SERVICE — do not drive or load this vehicle
+            </Text>
+          )}
         </Card>
       </ScrollView>
 
@@ -810,6 +842,8 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
             <Text style={s.lockText}>
               {gate.reason === 'cancelled'
                 ? 'This booking has been cancelled.'
+                : gate.reason === 'vehicle_out_of_service'
+                  ? `${plate ?? 'The vehicle'} was taken out of service. Wait for Operations to assign another vehicle.`
                 : gate.reason === 'not_assigned'
                   ? 'Waiting on the Operations Manager to release this booking.'
                   : `Navigation opens ${gate.scheduledFor ? formatGateDate(gate.scheduledFor) : 'on the scheduled day'}.`}
@@ -876,9 +910,12 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
         ) : (
           <TouchableOpacity
             activeOpacity={0.85}
-            onPress={handleStart}
+            onPress={() => void handleStart()}
             accessibilityRole="button"
-            accessibilityLabel={gate.locked ? 'Navigation locked until the scheduled day' : 'Start navigation'}
+            accessibilityLabel={
+              gate.reason === 'vehicle_out_of_service' ? 'Navigation locked, the vehicle is out of service'
+              : gate.locked ? 'Navigation locked until the scheduled day' : 'Start navigation'
+            }
             style={[s.startBtn, gate.locked && s.startBtnLocked]}
           >
             {gate.locked
