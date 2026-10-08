@@ -4,10 +4,7 @@ import {
   Animated,
   Easing,
   Image,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
-  ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
@@ -17,7 +14,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { MotiView, AnimatePresence } from 'moti'
 import { MaterialIcons } from '@expo/vector-icons'
 import { router } from 'expo-router'
-import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg'
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller'
+import Svg, { Circle, Defs, G, LinearGradient, Path, Rect, Stop } from 'react-native-svg'
 
 import {
   getAuthStatus,
@@ -33,9 +31,10 @@ import { useAuthStore } from '../lib/store/auth.store'
 import { getMobileRoute } from '../lib/config/roleRoutes'
 import { checkPasskeySupport, getPasskey, PasskeyCancelled } from '../lib/passkeys'
 import { FONTS } from '../lib/config/fonts'
+import { ConfirmDialog } from './ui/ConfirmDialog'
 
 const CYAN  = '#4df9ed'
-const MUTED = '#999999'
+const MUTED = '#818181'
 
 function formatCountdown(seconds: number): string {
   const m = Math.floor(seconds / 60)
@@ -110,18 +109,18 @@ function OtpBox({
   return (
     <View
       className={[
-        'flex-1 h-16 rounded-2xl items-center justify-center border-[1.5px]',
+        'flex-1 h-[52px] rounded-xl items-center justify-center border-[1.5px]',
         locked    ? 'border-orange-400/40  bg-orange-400/5'   :
-        hasError  ? 'border-error          bg-error-dim'      :
+        hasError  ? 'border-[#f62626] bg-[rgba(246,38,38,0.10)]'      :
         focused   ? 'border-cyan           bg-cyan-glow'      :
         value     ? 'border-cyan-border    bg-cyan-dim'       :
-                    'border-surface-border bg-surface-raised',
+                    'border-[#424242] bg-[#1b1b1b]',
       ].join(' ')}
     >
       {value ? (
         <Text
-          className={`text-[26px] ${
-            locked ? 'text-orange-400/60' : hasError ? 'text-error' : 'text-ink-primary'
+          className={`text-[22px] ${
+            locked ? 'text-orange-400/60' : hasError ? 'text-[#f62626]' : 'text-ink-primary'
           }`}
           style={{ fontFamily: FONTS.spartan.bold }}
         >
@@ -129,7 +128,7 @@ function OtpBox({
         </Text>
       ) : focused && !locked ? (
         <Animated.View
-          className="w-0.5 h-7 rounded-sm bg-cyan"
+          className="w-0.5 h-6 rounded-sm bg-cyan"
           style={{ opacity: pulse }}
         />
       ) : null}
@@ -172,7 +171,7 @@ function ResendTimer({
 
   if (seconds > 0) {
     return (
-      <Text className="text-[14px] text-ink-muted">
+      <Text className="text-[13px] text-ink-faint">
         Resend code in <Text className="text-cyan" style={{ fontVariant: ['tabular-nums'] }}>{seconds}s</Text>
       </Text>
     )
@@ -180,8 +179,8 @@ function ResendTimer({
 
   return (
     <TouchableOpacity onPress={handleResend} disabled={resending} className="flex-row items-center gap-1.5 py-2 px-3">
-      <MaterialIcons name="refresh" size={16} color={CYAN} />
-      <Text className="text-[14px] text-cyan" style={{ fontFamily: FONTS.spartan.semiBold }}>
+      <MaterialIcons name="refresh" size={15} color={CYAN} />
+      <Text className="text-[13px] text-cyan" style={{ fontFamily: FONTS.spartan.semiBold }}>
         {resending ? 'Sending…' : 'Resend code'}
       </Text>
     </TouchableOpacity>
@@ -295,9 +294,9 @@ function BackButton({ onPress }: { onPress: () => void }) {
       hitSlop={8}
       accessibilityRole="button"
       accessibilityLabel="Go back"
-      className="w-11 h-11 rounded-full items-center justify-center border border-surface-border bg-surface-card"
+      className="w-9 h-9 rounded-full items-center justify-center border border-[#424242] bg-[#1b1b1b]"
     >
-      <MaterialIcons name="arrow-back" size={20} color="#ffffff" />
+      <MaterialIcons name="arrow-back" size={18} color="#ffffff" />
     </TouchableOpacity>
   )
 }
@@ -309,8 +308,8 @@ function StepBar({ index, total }: { index: number; total: number }) {
       {[...Array(total)].map((_, i) => (
         <View
           key={i}
-          className={`h-1.5 rounded-full ${
-            i === index ? 'w-7 bg-cyan' : i < index ? 'w-3 bg-cyan-border' : 'w-3 bg-surface-border'
+          className={`h-1 rounded-full ${
+            i === index ? 'w-6 bg-cyan' : i < index ? 'w-3 bg-cyan-border' : 'w-3 bg-[#424242]'
           }`}
         />
       ))}
@@ -321,17 +320,17 @@ function StepBar({ index, total }: { index: number; total: number }) {
 /** The address being signed in as, with a one-tap way to use a different one. */
 function EmailChip({ email, onChange }: { email: string; onChange: () => void }) {
   return (
-    <View className="flex-row items-center gap-3 rounded-2xl border border-surface-border bg-surface-raised pl-2 pr-1.5 py-2 mb-6">
-      <View className="w-9 h-9 rounded-full items-center justify-center bg-cyan-dim border border-cyan-border">
-        <Text className="text-[15px] text-cyan" style={{ fontFamily: FONTS.spartan.bold }}>
+    <View className="flex-row items-center gap-3 rounded-full border border-[#424242] bg-[#1b1b1b] pl-1 pr-1 py-1 mb-5">
+      <View className="w-7 h-7 rounded-full items-center justify-center bg-cyan-dim border border-cyan-border">
+        <Text className="text-[13px] text-cyan" style={{ fontFamily: FONTS.spartan.bold }}>
           {email.charAt(0).toUpperCase()}
         </Text>
       </View>
-      <Text numberOfLines={1} className="flex-1 text-[14px] text-ink-secondary">
+      <Text numberOfLines={1} className="flex-1 text-[13px] text-ink-secondary">
         {email}
       </Text>
-      <TouchableOpacity onPress={onChange} hitSlop={6} className="rounded-xl px-3 py-2 bg-surface-elevated">
-        <Text className="text-[13px] text-cyan" style={{ fontFamily: FONTS.spartan.semiBold }}>Change</Text>
+      <TouchableOpacity onPress={onChange} hitSlop={6} className="rounded-full px-3 py-1.5 bg-black border border-[#424242]">
+        <Text className="text-[12px] text-cyan" style={{ fontFamily: FONTS.spartan.semiBold }}>Change</Text>
       </TouchableOpacity>
     </View>
   )
@@ -340,11 +339,11 @@ function EmailChip({ email, onChange }: { email: string; onChange: () => void })
 function StepHeading({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
     <>
-      <Text className="text-[30px] leading-[34px] mb-2 text-ink-primary" style={{ fontFamily: FONTS.spartan.bold }}>
+      <Text className="text-[24px] leading-[30px] mb-1 text-center text-ink-primary" style={{ fontFamily: FONTS.spartan.bold }}>
         {title}
       </Text>
       {subtitle ? (
-        <Text className="text-[15px] leading-[22px] mb-6 text-ink-muted">{subtitle}</Text>
+        <Text className="text-[14px] leading-[20px] mb-5 text-center text-ink-faint">{subtitle}</Text>
       ) : (
         <View className="h-3" />
       )}
@@ -354,7 +353,7 @@ function StepHeading({ title, subtitle }: { title: string; subtitle?: string }) 
 
 function FieldLabel({ children }: { children: string }) {
   return (
-    <Text className="text-[13px] mb-2 text-ink-secondary" style={{ fontFamily: FONTS.spartan.semiBold }}>
+    <Text className="text-[12px] mb-1.5 ml-4 text-ink-secondary" style={{ fontFamily: FONTS.spartan.semiBold }}>
       {children}
     </Text>
   )
@@ -367,8 +366,8 @@ function ErrorRow({ message, center }: { message: string; center?: boolean }) {
       animate={{ opacity: 1, translateY: 0 }}
       className={`flex-row items-center gap-1.5 mt-2 mb-0.5 ${center ? 'justify-center mt-4' : ''}`}
     >
-      <MaterialIcons name="error-outline" size={15} color="#ff4d4d" />
-      <Text className={`text-[13px] text-error ${center ? '' : 'flex-1'}`}>{message}</Text>
+      <MaterialIcons name="error-outline" size={14} color="#f62626" />
+      <Text className={`text-[12px] text-[#f62626] ${center ? '' : 'flex-1'}`}>{message}</Text>
     </MotiView>
   )
 }
@@ -385,10 +384,10 @@ function InputWrap({
   return (
     <View
       className={[
-        'flex-row items-center rounded-2xl border-[1.5px] px-4 h-[58px] mb-1',
-        hasError ? 'border-error bg-error-dim'           :
+        'flex-row items-center rounded-full border px-4 h-12 mb-1',
+        hasError ? 'border-[#f62626] bg-[rgba(246,38,38,0.10)]'           :
         focused  ? 'border-cyan bg-cyan-glow'            :
-                   'border-surface-border bg-surface-raised',
+                   'border-[#424242] bg-[#1b1b1b]',
       ].join(' ')}
     >
       {children}
@@ -414,15 +413,15 @@ function SubmitButton({
       onPress={onPress}
       disabled={loading || disabled}
       activeOpacity={0.85}
-      className={`flex-row items-center justify-center gap-2 rounded-2xl h-[58px] mt-5 ${
-        disabled ? 'bg-surface-elevated' : 'bg-cyan'
+      className={`flex-row items-center justify-center gap-2 rounded-full h-12 mt-5 ${
+        disabled ? 'bg-[#1b1b1b] border border-[#424242]' : 'bg-cyan'
       } ${loading ? 'opacity-70' : 'opacity-100'}`}
       style={disabled ? undefined : {
         shadowColor:   CYAN,
-        shadowOpacity: 0.35,
-        shadowRadius:  16,
-        shadowOffset:  { width: 0, height: 6 },
-        elevation:     6,
+        shadowOpacity: 0.25,
+        shadowRadius:  10,
+        shadowOffset:  { width: 0, height: 4 },
+        elevation:     4,
       }}
     >
       {loading ? (
@@ -430,12 +429,12 @@ function SubmitButton({
       ) : (
         <>
           <Text
-            className={`text-[17px] ${disabled ? 'text-ink-disabled' : 'text-surface-bg'}`}
+            className={`text-[15px] ${disabled ? 'text-ink-faint' : 'text-black'}`}
             style={{ fontFamily: FONTS.spartan.bold }}
           >
             {label}
           </Text>
-          <MaterialIcons name={icon} size={20} color={disabled ? '#555555' : '#080808'} />
+          <MaterialIcons name={icon} size={18} color={disabled ? '#555555' : '#080808'} />
         </>
       )}
     </TouchableOpacity>
@@ -462,43 +461,83 @@ function MethodCard({
       onPress={onPress}
       disabled={loading || disabled}
       activeOpacity={0.8}
-      className={`flex-row items-center gap-4 rounded-2xl border-[1.5px] p-4 min-h-[84px] mb-3 ${
-        loading ? 'border-cyan bg-cyan-glow' : 'border-surface-border bg-surface-raised'
+      className={`flex-row items-center gap-3 rounded-2xl border px-3.5 py-3 mb-2.5 ${
+        loading ? 'border-cyan bg-cyan-glow' : 'border-[#424242] bg-[#1b1b1b]'
       }`}
       style={{ opacity: disabled && !loading ? 0.6 : 1 }}
     >
-      <View className="w-12 h-12 rounded-2xl items-center justify-center bg-cyan-dim border border-cyan-border">
-        <MaterialIcons name={icon} size={24} color={CYAN} />
+      <View className="w-10 h-10 rounded-xl items-center justify-center bg-cyan-dim border border-cyan-border">
+        <MaterialIcons name={icon} size={20} color={CYAN} />
       </View>
       <View className="flex-1">
-        <Text className="text-[17px] text-ink-primary mb-0.5" style={{ fontFamily: FONTS.spartan.semiBold }}>
+        <Text className="text-[15px] text-ink-primary mb-0.5" style={{ fontFamily: FONTS.spartan.semiBold }}>
           {title}
         </Text>
-        <Text className="text-[13px] leading-[18px] text-ink-muted">{subtitle}</Text>
+        <Text className="text-[12px] leading-[16px] text-ink-faint">{subtitle}</Text>
       </View>
       {loading
         ? <ActivityIndicator size="small" color={CYAN} />
-        : <MaterialIcons name="chevron-right" size={24} color="#818181" />
+        : <MaterialIcons name="chevron-right" size={20} color="#818181" />
       }
     </TouchableOpacity>
   )
 }
 
-/** Soft cyan light behind the logo — the only decoration on the screen. */
-function Backdrop() {
+/**
+ * The same backdrop as the driver home's "Check your routes" card: the route
+ * map at half strength over black. Shaded darker at the top for the logo and
+ * headline, and faded to black at the foot so it runs into the sheet.
+ */
+function HeroBackdrop() {
   return (
-    <View className="absolute inset-0" pointerEvents="none">
-      <Svg width="100%" height="100%">
+    <View className="absolute inset-0 bg-black overflow-hidden" pointerEvents="none">
+      <Image
+        source={require('../assets/home/route-map.png')}
+        resizeMode="cover"
+        className="absolute inset-0 h-full w-full opacity-50"
+      />
+      <Svg width="100%" height="100%" style={{ position: 'absolute' }}>
         <Defs>
-          <RadialGradient id="signInGlow" cx="50%" cy="8%" rx="85%" ry="45%">
-            <Stop offset="0"   stopColor={CYAN} stopOpacity="0.16" />
-            <Stop offset="0.6" stopColor={CYAN} stopOpacity="0.03" />
-            <Stop offset="1"   stopColor={CYAN} stopOpacity="0" />
-          </RadialGradient>
+          <LinearGradient id="heroShade" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0"    stopColor="#000000" stopOpacity="0.75" />
+            <Stop offset="0.45" stopColor="#000000" stopOpacity="0.35" />
+            <Stop offset="0.8"  stopColor="#000000" stopOpacity="0.6" />
+            <Stop offset="1"    stopColor="#000000" stopOpacity="1" />
+          </LinearGradient>
         </Defs>
-        <Rect x="0" y="0" width="100%" height="100%" fill="url(#signInGlow)" />
+        <Rect x="0" y="0" width="100%" height="100%" fill="url(#heroShade)" />
       </Svg>
     </View>
+  )
+}
+
+// MaterialIcons "local-shipping", inlined so it can sit inside the SVG scene.
+const TRUCK_PATH =
+  'M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4z' +
+  'M6 18.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z' +
+  'm13.5-9l1.96 2.5H17V9.5h2.5zm-1.5 9c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z'
+
+/** A route from pickup to drop-off with the truck midway, drawn over the map. */
+function HeroArt() {
+  return (
+    <Svg width="100%" height={104} viewBox="0 0 360 150" preserveAspectRatio="xMidYMid slice">
+      {/* The road: a soft wide glow under a dashed line. */}
+      <Path d="M24 128 C 90 128, 90 82, 160 82 S 250 40, 330 30" stroke={CYAN} strokeOpacity={0.12} strokeWidth={14} strokeLinecap="round" fill="none" />
+      <Path d="M24 128 C 90 128, 90 82, 160 82 S 250 40, 330 30" stroke={CYAN} strokeOpacity={0.85} strokeWidth={3} strokeDasharray="1 9" strokeLinecap="round" fill="none" />
+
+      {/* Pickup, a stop, and the drop-off. */}
+      <Circle cx={24}  cy={128} r={9}  fill="#000000" stroke={CYAN} strokeWidth={3} />
+      <Circle cx={160} cy={82}  r={6}  fill={CYAN} fillOpacity={0.9} />
+      <Circle cx={330} cy={30}  r={16} fill={CYAN} fillOpacity={0.15} />
+      <Circle cx={330} cy={30}  r={8}  fill={CYAN} />
+
+      {/* The truck, on the road between the stop and the drop-off. */}
+      <Circle cx={238} cy={58} r={22} fill={CYAN} />
+      <Circle cx={238} cy={58} r={29} fill="none" stroke={CYAN} strokeOpacity={0.3} strokeWidth={2} />
+      <G transform="translate(223.6 43.6) scale(1.2)">
+        <Path d={TRUCK_PATH} fill="#000000" />
+      </G>
+    </Svg>
   )
 }
 
@@ -546,6 +585,9 @@ export default function SignInScreen() {
   const lockExpiresAt             = useRef<number>(0)
 
   const [resetState, setResetState] = useState<ResetState>('idle')
+  // "Forgot password?" asks first: it pages an administrator, so a stray tap
+  // should not send the request.
+  const [confirmReset, setConfirmReset] = useState(false)
 
   const emailRef    = useRef<TextInput>(null)
   const otpRef      = useRef<TextInput>(null)
@@ -879,60 +921,84 @@ export default function SignInScreen() {
   })
 
   return (
-    <View
-      className="flex-1 bg-surface-bg"
-      style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
-    >
-      <Backdrop />
-
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+    // Navy behind the status bar so the hero runs edge to edge; the sheet below
+    // carries its own bottom inset.
+    <View className="flex-1 bg-black">
+      {/*
+        Lifts the screen while the keyboard is up so the focused field — and the
+        button under it, hence the offset — sit just above the keyboard, then
+        scrolls back to where it was once the keyboard hides. KeyboardAvoidingView
+        could not do this reliably: Android is edge-to-edge since Expo 54, so the
+        window no longer resizes for the keyboard.
+      */}
+      <KeyboardAwareScrollView
+        bottomOffset={96}
+        contentContainerStyle={{ flexGrow: 1 }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        bounces={false}
       >
-        <ScrollView
-          contentContainerStyle={{ flexGrow: 1 }}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-          bounces={false}
-        >
-        <View className="flex-1 px-6 pb-6">
 
-        {/* Top bar: back on the left, progress on the right. Fixed height so the
-            logo never jumps when the back button appears. */}
-        <View className="h-14 flex-row items-center justify-between">
-          {step !== 'email' ? <BackButton onPress={handleBack} /> : <View className="w-11" />}
-          <StepBar index={stepIndex} total={stepTotal} />
+        {/* ── Hero ─────────────────────────────────────────────────────── */}
+        <View style={{ paddingTop: insets.top }}>
+          <HeroBackdrop />
+
+          <MotiView
+            from={{ opacity: 0, translateY: -12 }}
+            animate={{ opacity: 1, translateY: 0 }}
+            transition={{ type: 'timing', duration: 600 }}
+            className="px-5 pt-3"
+          >
+            <View className="flex-row items-center justify-between">
+              <Image
+                source={require('../assets/Final_Logo.png')}
+                style={{ width: 108, height: undefined, aspectRatio: 3.92 }}
+                resizeMode="contain"
+                accessibilityLabel="8338 Logistics Services"
+              />
+              <View className="flex-row items-center gap-1 rounded-full px-2.5 py-1 border border-cyan-border bg-cyan-glow">
+                <MaterialIcons name="local-shipping" size={12} color={CYAN} />
+                <Text className="text-[10px] tracking-[1.2px] text-cyan" style={{ fontFamily: FONTS.spartan.semiBold }}>
+                  DRIVER APP
+                </Text>
+              </View>
+            </View>
+
+            <Text
+              className="text-[24px] leading-[30px] mt-5 text-ink-primary"
+              style={{ fontFamily: FONTS.spartan.bold }}
+            >
+              Sign in to keep{'\n'}
+              <Text className="text-cyan">every delivery</Text>{'\n'}
+              on track.
+            </Text>
+          </MotiView>
+
+          <MotiView
+            from={{ opacity: 0, translateX: -24 }}
+            animate={{ opacity: 1, translateX: 0 }}
+            transition={{ type: 'timing', duration: 700, delay: 200 }}
+            className="mt-1 pb-8"
+          >
+            <HeroArt />
+          </MotiView>
         </View>
 
+        {/* ── Sheet ────────────────────────────────────────────────────── */}
         <MotiView
-          from={{ opacity: 0, translateY: -12 }}
-          animate={{ opacity: 1, translateY: 0 }}
-          transition={{ type: 'timing', duration: 600 }}
-          className="items-center mt-6"
-        >
-          <Image
-            source={require('../assets/Final_Logo.png')}
-            style={{ width: 232, height: undefined, aspectRatio: 3.92 }}
-            resizeMode="contain"
-            accessibilityLabel="8338 Logistics Services"
-          />
-          <View className="flex-row items-center gap-1.5 mt-5 rounded-full px-3 py-1.5 border border-cyan-border bg-cyan-glow">
-            <MaterialIcons name="local-shipping" size={14} color={CYAN} />
-            <Text className="text-[12px] tracking-[1.5px] text-cyan" style={{ fontFamily: FONTS.spartan.semiBold }}>
-              DRIVER APP
-            </Text>
-          </View>
-        </MotiView>
-
-        {/* Pushes the form down into thumb reach on tall phones. */}
-        <View className="flex-1 min-h-[32px]" />
-
-        <MotiView
-          from={{ opacity: 0, translateY: 24 }}
+          from={{ opacity: 0, translateY: 40 }}
           animate={{ opacity: 1, translateY: 0 }}
           transition={{ type: 'timing', duration: 500, delay: 150 }}
+          className="flex-1 -mt-6 rounded-t-[28px] bg-[#0e1010] border-t-[0.5px] border-[#424242] px-5 pt-4"
+          style={{ paddingBottom: Math.max(insets.bottom, 16) + 8 }}
         >
+          {/* Back on the left, progress on the right. Fixed height so the title
+              never jumps when the back button appears. */}
+          <View className="h-9 flex-row items-center justify-between mb-2">
+            {step !== 'email' ? <BackButton onPress={handleBack} /> : <View className="w-9" />}
+            <StepBar index={stepIndex} total={stepTotal} />
+          </View>
+
           <AnimatePresence exitBeforeEnter>
 
             {step === 'email' && (
@@ -946,9 +1012,9 @@ export default function SignInScreen() {
                 <InputWrap hasError={!!error} focused={focusedField === 'email'}>
                   <MaterialIcons
                     name="mail-outline"
-                    size={20}
+                    size={18}
                     color={focusedField === 'email' ? CYAN : MUTED}
-                    style={{ marginRight: 12 }}
+                    style={{ marginRight: 10 }}
                   />
                   <TextInput
                     ref={emailRef}
@@ -964,7 +1030,7 @@ export default function SignInScreen() {
                     autoComplete="email"
                     returnKeyType="go"
                     onSubmitEditing={handleEmailSubmit}
-                    className="flex-1 text-[16px] py-0 text-ink-primary"
+                    className="flex-1 text-[15px] py-0 text-ink-primary"
                     selectionColor={CYAN}
                   />
                 </InputWrap>
@@ -987,19 +1053,19 @@ export default function SignInScreen() {
                 {passkeySupported && (
                   <>
                     <View className="flex-row items-center my-5">
-                      <View className="flex-1 h-px bg-white/10" />
-                      <Text className="text-[12px] mx-3 text-ink-faint">or</Text>
-                      <View className="flex-1 h-px bg-white/10" />
+                      <View className="flex-1 h-px bg-[#424242]" />
+                      <Text className="text-[12px] mx-3 text-ink-faint">Or continue with</Text>
+                      <View className="flex-1 h-px bg-[#424242]" />
                     </View>
 
                     <Pressable
                       onPress={handlePasskeySignIn}
                       disabled={loading}
-                      className="flex-row items-center justify-center h-[58px] rounded-2xl border-[1.5px] border-cyan-border bg-cyan-glow"
+                      className="flex-row items-center justify-center h-12 rounded-full border border-cyan-border bg-black"
                       style={({ pressed }) => ({ opacity: loading ? 0.6 : pressed ? 0.8 : 1 })}
                     >
-                      <MaterialIcons name="fingerprint" size={24} color={CYAN} style={{ marginRight: 10 }} />
-                      <Text className="text-[16px] text-cyan" style={{ fontFamily: FONTS.spartan.semiBold }}>
+                      <MaterialIcons name="fingerprint" size={20} color={CYAN} style={{ marginRight: 8 }} />
+                      <Text className="text-[15px] text-cyan" style={{ fontFamily: FONTS.spartan.semiBold }}>
                         Sign in with a passkey
                       </Text>
                     </Pressable>
@@ -1088,7 +1154,7 @@ export default function SignInScreen() {
                     className="flex-row items-center justify-center gap-2 mt-5"
                   >
                     <ActivityIndicator size="small" color={CYAN} />
-                    <Text className="text-[14px] text-cyan">Verifying…</Text>
+                    <Text className="text-[13px] text-cyan">Verifying…</Text>
                   </MotiView>
                 )}
 
@@ -1124,9 +1190,9 @@ export default function SignInScreen() {
                 <InputWrap hasError={!!error && !isLocked} focused={focusedField === 'password'}>
                   <MaterialIcons
                     name="lock-outline"
-                    size={20}
+                    size={18}
                     color={focusedField === 'password' ? CYAN : MUTED}
-                    style={{ marginRight: 12 }}
+                    style={{ marginRight: 10 }}
                   />
                   <TextInput
                     ref={passwordRef}
@@ -1142,7 +1208,7 @@ export default function SignInScreen() {
                     autoComplete="password"
                     returnKeyType="go"
                     onSubmitEditing={handlePasswordSubmit}
-                    className="flex-1 text-[16px] py-0 text-ink-primary"
+                    className="flex-1 text-[15px] py-0 text-ink-primary"
                     selectionColor={CYAN}
                     editable={!isLocked}
                   />
@@ -1155,7 +1221,7 @@ export default function SignInScreen() {
                     >
                       <MaterialIcons
                         name={showPass ? 'visibility-off' : 'visibility'}
-                        size={22}
+                        size={19}
                         color={MUTED}
                       />
                     </TouchableOpacity>
@@ -1185,7 +1251,7 @@ export default function SignInScreen() {
                 {/* A locked account already shows the request button inside LockBanner. */}
                 {lockState !== 'permanent' && (
                   resetState === 'sent' ? (
-                    <View className="flex-row items-start gap-2 rounded-2xl px-4 py-3 mt-4 bg-surface-raised border border-surface-border">
+                    <View className="flex-row items-start gap-2 rounded-2xl px-4 py-3 mt-4 bg-[#1b1b1b] border border-[#424242]">
                       <MaterialIcons name="mark-email-read" size={16} color={CYAN} style={{ marginTop: 2 }} />
                       <Text className="flex-1 text-[13px] leading-5 text-ink-secondary">
                         Your {approverLabel(role)} has been notified. Check your email for the reset link.
@@ -1193,11 +1259,11 @@ export default function SignInScreen() {
                     </View>
                   ) : (
                     <TouchableOpacity
-                      onPress={handleRequestReset}
+                      onPress={() => setConfirmReset(true)}
                       disabled={resetState === 'sending'}
-                      className="mt-3 py-3 items-center"
+                      className="mt-2 py-2.5 items-center"
                     >
-                      <Text className="text-[14px] text-cyan" style={{ fontFamily: FONTS.spartan.semiBold }}>
+                      <Text className="text-[13px] text-cyan" style={{ fontFamily: FONTS.spartan.semiBold }}>
                         {resetState === 'sending' ? 'Requesting…' : 'Forgot password?'}
                       </Text>
                     </TouchableOpacity>
@@ -1207,23 +1273,34 @@ export default function SignInScreen() {
             )}
 
           </AnimatePresence>
+
+          {/* Pins the footer to the bottom of the sheet on tall phones. */}
+          <View className="flex-1 min-h-[20px]" />
+
+          <View className="flex-row items-center justify-center gap-1.5">
+            <MaterialIcons name="verified-user" size={13} color="#818181" />
+            <Text className="text-[12px] text-ink-faint">
+              8338 Logistics Services
+            </Text>
+          </View>
         </MotiView>
 
-        <MotiView
-          from={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ type: 'timing', duration: 600, delay: 400 }}
-          className="flex-row items-center justify-center gap-1.5 mt-8"
-        >
-          <MaterialIcons name="verified-user" size={13} color="#818181" />
-          <Text className="text-[12px] text-ink-faint">
-            8338 Logistics Services
-          </Text>
-        </MotiView>
+      </KeyboardAwareScrollView>
 
-        </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      <ConfirmDialog
+        visible={confirmReset}
+        title="Reset your password?"
+        message={`We'll ask your ${approverLabel(role)} to email a password reset link to ${email}.`}
+        confirmLabel="Send request"
+        busy={resetState === 'sending'}
+        onConfirm={async () => {
+          // handleRequestReset reports its own failure under the field, so the
+          // dialog just closes either way once the request has settled.
+          await handleRequestReset()
+          setConfirmReset(false)
+        }}
+        onCancel={() => setConfirmReset(false)}
+      />
     </View>
   )
 }
