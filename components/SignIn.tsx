@@ -3,9 +3,11 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
@@ -15,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { MotiView, AnimatePresence } from 'moti'
 import { MaterialIcons } from '@expo/vector-icons'
 import { router } from 'expo-router'
+import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg'
 
 import {
   getAuthStatus,
@@ -29,6 +32,10 @@ import {
 import { useAuthStore } from '../lib/store/auth.store'
 import { getMobileRoute } from '../lib/config/roleRoutes'
 import { checkPasskeySupport, getPasskey, PasskeyCancelled } from '../lib/passkeys'
+import { FONTS } from '../lib/config/fonts'
+
+const CYAN  = '#4df9ed'
+const MUTED = '#999999'
 
 function formatCountdown(seconds: number): string {
   const m = Math.floor(seconds / 60)
@@ -103,7 +110,7 @@ function OtpBox({
   return (
     <View
       className={[
-        'flex-1 h-14 rounded-xl items-center justify-center border-[1.5px]',
+        'flex-1 h-16 rounded-2xl items-center justify-center border-[1.5px]',
         locked    ? 'border-orange-400/40  bg-orange-400/5'   :
         hasError  ? 'border-error          bg-error-dim'      :
         focused   ? 'border-cyan           bg-cyan-glow'      :
@@ -113,15 +120,16 @@ function OtpBox({
     >
       {value ? (
         <Text
-          className={`text-[22px] font-bold ${
+          className={`text-[26px] ${
             locked ? 'text-orange-400/60' : hasError ? 'text-error' : 'text-ink-primary'
           }`}
+          style={{ fontFamily: FONTS.spartan.bold }}
         >
           {value}
         </Text>
       ) : focused && !locked ? (
         <Animated.View
-          className="w-0.5 h-6 rounded-sm bg-cyan"
+          className="w-0.5 h-7 rounded-sm bg-cyan"
           style={{ opacity: pulse }}
         />
       ) : null}
@@ -164,15 +172,16 @@ function ResendTimer({
 
   if (seconds > 0) {
     return (
-      <Text className="text-[13px] text-ink-muted">
-        Resend code in <Text className="text-cyan">{seconds}s</Text>
+      <Text className="text-[14px] text-ink-muted">
+        Resend code in <Text className="text-cyan" style={{ fontVariant: ['tabular-nums'] }}>{seconds}s</Text>
       </Text>
     )
   }
 
   return (
-    <TouchableOpacity onPress={handleResend} disabled={resending}>
-      <Text className="text-[13px] text-cyan">
+    <TouchableOpacity onPress={handleResend} disabled={resending} className="flex-row items-center gap-1.5 py-2 px-3">
+      <MaterialIcons name="refresh" size={16} color={CYAN} />
+      <Text className="text-[14px] text-cyan" style={{ fontFamily: FONTS.spartan.semiBold }}>
         {resending ? 'Sending…' : 'Resend code'}
       </Text>
     </TouchableOpacity>
@@ -199,7 +208,7 @@ function LockBanner({
       <MotiView
         from={{ opacity: 0, translateY: -4 }}
         animate={{ opacity: 1, translateY: 0 }}
-        className="rounded-xl px-4 py-3 mt-3"
+        className="rounded-2xl px-4 py-3.5 mt-4"
         style={{
           backgroundColor: 'rgba(239,68,68,0.08)',
           borderWidth:      1,
@@ -227,7 +236,7 @@ function LockBanner({
             <TouchableOpacity
               onPress={onRequestReset}
               disabled={resetState === 'sending'}
-              className="rounded-lg py-2.5 items-center flex-row justify-center gap-2"
+              className="rounded-xl py-3 items-center flex-row justify-center gap-2"
               style={{
                 backgroundColor: 'rgba(239,68,68,0.16)',
                 borderWidth:     1,
@@ -256,7 +265,7 @@ function LockBanner({
     <MotiView
       from={{ opacity: 0, translateY: -4 }}
       animate={{ opacity: 1, translateY: 0 }}
-      className="rounded-xl px-4 py-3 mt-3 flex-row items-center justify-between gap-4"
+      className="rounded-2xl px-4 py-3.5 mt-4 flex-row items-center justify-between gap-4"
       style={{
         backgroundColor: 'rgba(251,146,60,0.08)',
         borderWidth:      1,
@@ -279,12 +288,75 @@ function LockBanner({
   )
 }
 
-function BackRow({ label, onPress }: { label: string; onPress: () => void }) {
+function BackButton({ onPress }: { onPress: () => void }) {
   return (
-    <TouchableOpacity onPress={onPress} className="flex-row items-center gap-1 mb-3.5">
-      <MaterialIcons name="arrow-back" size={14} color="#4df9ed" />
-      <Text className="text-xs text-cyan">{label}</Text>
+    <TouchableOpacity
+      onPress={onPress}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel="Go back"
+      className="w-11 h-11 rounded-full items-center justify-center border border-surface-border bg-surface-card"
+    >
+      <MaterialIcons name="arrow-back" size={20} color="#ffffff" />
     </TouchableOpacity>
+  )
+}
+
+/** Segmented progress. Drivers take three steps, everyone else two. */
+function StepBar({ index, total }: { index: number; total: number }) {
+  return (
+    <View className="flex-row items-center gap-1.5">
+      {[...Array(total)].map((_, i) => (
+        <View
+          key={i}
+          className={`h-1.5 rounded-full ${
+            i === index ? 'w-7 bg-cyan' : i < index ? 'w-3 bg-cyan-border' : 'w-3 bg-surface-border'
+          }`}
+        />
+      ))}
+    </View>
+  )
+}
+
+/** The address being signed in as, with a one-tap way to use a different one. */
+function EmailChip({ email, onChange }: { email: string; onChange: () => void }) {
+  return (
+    <View className="flex-row items-center gap-3 rounded-2xl border border-surface-border bg-surface-raised pl-2 pr-1.5 py-2 mb-6">
+      <View className="w-9 h-9 rounded-full items-center justify-center bg-cyan-dim border border-cyan-border">
+        <Text className="text-[15px] text-cyan" style={{ fontFamily: FONTS.spartan.bold }}>
+          {email.charAt(0).toUpperCase()}
+        </Text>
+      </View>
+      <Text numberOfLines={1} className="flex-1 text-[14px] text-ink-secondary">
+        {email}
+      </Text>
+      <TouchableOpacity onPress={onChange} hitSlop={6} className="rounded-xl px-3 py-2 bg-surface-elevated">
+        <Text className="text-[13px] text-cyan" style={{ fontFamily: FONTS.spartan.semiBold }}>Change</Text>
+      </TouchableOpacity>
+    </View>
+  )
+}
+
+function StepHeading({ title, subtitle }: { title: string; subtitle?: string }) {
+  return (
+    <>
+      <Text className="text-[30px] leading-[34px] mb-2 text-ink-primary" style={{ fontFamily: FONTS.spartan.bold }}>
+        {title}
+      </Text>
+      {subtitle ? (
+        <Text className="text-[15px] leading-[22px] mb-6 text-ink-muted">{subtitle}</Text>
+      ) : (
+        <View className="h-3" />
+      )}
+    </>
+  )
+}
+
+function FieldLabel({ children }: { children: string }) {
+  return (
+    <Text className="text-[13px] mb-2 text-ink-secondary" style={{ fontFamily: FONTS.spartan.semiBold }}>
+      {children}
+    </Text>
   )
 }
 
@@ -293,22 +365,30 @@ function ErrorRow({ message, center }: { message: string; center?: boolean }) {
     <MotiView
       from={{ opacity: 0, translateY: -4 }}
       animate={{ opacity: 1, translateY: 0 }}
-      className={`flex-row items-center gap-1.5 mt-1.5 mb-0.5 ${center ? 'justify-center mt-3' : ''}`}
+      className={`flex-row items-center gap-1.5 mt-2 mb-0.5 ${center ? 'justify-center mt-4' : ''}`}
     >
-      <MaterialIcons name="error-outline" size={13} color="#ff4d4d" />
-      <Text className="text-xs text-error flex-1">{message}</Text>
+      <MaterialIcons name="error-outline" size={15} color="#ff4d4d" />
+      <Text className={`text-[13px] text-error ${center ? '' : 'flex-1'}`}>{message}</Text>
     </MotiView>
   )
 }
 
-function InputWrap({ hasError, children }: { hasError: boolean; children: React.ReactNode }) {
+function InputWrap({
+  hasError,
+  focused,
+  children,
+}: {
+  hasError: boolean
+  focused?: boolean
+  children: React.ReactNode
+}) {
   return (
     <View
       className={[
-        'flex-row items-center rounded-xl border px-3.5 h-[52px] mb-1',
-        hasError
-          ? 'border-error bg-error-dim'
-          : 'border-surface-border bg-surface-raised',
+        'flex-row items-center rounded-2xl border-[1.5px] px-4 h-[58px] mb-1',
+        hasError ? 'border-error bg-error-dim'           :
+        focused  ? 'border-cyan bg-cyan-glow'            :
+                   'border-surface-border bg-surface-raised',
       ].join(' ')}
     >
       {children}
@@ -334,18 +414,28 @@ function SubmitButton({
       onPress={onPress}
       disabled={loading || disabled}
       activeOpacity={0.85}
-      className={`flex-row items-center justify-center gap-2 bg-cyan rounded-xl h-[52px] mt-5 ${
-        loading || disabled ? 'opacity-60' : 'opacity-100'
-      }`}
+      className={`flex-row items-center justify-center gap-2 rounded-2xl h-[58px] mt-5 ${
+        disabled ? 'bg-surface-elevated' : 'bg-cyan'
+      } ${loading ? 'opacity-70' : 'opacity-100'}`}
+      style={disabled ? undefined : {
+        shadowColor:   CYAN,
+        shadowOpacity: 0.35,
+        shadowRadius:  16,
+        shadowOffset:  { width: 0, height: 6 },
+        elevation:     6,
+      }}
     >
       {loading ? (
         <ActivityIndicator size="small" color="#080808" />
       ) : (
         <>
-          <Text className="text-[15px] font-extrabold tracking-wide text-surface-bg">
+          <Text
+            className={`text-[17px] ${disabled ? 'text-ink-disabled' : 'text-surface-bg'}`}
+            style={{ fontFamily: FONTS.spartan.bold }}
+          >
             {label}
           </Text>
-          <MaterialIcons name={icon} size={16} color="#080808" />
+          <MaterialIcons name={icon} size={20} color={disabled ? '#555555' : '#080808'} />
         </>
       )}
     </TouchableOpacity>
@@ -372,20 +462,43 @@ function MethodCard({
       onPress={onPress}
       disabled={loading || disabled}
       activeOpacity={0.8}
-      className="flex-row items-center gap-4 rounded-xl border border-surface-border bg-surface-raised p-4 mb-3"
+      className={`flex-row items-center gap-4 rounded-2xl border-[1.5px] p-4 min-h-[84px] mb-3 ${
+        loading ? 'border-cyan bg-cyan-glow' : 'border-surface-border bg-surface-raised'
+      }`}
+      style={{ opacity: disabled && !loading ? 0.6 : 1 }}
     >
-      <View className="w-10 h-10 rounded-xl items-center justify-center bg-cyan-dim">
-        <MaterialIcons name={icon} size={20} color="#4df9ed" />
+      <View className="w-12 h-12 rounded-2xl items-center justify-center bg-cyan-dim border border-cyan-border">
+        <MaterialIcons name={icon} size={24} color={CYAN} />
       </View>
       <View className="flex-1">
-        <Text className="text-[15px] font-semibold text-ink-primary mb-0.5">{title}</Text>
-        <Text className="text-[12px] text-ink-muted">{subtitle}</Text>
+        <Text className="text-[17px] text-ink-primary mb-0.5" style={{ fontFamily: FONTS.spartan.semiBold }}>
+          {title}
+        </Text>
+        <Text className="text-[13px] leading-[18px] text-ink-muted">{subtitle}</Text>
       </View>
       {loading
-        ? <ActivityIndicator size="small" color="#4df9ed" />
-        : <MaterialIcons name="chevron-right" size={20} color="#818181" />
+        ? <ActivityIndicator size="small" color={CYAN} />
+        : <MaterialIcons name="chevron-right" size={24} color="#818181" />
       }
     </TouchableOpacity>
+  )
+}
+
+/** Soft cyan light behind the logo — the only decoration on the screen. */
+function Backdrop() {
+  return (
+    <View className="absolute inset-0" pointerEvents="none">
+      <Svg width="100%" height="100%">
+        <Defs>
+          <RadialGradient id="signInGlow" cx="50%" cy="8%" rx="85%" ry="45%">
+            <Stop offset="0"   stopColor={CYAN} stopOpacity="0.16" />
+            <Stop offset="0.6" stopColor={CYAN} stopOpacity="0.03" />
+            <Stop offset="1"   stopColor={CYAN} stopOpacity="0" />
+          </RadialGradient>
+        </Defs>
+        <Rect x="0" y="0" width="100%" height="100%" fill="url(#signInGlow)" />
+      </Svg>
+    </View>
   )
 }
 
@@ -421,6 +534,7 @@ export default function SignInScreen() {
   const [otp,      setOtp]      = useState('')
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
+  const [focusedField, setFocusedField] = useState<'email' | 'password' | null>(null)
   const [loading,  setLoading]  = useState(false)
   // Whether to offer passkey sign-in at all. Computed once: it depends only on
   // the OS and the build, neither of which changes while the screen is open.
@@ -736,85 +850,112 @@ export default function SignInScreen() {
     if (step === 'password') setStep('method')
   }
 
+  /** From any later step, straight back to the email field. */
+  const handleChangeEmail = () => {
+    setError(null)
+    setOtp('')
+    setPassword('')
+    setResetState('idle')
+    setStep('email')
+    setTimeout(() => emailRef.current?.focus(), 350)
+  }
+
   const hasOtpError = !!error && step === 'otp'    && lockState === 'none'
   const isLocked    = lockState !== 'none'
+
+  const stepTotal = role && role !== 'driver' ? 2 : 3
+  const stepIndex =
+    step === 'email'  ? 0 :
+    step === 'method' ? 1 :
+    step === 'otp'    ? (role === 'driver' ? 2 : 1) :
+                        2
+
+  const slide = (key: string, dir: 1 | -1 = 1) => ({
+    key,
+    from:       { opacity: 0, translateX: 16 * dir },
+    animate:    { opacity: 1, translateX: 0 },
+    exit:       { opacity: 0, translateX: -16 * dir },
+    transition: { type: 'timing' as const, duration: 240 },
+  })
 
   return (
     <View
       className="flex-1 bg-surface-bg"
       style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
     >
-      <View className="absolute inset-0" pointerEvents="none">
-        {[...Array(8)].map((_, i) => (
-          <View
-            key={i}
-            className="absolute left-0 right-0 h-px bg-white/[0.025]"
-            style={{ top: `${(i + 1) * 12}%` as any }}
-          />
-        ))}
-      </View>
-
-      <View className="absolute top-0 left-0 w-[120px] h-[120px] border-t border-l border-cyan-accent" pointerEvents="none" />
-      <View className="absolute bottom-0 right-0 w-[120px] h-[120px] border-b border-r border-cyan-accent" pointerEvents="none" />
+      <Backdrop />
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
-        <View className="flex-1 justify-center px-6">
+        <ScrollView
+          contentContainerStyle={{ flexGrow: 1 }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
+        <View className="flex-1 px-6 pb-6">
+
+        {/* Top bar: back on the left, progress on the right. Fixed height so the
+            logo never jumps when the back button appears. */}
+        <View className="h-14 flex-row items-center justify-between">
+          {step !== 'email' ? <BackButton onPress={handleBack} /> : <View className="w-11" />}
+          <StepBar index={stepIndex} total={stepTotal} />
+        </View>
 
         <MotiView
-          from={{ opacity: 0, translateY: -16 }}
+          from={{ opacity: 0, translateY: -12 }}
           animate={{ opacity: 1, translateY: 0 }}
           transition={{ type: 'timing', duration: 600 }}
-          className="items-center mb-9"
+          className="items-center mt-6"
         >
-          <View className="w-12 h-12 rounded-[14px] items-center justify-center mb-3.5 border border-cyan-border bg-cyan-dim">
-            <View className="w-5 h-5 rounded-[5px] opacity-90 bg-cyan" />
+          <Image
+            source={require('../assets/Final_Logo.png')}
+            style={{ width: 232, height: undefined, aspectRatio: 3.92 }}
+            resizeMode="contain"
+            accessibilityLabel="8338 Logistics Services"
+          />
+          <View className="flex-row items-center gap-1.5 mt-5 rounded-full px-3 py-1.5 border border-cyan-border bg-cyan-glow">
+            <MaterialIcons name="local-shipping" size={14} color={CYAN} />
+            <Text className="text-[12px] tracking-[1.5px] text-cyan" style={{ fontFamily: FONTS.spartan.semiBold }}>
+              DRIVER APP
+            </Text>
           </View>
-          <Text className="text-[17px] font-extrabold tracking-[4px] mb-1 text-ink-primary">
-            8338 LOGISTICS
-          </Text>
-          <Text className="text-[11px] tracking-[2px] uppercase text-ink-muted">
-            Fleet · Routes · Delivery
-          </Text>
         </MotiView>
+
+        {/* Pushes the form down into thumb reach on tall phones. */}
+        <View className="flex-1 min-h-[32px]" />
 
         <MotiView
           from={{ opacity: 0, translateY: 24 }}
           animate={{ opacity: 1, translateY: 0 }}
           transition={{ type: 'timing', duration: 500, delay: 150 }}
-          className="rounded-[20px] border border-surface-border bg-surface-card overflow-hidden p-6 pt-0"
         >
-          <View className="h-0.5 -mx-px mb-6 opacity-70 bg-cyan" />
-
           <AnimatePresence exitBeforeEnter>
 
             {step === 'email' && (
-              <MotiView
-                key="email"
-                from={{ opacity: 0, translateX: -12 }}
-                animate={{ opacity: 1, translateX: 0 }}
-                exit={{ opacity: 0, translateX: 12 }}
-                transition={{ type: 'timing', duration: 250 }}
-              >
-                <Text className="text-[22px] font-bold tracking-tight mb-1.5 text-ink-primary">
-                  Sign In
-                </Text>
-                <Text className="text-[13px] leading-5 mb-6 text-ink-muted">
-                  Enter your email to continue
-                </Text>
+              <MotiView {...slide('email', -1)}>
+                <StepHeading
+                  title="Sign in"
+                  subtitle="Enter your work email to get started."
+                />
 
-                <Text className="text-[11px] font-semibold tracking-[1px] uppercase mb-2 text-ink-muted">
-                  Email address
-                </Text>
-                <InputWrap hasError={!!error}>
-                  <MaterialIcons name="mail-outline" size={16} color="#999999" style={{ marginRight: 10 }} />
+                <FieldLabel>Email address</FieldLabel>
+                <InputWrap hasError={!!error} focused={focusedField === 'email'}>
+                  <MaterialIcons
+                    name="mail-outline"
+                    size={20}
+                    color={focusedField === 'email' ? CYAN : MUTED}
+                    style={{ marginRight: 12 }}
+                  />
                   <TextInput
                     ref={emailRef}
                     value={email}
                     onChangeText={t => { setEmail(t); setError(null) }}
+                    onFocus={() => setFocusedField('email')}
+                    onBlur={() => setFocusedField(null)}
                     placeholder="you@company.com"
                     placeholderTextColor="#555555"
                     keyboardType="email-address"
@@ -823,8 +964,8 @@ export default function SignInScreen() {
                     autoComplete="email"
                     returnKeyType="go"
                     onSubmitEditing={handleEmailSubmit}
-                    className="flex-1 text-[15px] py-0 text-ink-primary"
-                    selectionColor="#4df9ed"
+                    className="flex-1 text-[16px] py-0 text-ink-primary"
+                    selectionColor={CYAN}
                   />
                 </InputWrap>
 
@@ -847,20 +988,18 @@ export default function SignInScreen() {
                   <>
                     <View className="flex-row items-center my-5">
                       <View className="flex-1 h-px bg-white/10" />
-                      <Text className="text-[10px] tracking-[1.5px] uppercase mx-3 text-ink-muted">
-                        or
-                      </Text>
+                      <Text className="text-[12px] mx-3 text-ink-faint">or</Text>
                       <View className="flex-1 h-px bg-white/10" />
                     </View>
 
                     <Pressable
                       onPress={handlePasskeySignIn}
                       disabled={loading}
-                      className="flex-row items-center justify-center py-3.5 rounded-xl border border-cyan/40"
-                      style={{ opacity: loading ? 0.6 : 1 }}
+                      className="flex-row items-center justify-center h-[58px] rounded-2xl border-[1.5px] border-cyan-border bg-cyan-glow"
+                      style={({ pressed }) => ({ opacity: loading ? 0.6 : pressed ? 0.8 : 1 })}
                     >
-                      <MaterialIcons name="fingerprint" size={18} color="#4df9ed" style={{ marginRight: 8 }} />
-                      <Text className="text-[13px] font-bold tracking-[0.5px] text-cyan">
+                      <MaterialIcons name="fingerprint" size={24} color={CYAN} style={{ marginRight: 10 }} />
+                      <Text className="text-[16px] text-cyan" style={{ fontFamily: FONTS.spartan.semiBold }}>
                         Sign in with a passkey
                       </Text>
                     </Pressable>
@@ -870,33 +1009,21 @@ export default function SignInScreen() {
             )}
 
             {step === 'method' && (
-              <MotiView
-                key="method"
-                from={{ opacity: 0, translateX: 12 }}
-                animate={{ opacity: 1, translateX: 0 }}
-                exit={{ opacity: 0, translateX: -12 }}
-                transition={{ type: 'timing', duration: 250 }}
-              >
-                <BackRow label="Change email" onPress={handleBack} />
-                <Text className="text-[22px] font-bold tracking-tight mb-1.5 text-ink-primary">
-                  How to sign in?
-                </Text>
-                <Text className="text-[13px] leading-5 mb-6 text-ink-muted">
-                  Choose your preferred sign in method for{'\n'}
-                  <Text className="text-cyan">{email}</Text>
-                </Text>
+              <MotiView {...slide('method')}>
+                <StepHeading title="How do you want to sign in?" />
+                <EmailChip email={email} onChange={handleChangeEmail} />
 
                 <MethodCard
-                  icon="mail-outline"
-                  title="Email OTP"
-                  subtitle="We'll send a 6-digit code to your email"
+                  icon="mark-email-read"
+                  title="Email me a code"
+                  subtitle="We'll send a 6-digit code to your inbox"
                   onPress={() => handleMethodSelect('otp')}
                   loading={loading && method === 'otp'}
                   disabled={loading}
                 />
                 <MethodCard
-                  icon="lock-outline"
-                  title="Password"
+                  icon="password"
+                  title="Use my password"
                   subtitle="Sign in with your account password"
                   onPress={() => handleMethodSelect('password')}
                   disabled={loading}
@@ -907,24 +1034,9 @@ export default function SignInScreen() {
             )}
 
             {step === 'otp' && (
-              <MotiView
-                key="otp"
-                from={{ opacity: 0, translateX: 12 }}
-                animate={{ opacity: 1, translateX: 0 }}
-                exit={{ opacity: 0, translateX: -12 }}
-                transition={{ type: 'timing', duration: 250 }}
-              >
-                <BackRow
-                  label={role === 'driver' ? 'Change method' : 'Change email'}
-                  onPress={handleBack}
-                />
-                <Text className="text-[22px] font-bold tracking-tight mb-1.5 text-ink-primary">
-                  Check your email
-                </Text>
-                <Text className="text-[13px] leading-5 mb-7 text-ink-muted">
-                  We sent a 6-digit code to{'\n'}
-                  <Text className="text-cyan">{email}</Text>
-                </Text>
+              <MotiView {...slide('otp')}>
+                <StepHeading title="Enter your code" subtitle="We emailed a 6-digit code to" />
+                <EmailChip email={email} onChange={handleChangeEmail} />
 
                 <TextInput
                   ref={otpRef}
@@ -973,20 +1085,20 @@ export default function SignInScreen() {
                   <MotiView
                     from={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    className="flex-row items-center justify-center gap-2 mt-4"
+                    className="flex-row items-center justify-center gap-2 mt-5"
                   >
-                    <ActivityIndicator size="small" color="#4df9ed" />
-                    <Text className="text-[13px] text-cyan">Verifying…</Text>
+                    <ActivityIndicator size="small" color={CYAN} />
+                    <Text className="text-[14px] text-cyan">Verifying…</Text>
                   </MotiView>
                 )}
 
-                <View className="items-center mt-5">
+                <View className="items-center mt-4">
                   <ResendTimer email={email} disabled={isLocked} />
                 </View>
 
                 {otp.length === 6 && !loading && !isLocked && (
                   <SubmitButton
-                    label="Verify Code"
+                    label="Verify code"
                     icon="check"
                     onPress={() => handleOtpSubmit(otp)}
                   />
@@ -1004,30 +1116,24 @@ export default function SignInScreen() {
             )}
 
             {step === 'password' && (
-              <MotiView
-                key="password"
-                from={{ opacity: 0, translateX: 12 }}
-                animate={{ opacity: 1, translateX: 0 }}
-                exit={{ opacity: 0, translateX: -12 }}
-                transition={{ type: 'timing', duration: 250 }}
-              >
-                <BackRow label="Change method" onPress={handleBack} />
-                <Text className="text-[22px] font-bold tracking-tight mb-1.5 text-ink-primary">
-                  Enter password
-                </Text>
-                <Text className="text-[13px] leading-5 mb-6 text-ink-muted">
-                  Signing in as <Text className="text-cyan">{email}</Text>
-                </Text>
+              <MotiView {...slide('password')}>
+                <StepHeading title="Enter your password" />
+                <EmailChip email={email} onChange={handleChangeEmail} />
 
-                <Text className="text-[11px] font-semibold tracking-[1px] uppercase mb-2 text-ink-muted">
-                  Password
-                </Text>
-                <InputWrap hasError={!!error && !isLocked}>
-                  <MaterialIcons name="lock-outline" size={16} color="#999999" style={{ marginRight: 10 }} />
+                <FieldLabel>Password</FieldLabel>
+                <InputWrap hasError={!!error && !isLocked} focused={focusedField === 'password'}>
+                  <MaterialIcons
+                    name="lock-outline"
+                    size={20}
+                    color={focusedField === 'password' ? CYAN : MUTED}
+                    style={{ marginRight: 12 }}
+                  />
                   <TextInput
                     ref={passwordRef}
                     value={password}
                     onChangeText={t => { setPassword(t); setError(null) }}
+                    onFocus={() => setFocusedField('password')}
+                    onBlur={() => setFocusedField(null)}
                     placeholder="Your password"
                     placeholderTextColor="#555555"
                     secureTextEntry={!showPass}
@@ -1036,16 +1142,21 @@ export default function SignInScreen() {
                     autoComplete="password"
                     returnKeyType="go"
                     onSubmitEditing={handlePasswordSubmit}
-                    className="flex-1 text-[15px] py-0 text-ink-primary"
-                    selectionColor="#4df9ed"
+                    className="flex-1 text-[16px] py-0 text-ink-primary"
+                    selectionColor={CYAN}
                     editable={!isLocked}
                   />
                   {!isLocked && (
-                    <TouchableOpacity onPress={() => setShowPass(v => !v)} className="p-1">
+                    <TouchableOpacity
+                      onPress={() => setShowPass(v => !v)}
+                      hitSlop={10}
+                      className="p-1.5"
+                      accessibilityLabel={showPass ? 'Hide password' : 'Show password'}
+                    >
                       <MaterialIcons
                         name={showPass ? 'visibility-off' : 'visibility'}
-                        size={18}
-                        color="#999999"
+                        size={22}
+                        color={MUTED}
                       />
                     </TouchableOpacity>
                   )}
@@ -1064,7 +1175,7 @@ export default function SignInScreen() {
                 )}
 
                 <SubmitButton
-                  label={isLocked ? 'Locked' : 'Sign In'}
+                  label={isLocked ? 'Locked' : 'Sign in'}
                   icon={isLocked ? 'lock' : 'arrow-forward'}
                   onPress={handlePasswordSubmit}
                   loading={loading}
@@ -1074,16 +1185,19 @@ export default function SignInScreen() {
                 {/* A locked account already shows the request button inside LockBanner. */}
                 {lockState !== 'permanent' && (
                   resetState === 'sent' ? (
-                    <Text className="text-[12px] leading-5 text-center mt-4 text-ink-secondary">
-                      Your {approverLabel(role)} has been notified. Check your email for the reset link.
-                    </Text>
+                    <View className="flex-row items-start gap-2 rounded-2xl px-4 py-3 mt-4 bg-surface-raised border border-surface-border">
+                      <MaterialIcons name="mark-email-read" size={16} color={CYAN} style={{ marginTop: 2 }} />
+                      <Text className="flex-1 text-[13px] leading-5 text-ink-secondary">
+                        Your {approverLabel(role)} has been notified. Check your email for the reset link.
+                      </Text>
+                    </View>
                   ) : (
                     <TouchableOpacity
                       onPress={handleRequestReset}
                       disabled={resetState === 'sending'}
-                      className="mt-4 items-center"
+                      className="mt-3 py-3 items-center"
                     >
-                      <Text className="text-[13px] text-cyan">
+                      <Text className="text-[14px] text-cyan" style={{ fontFamily: FONTS.spartan.semiBold }}>
                         {resetState === 'sending' ? 'Requesting…' : 'Forgot password?'}
                       </Text>
                     </TouchableOpacity>
@@ -1099,16 +1213,16 @@ export default function SignInScreen() {
           from={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ type: 'timing', duration: 600, delay: 400 }}
-          className="flex-row items-center justify-center gap-2.5 mt-8"
+          className="flex-row items-center justify-center gap-1.5 mt-8"
         >
-          <View className="w-[3px] h-[3px] rounded-sm bg-ink-faint" />
-          <Text className="text-[11px] tracking-[1.5px] uppercase text-ink-faint">
-            {step === 'password' ? 'Secure · Password Auth' : 'Secure · Password · OTP'}
+          <MaterialIcons name="verified-user" size={13} color="#818181" />
+          <Text className="text-[12px] text-ink-faint">
+            8338 Logistics Services
           </Text>
-          <View className="w-[3px] h-[3px] rounded-sm bg-ink-faint" />
         </MotiView>
 
         </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </View>
   )
