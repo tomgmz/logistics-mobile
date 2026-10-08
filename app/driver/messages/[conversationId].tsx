@@ -372,8 +372,14 @@ export default function DmChatScreen() {
   const [otherLastReadAt, setOtherLastReadAt] = useState<string | null>(null)
 
   const listRef     = useRef<FlatList>(null)
+  const inputRef    = useRef<TextInput>(null)
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingIds  = useRef<Set<string>>(new Set())
+  // Synchronous send lock — `sending` state lags a render, so a fast double tap got through.
+  const sendingRef  = useRef(false)
+  // Android keyboards (Gboard) re-commit their in-progress word after the input is cleared,
+  // which put the just-sent text back in the box and invited a second send.
+  const lastSent    = useRef<{ body: string; at: number } | null>(null)
   const meTypingRef    = useRef(false)
   const meTypingTimer  = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -482,7 +488,13 @@ export default function DmChatScreen() {
 
   const handleSend = async () => {
     const body = text.trim()
-    if (!body) return
+    if (!body || sendingRef.current) return
+    if (lastSent.current && lastSent.current.body === body && Date.now() - lastSent.current.at < 2000) {
+      clearInput()
+      return
+    }
+    sendingRef.current = true
+    lastSent.current = { body, at: Date.now() }
 
     const oid = `optimistic-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const replyToId = replyTo?.id
@@ -497,7 +509,7 @@ export default function DmChatScreen() {
       reactions:       [],
     }
     setMessages(prev => [...prev, optimistic])
-    setText('')
+    clearInput()
     setReplyTo(null)
     if (meTypingTimer.current) clearTimeout(meTypingTimer.current)
     stopMeTyping()
@@ -522,7 +534,15 @@ export default function DmChatScreen() {
     } catch {
       pendingIds.current.delete(oid)
       setMessages(prev => prev.filter(m => m.id !== oid))
-    } finally { setSending(false) }
+    } finally {
+      sendingRef.current = false
+      setSending(false)
+    }
+  }
+
+  const clearInput = () => {
+    setText('')
+    inputRef.current?.clear()
   }
 
   const handleReact = async (messageId: string, emoji: string) => {
@@ -559,6 +579,12 @@ export default function DmChatScreen() {
   }, [broadcastTyping])
 
   const handleChangeText = (val: string) => {
+    const recent = lastSent.current
+    if (recent && Date.now() - recent.at < 1500 && val.trim() === recent.body) {
+      // The keyboard echoing the message we just sent — drop it.
+      clearInput()
+      return
+    }
     setText(val)
     if (val.trim() && !meTypingRef.current) { meTypingRef.current = true; broadcastTyping(true) }
     else if (!val.trim()) stopMeTyping()
@@ -689,6 +715,7 @@ export default function DmChatScreen() {
             <Smile size={22} color={emojiOpen ? C.cyan : C.muted} />
           </TouchableOpacity>
           <TextInput
+            ref={inputRef}
             value={text}
             onChangeText={handleChangeText}
             onFocus={() => setEmojiOpen(false)}
