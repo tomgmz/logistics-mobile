@@ -15,7 +15,7 @@ import { MotiView, AnimatePresence } from 'moti'
 import { MaterialIcons } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller'
-import Svg, { Circle, Defs, G, LinearGradient, Path, Rect, Stop } from 'react-native-svg'
+import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg'
 
 import {
   getAuthStatus,
@@ -511,36 +511,6 @@ function HeroBackdrop() {
   )
 }
 
-// MaterialIcons "local-shipping", inlined so it can sit inside the SVG scene.
-const TRUCK_PATH =
-  'M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4z' +
-  'M6 18.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z' +
-  'm13.5-9l1.96 2.5H17V9.5h2.5zm-1.5 9c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z'
-
-/** A route from pickup to drop-off with the truck midway, drawn over the map. */
-function HeroArt() {
-  return (
-    <Svg width="100%" height={104} viewBox="0 0 360 150" preserveAspectRatio="xMidYMid slice">
-      {/* The road: a soft wide glow under a dashed line. */}
-      <Path d="M24 128 C 90 128, 90 82, 160 82 S 250 40, 330 30" stroke={CYAN} strokeOpacity={0.12} strokeWidth={14} strokeLinecap="round" fill="none" />
-      <Path d="M24 128 C 90 128, 90 82, 160 82 S 250 40, 330 30" stroke={CYAN} strokeOpacity={0.85} strokeWidth={3} strokeDasharray="1 9" strokeLinecap="round" fill="none" />
-
-      {/* Pickup, a stop, and the drop-off. */}
-      <Circle cx={24}  cy={128} r={9}  fill="#000000" stroke={CYAN} strokeWidth={3} />
-      <Circle cx={160} cy={82}  r={6}  fill={CYAN} fillOpacity={0.9} />
-      <Circle cx={330} cy={30}  r={16} fill={CYAN} fillOpacity={0.15} />
-      <Circle cx={330} cy={30}  r={8}  fill={CYAN} />
-
-      {/* The truck, on the road between the stop and the drop-off. */}
-      <Circle cx={238} cy={58} r={22} fill={CYAN} />
-      <Circle cx={238} cy={58} r={29} fill="none" stroke={CYAN} strokeOpacity={0.3} strokeWidth={2} />
-      <G transform="translate(223.6 43.6) scale(1.2)">
-        <Path d={TRUCK_PATH} fill="#000000" />
-      </G>
-    </Svg>
-  )
-}
-
 function useLockCountdown(
   lockState:     LockState,
   lockExpiresAt: React.MutableRefObject<number>,
@@ -974,14 +944,9 @@ export default function SignInScreen() {
             </Text>
           </MotiView>
 
-          <MotiView
-            from={{ opacity: 0, translateX: -24 }}
-            animate={{ opacity: 1, translateX: 0 }}
-            transition={{ type: 'timing', duration: 700, delay: 200 }}
-            className="mt-1 pb-8"
-          >
-            <HeroArt />
-          </MotiView>
+          {/* Keeps the hero at its full height, with the map showing through,
+              now that it carries no route drawing (mt-1 + 104 + pb-8). */}
+          <View style={{ height: 140 }} />
         </View>
 
         {/* ── Sheet ────────────────────────────────────────────────────── */}
