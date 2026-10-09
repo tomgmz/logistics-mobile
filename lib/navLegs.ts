@@ -44,7 +44,13 @@ export interface NavPlan {
 const hasCoords = (lat?: number | null, lng?: number | null) =>
   lat != null && lng != null
 
-export function buildNavPlan(booking: BookingLike, trips: Trip[]): NavPlan {
+/**
+ * `stopOrder` is the driver's own choice of drop-off order for the current run
+ * (lib/stopOrder), as trip stop ids. Stops it doesn't name keep ops' order after
+ * the ones it does. Numbering always follows ops' order, so a drop-off keeps its
+ * number whichever order the driver works them in.
+ */
+export function buildNavPlan(booking: BookingLike, trips: Trip[], stopOrder?: string[] | null): NavPlan {
   const trip     = currentTrip(trips)
   const shuttle  = isMultiTrip(trips)
   // Only worth saying on a booking that really is a shuttle — labelling a
@@ -94,11 +100,22 @@ export function buildNavPlan(booking: BookingLike, trips: Trip[]): NavPlan {
     })
   }
 
-  const pending = [...(trip.booking_trip_stops ?? [])]
+  const opsOrder = [...(trip.booking_trip_stops ?? [])]
     .filter((s) => s.status === 'pending')
     .sort((a, b) => a.sequence_order - b.sequence_order)
+  const numberOf = new Map(opsOrder.map((s, i) => [s.trip_stop_id, i + 1]))
 
-  pending.forEach((stop, i) => {
+  const rank = (id: string) => {
+    const at = stopOrder?.indexOf(id) ?? -1
+    return at === -1 ? Number.MAX_SAFE_INTEGER : at
+  }
+  // Stable sort, so stops the driver's order doesn't name stay in ops' order.
+  const pending = stopOrder?.length
+    ? [...opsOrder].sort((a, b) => rank(a.trip_stop_id) - rank(b.trip_stop_id))
+    : opsOrder
+
+  pending.forEach((stop) => {
+    const n = numberOf.get(stop.trip_stop_id)!
     const d = stop.booking_destinations
     if (!hasCoords(d?.latitude, d?.longitude)) return
 
@@ -116,9 +133,9 @@ export function buildNavPlan(booking: BookingLike, trips: Trip[]): NavPlan {
     })
     stops.push({
       kind:    'dropoff',
-      number:  i + 1,
-      label:   `Drop-off ${i + 1}`,
-      address: d!.address ?? `Drop-off ${i + 1}`,
+      number:  n,
+      label:   `Drop-off ${n}`,
+      address: d!.address ?? `Drop-off ${n}`,
       tripLabel,
     })
   })

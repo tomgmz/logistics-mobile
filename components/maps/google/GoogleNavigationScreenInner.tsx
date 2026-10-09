@@ -26,7 +26,9 @@ import {
 } from '../../../lib/tripProgress'
 import { buildNavPlan } from '../../../lib/navLegs'
 import { SosButton } from '../../reports/SosButton'
-import { fetchTripsWithCache, type Trip } from '../../../lib/trips'
+import { fetchTripsWithCache, currentTrip, type Trip } from '../../../lib/trips'
+import { saveStopOrder, loadStopOrder, clearStopOrders, moveEarlier } from '../../../lib/stopOrder'
+import { setNextStop } from '../../../lib/locationTracking'
 import { saveBookingCache, loadBookingCache, clearBookingCache } from '../../../lib/navCache'
 import {
   saveRouteGeometry,
@@ -576,7 +578,8 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
       tripsRef.current = trips
     } catch { /* keep what we have */ }
 
-    const plan = buildNavPlan(bookingRef.current ?? {}, trips)
+    const next = currentTrip(trips)
+    const plan = buildNavPlan(bookingRef.current ?? {}, trips, next ? await loadStopOrder(next.trip_id) : null)
 
     // No run left with anywhere to drive: the booking is done bar the tap.
     if (!plan.trip || plan.nothingToNavigate || plan.waypoints.length === 0) {
@@ -700,6 +703,90 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
     setProofFor({ idx, auto: true })
   }, [])
 
+  /**
+   * The driver picked drop-off `idx` to do next, ahead of the one guidance is
+   * heading for (see lib/stopOrder for why the driver gets this choice).
+   *
+   * The stop moves to the front of what is left of this run — straight after the
+   * pickup if the load isn't aboard yet — and the SDK is re-routed from there.
+   * Only drop-offs move: the pickup always comes first, and stops already
+   * confirmed stay where they are.
+   *
+   * Refused offline, because re-routing is a `setDestinations` call and offline
+   * that never settles (ROUTE_BUILD_TIMEOUT_MS) — the driver would be left on a
+   * route to the old stop with the sheet claiming the new one.
+   */
+  const chooseNextDropoff = useCallback(async (idx: number) => {
+    if (confirmingRef.current || applyingRef.current) return
+
+    const cur    = legIndexRef.current
+    const target = legsRef.current[cur]?.type === 'pickup' ? cur + 1 : cur
+    const leg    = legsRef.current[idx]
+    if (!leg || leg.type !== 'dropoff' || idx <= target) return
+
+    if (offlineRef.current && guidingRef.current) {
+      Alert.alert(
+        'Can’t change the order while offline',
+        'Navigation needs a connection to plan the new route. Try again once you have a signal.',
+      )
+      return
+    }
+
+    const before = {
+      waypoints: waypointsRef.current,
+      legs:      legsRef.current,
+      stops:     stopsRef.current,
+    }
+    const apply = (v: typeof before) => {
+      waypointsRef.current = v.waypoints
+      legsRef.current      = v.legs
+      stopsRef.current     = v.stops
+      setStops(v.stops)
+      updateNavSession({ waypoints: v.waypoints, legs: v.legs, stops: v.stops })
+    }
+
+    apply({
+      waypoints: moveEarlier(before.waypoints, idx, target),
+      legs:      moveEarlier(before.legs, idx, target),
+      stops:     moveEarlier(before.stops, idx, target),
+    })
+    setArrivedIdx(null)
+    // A route token encodes the order it was planned in; this is a different one.
+    useTokenRef.current = false
+
+    // Not guiding yet (the route is still being built): maybeBegin applies the
+    // new order when it gets there.
+    if (guidingRef.current) {
+      applyingRef.current = true
+      setRerouting(true)
+      try {
+        await Promise.race([
+          applyDestinations(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ROUTE_BUILD_TIMEOUT_MS)),
+        ])
+        captureRouteGeometry()
+      } catch (e) {
+        console.warn('[nav] re-ordering drop-offs failed:', e)
+        apply(before)
+        applyDestinations().catch(() => {})
+        setToggleError('Could not change the drop-off order. Please try again.')
+        return
+      } finally {
+        applyingRef.current = false
+        setTimeout(() => setRerouting(false), 1500)
+      }
+    }
+
+    const tripId = leg.tripId
+    saveStopOrder(
+      tripId,
+      legsRef.current.flatMap((l) => (l.type === 'dropoff' ? [l.tripStopId] : [])),
+    )
+    // Once the load is aboard, live tracking is closing on a stop; point it at
+    // the new one so the "arriving" tier fires for the right bay.
+    if (target === cur) setNextStop(legCoordinates(legsRef.current[cur])).catch(() => {})
+  }, [applyDestinations, captureRouteGeometry])
+
   /** Every drop-off confirmed — mark the whole booking delivered and wrap up. */
   const completeDelivery = useCallback(async () => {
     if (completedRef.current) return
@@ -710,6 +797,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
 
     clearBookingCache(bookingId)
     clearRouteGeometry(bookingId)
+    clearStopOrders(tripsRef.current.map((t) => t.trip_id))
     endNavSession()
     guidingRef.current = false
     navigationController.stopGuidance().catch(() => {})
@@ -959,7 +1047,10 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
         tripsRef.current   = trips
         bookingRef.current = booking
 
-        const plan = buildNavPlan(booking, trips)
+        // The driver may already have re-ordered this run's drop-offs before the
+        // app was closed; rebuild in their order, not ops'.
+        const trip = currentTrip(trips)
+        const plan = buildNavPlan(booking, trips, trip ? await loadStopOrder(trip.trip_id) : null)
 
         // Nothing left to drive to, but the booking is still open: every bay on
         // every run has been confirmed and only "Mark delivery as done" remains
@@ -1407,6 +1498,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
           distanceM={navInfo?.nextDistanceM}
           totalEtaSeconds={navInfo?.finalEtaS}
           onConfirmStop={(idx) => setProofFor({ idx, auto: false })}
+          onChooseNext={confirming || rerouting ? undefined : chooseNextDropoff}
         />
       )}
 

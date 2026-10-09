@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  Alert,
   Animated,
   PanResponder,
   Pressable,
@@ -12,7 +13,7 @@ import {
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import Svg, { ClipPath, Defs, G, Path, Rect } from 'react-native-svg'
-import { ChevronUp, Truck, Camera, Check } from 'lucide-react-native'
+import { ChevronUp, Truck, Camera, Check, CornerUpRight } from 'lucide-react-native'
 
 import { fmtDistance, fmtDuration } from '../../../utils/geo'
 import { FONTS } from '../../../lib/config/fonts'
@@ -91,6 +92,12 @@ interface Props {
   /** Opens the proof popup for a stop — the same one arrival detection opens. */
   onConfirmStop:    (index: number) => void
   /**
+   * Makes the drop-off at `index` the next one driven to. Undefined while the
+   * route can't be changed (a confirmation or reroute in progress), which hides
+   * the buttons.
+   */
+  onChooseNext?:    (index: number) => void
+  /**
    * Fires with the height the panel is heading for, whenever that changes — on
    * mount, on a drag or tap, and when the resting heights themselves move. The
    * navigation screen feeds it to the SDK's mapPadding so Google draws its own
@@ -120,6 +127,7 @@ export function GoogleNavSheet({
   distanceM,
   totalEtaSeconds,
   onConfirmStop,
+  onChooseNext,
   onRestingHeight,
 }: Props) {
   const insets = useSafeAreaInsets()
@@ -231,6 +239,11 @@ export function GoogleNavSheet({
 
   const pickup   = useMemo(() => stops.find((s) => s.kind === 'pickup') ?? null, [stops])
   const dropoffs = useMemo(() => stops.filter((s) => s.kind === 'dropoff'), [stops])
+
+  // The drop-off guidance goes to next: the current stop, or the first one after
+  // the pickup while the load isn't aboard. Any drop-off after it can be picked
+  // to go first instead.
+  const nextDropoffIdx = stops[legIndex]?.kind === 'pickup' ? legIndex + 1 : legIndex
 
   // How far along the run we are, for the truck on the progress line.
   const progress = stops.length > 1
@@ -399,15 +412,21 @@ export function GoogleNavSheet({
           </View>
 
           <View style={s.boardCol}>
-            {dropoffs.map((d) => (
-              <BoardStop
-                key={`${d.label}-${d.address}`}
-                stop={d}
-                index={stops.indexOf(d)}
-                legIndex={legIndex}
-                onConfirm={onConfirmStop}
-              />
-            ))}
+            {dropoffs.map((d) => {
+              const index = stops.indexOf(d)
+              return (
+                <BoardStop
+                  key={`${d.label}-${d.address}`}
+                  stop={d}
+                  index={index}
+                  legIndex={legIndex}
+                  onConfirm={onConfirmStop}
+                  onChooseNext={onChooseNext && dropoffs.length > 1 && index > nextDropoffIdx
+                    ? () => onChooseNext(index)
+                    : undefined}
+                />
+              )
+            })}
           </View>
         </View>
       </ScrollView>
@@ -421,12 +440,14 @@ export function GoogleNavSheet({
  * one carries the action that confirms it.
  */
 function BoardStop({
-  stop, index, legIndex, onConfirm,
+  stop, index, legIndex, onConfirm, onChooseNext,
 }: {
   stop:      SheetStop
   index:     number
   legIndex:  number
   onConfirm: (index: number) => void
+  /** Set on a drop-off the driver may move to the front of the run. */
+  onChooseNext?: () => void
 }) {
   const done    = index < legIndex
   const current = index === legIndex
@@ -442,7 +463,35 @@ function BoardStop({
         <Text style={s.placeName} numberOfLines={1}>{placeName(stop.address)}</Text>
       </View>
 
-      <Text style={s.boardSub} numberOfLines={1}>{locality(stop.address)}</Text>
+      <Text style={s.boardSub} numberOfLines={1}>
+        {/* Ops' number stays with the stop whatever order it is driven in, so
+            "Drop-off 3" means the same bay to the driver and the office. */}
+        {[stop.kind === 'dropoff' ? stop.label : null, locality(stop.address) || null]
+          .filter(Boolean)
+          .join(' · ')}
+      </Text>
+
+      {onChooseNext && (
+        <TouchableOpacity
+          onPress={() => {
+            Alert.alert(
+              `Go to ${stop.label} next?`,
+              `Navigation will take you to ${placeName(stop.address)} before the other drop-offs.`,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Go here next', onPress: onChooseNext },
+              ],
+            )
+          }}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={`Go to ${stop.label} next`}
+          style={s.proofBtn}
+        >
+          <CornerUpRight size={11} color={D.cyan} />
+          <Text style={[s.proofLink, { fontStyle: 'normal', fontWeight: '700' }]}>Go here next</Text>
+        </TouchableOpacity>
+      )}
 
       {done ? (
         <Text style={[s.proofLink, s.proofIndent, { color: D.faint }]}>Proof uploaded</Text>
