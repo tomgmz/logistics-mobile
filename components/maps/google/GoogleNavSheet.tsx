@@ -111,6 +111,11 @@ interface Props {
    * its way up while the panel is still opening.
    */
   onRestingHeight?: (height: number, expanded: boolean) => void
+  /**
+   * Slide the panel out of the way, for while the Navigation SDK shows a prompt
+   * (traffic or flood alert) in the strip the panel normally covers.
+   */
+  hidden?: boolean
 }
 
 /** "Cabuyao, Laguna City" out of a full address line. */
@@ -133,6 +138,7 @@ export function GoogleNavSheet({
   onConfirmStop,
   onChooseNext,
   onRestingHeight,
+  hidden = false,
 }: Props) {
   const insets = useSafeAreaInsets()
   const { height: screenH, width: sheetW } = useWindowDimensions()
@@ -143,6 +149,18 @@ export function GoogleNavSheet({
   const openH = Math.min(screenH * 0.6, 480) + insets.bottom
 
   const height = useRef(new Animated.Value(peekH)).current
+
+  // Slid off the bottom while Google shows one of its own prompts (a flood or
+  // traffic report asking "still there?"), which it draws where this panel sits
+  // and which map padding does not move. Back as soon as the prompt closes.
+  const slide = useRef(new Animated.Value(0)).current
+  useEffect(() => {
+    Animated.timing(slide, {
+      toValue:         hidden ? openH + 40 : 0,
+      duration:        220,
+      useNativeDriver: false,
+    }).start()
+  }, [hidden, openH, slide])
 
   /**
    * Springs the panel to one of its two resting heights and records which one
@@ -276,7 +294,10 @@ export function GoogleNavSheet({
         />
       )}
 
-    <Animated.View style={[s.sheet, { height }]}>
+    <Animated.View
+      style={[s.sheet, { height, transform: [{ translateY: slide }] }]}
+      pointerEvents={hidden ? 'none' : 'auto'}
+    >
       {/* The peek. Tapping anywhere on it opens or closes the panel. */}
       <View
         {...pan.panHandlers}

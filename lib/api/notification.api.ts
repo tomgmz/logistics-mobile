@@ -26,6 +26,16 @@ export const notificationApi = {
     return ((data?.data ?? []) as AppNotification[]).map(normalizeNotification)
   },
 
+  /** One numbered page, newest first, with the total for the pager. */
+  page: async (page: number, limit: number): Promise<{ items: AppNotification[]; total: number; totalPages: number }> => {
+    const { data } = await api.get('/notifications', { params: { page, limit } })
+    return {
+      items:      ((data?.data ?? []) as AppNotification[]).map(normalizeNotification),
+      total:      data?.meta?.total ?? 0,
+      totalPages: data?.meta?.totalPages ?? 1,
+    }
+  },
+
   unreadCount: async (): Promise<number> => {
     const { data } = await api.get('/notifications/unread-count')
     return data?.data?.count ?? 0

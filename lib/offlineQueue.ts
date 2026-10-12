@@ -163,6 +163,9 @@ export function flush(): Promise<void> {
             `authorizes the driver role on the backend.`,
             item,
           )
+          // Hold what comes after it too: a later step (above all the booking
+          // completion) would only be refused, and refused enough times dropped.
+          stop = true
           remaining.push({ ...item, attempts: item.attempts + 1 })
         } else if (status === 422 && e?.response?.data?.code === 'STOP_TOO_FAR') {
           // The server says the driver was too far from the stop. The app checks
@@ -177,6 +180,7 @@ export function flush(): Promise<void> {
             `until the position or the stop's coordinates are corrected.`,
             item,
           )
+          stop = true
           remaining.push({ ...item, attempts: item.attempts + 1 })
         } else {
           // Other 4xx (404, or a 409 that outlived its retries) → nothing more we
@@ -188,6 +192,11 @@ export function flush(): Promise<void> {
 
     await writeQueue(remaining)
   })
+}
+
+/** Ids of everything still waiting to be sent, e.g. `trip-stop:<id>`, `complete:<bookingId>`. */
+export async function queuedIds(): Promise<string[]> {
+  return (await readQueue()).map((a) => a.id)
 }
 
 /**

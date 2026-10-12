@@ -103,7 +103,13 @@ export function buildNavPlan(booking: BookingLike, trips: Trip[], stopOrder?: st
   const opsOrder = [...(trip.booking_trip_stops ?? [])]
     .filter((s) => s.status === 'pending')
     .sort((a, b) => a.sequence_order - b.sequence_order)
-  const numberOf = new Map(opsOrder.map((s, i) => [s.trip_stop_id, i + 1]))
+  // The booking's own drop-off number, which never changes: not the position on
+  // this run (that moves as stops are done or re-ordered, and after a restart
+  // would relabel "Drop-off 3" as "Drop-off 1").
+  const numberOf = new Map(opsOrder.map((s, i) => [
+    s.trip_stop_id,
+    s.booking_destinations?.sequence_order ?? i + 1,
+  ]))
 
   const rank = (id: string) => {
     const at = stopOrder?.indexOf(id) ?? -1

@@ -27,7 +27,7 @@ import {
 import { buildNavPlan } from '../../../lib/navLegs'
 import { SosButton } from '../../reports/SosButton'
 import { fetchTripsWithCache, currentTrip, type Trip } from '../../../lib/trips'
-import { saveStopOrder, loadStopOrder, clearStopOrders, moveEarlier } from '../../../lib/stopOrder'
+import { saveStopOrder, syncStopOrder, loadStopOrder, clearStopOrders, moveEarlier } from '../../../lib/stopOrder'
 import { setNextStop } from '../../../lib/locationTracking'
 import { saveBookingCache, loadBookingCache, clearBookingCache } from '../../../lib/navCache'
 import {
@@ -266,6 +266,8 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
    * only thing that reaches the native view.
    */
   const [padEpoch, setPadEpoch] = useState(0)
+  // A Navigation SDK prompt (traffic / flood alert) is on screen.
+  const [sdkPromptVisible, setSdkPromptVisible] = useState(false)
   const bumpMapPadding = useCallback(() => setPadEpoch((e) => e + 1), [])
   const {
     navigationController,
@@ -778,10 +780,10 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
     }
 
     const tripId = leg.tripId
-    saveStopOrder(
-      tripId,
-      legsRef.current.flatMap((l) => (l.type === 'dropoff' ? [l.tripStopId] : [])),
-    )
+    const order  = legsRef.current.flatMap((l) => (l.type === 'dropoff' ? [l.tripStopId] : []))
+    saveStopOrder(tripId, order)
+    // So the web shows which drop-off the truck is heading to.
+    void syncStopOrder(tripId, order)
     // Once the load is aboard, live tracking is closing on a stop; point it at
     // the new one so the "arriving" tier fires for the right bay.
     if (target === cur) setNextStop(legCoordinates(legsRef.current[cur])).catch(() => {})
@@ -1049,8 +1051,11 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
 
         // The driver may already have re-ordered this run's drop-offs before the
         // app was closed; rebuild in their order, not ops'.
-        const trip = currentTrip(trips)
-        const plan = buildNavPlan(booking, trips, trip ? await loadStopOrder(trip.trip_id) : null)
+        const trip      = currentTrip(trips)
+        const savedOrder = trip ? await loadStopOrder(trip.trip_id) : null
+        const plan = buildNavPlan(booking, trips, savedOrder)
+        // A choice made offline never reached the server; send it now.
+        if (trip && savedOrder?.length) void syncStopOrder(trip.trip_id, savedOrder)
 
         // Nothing left to drive to, but the booking is still open: every bay on
         // every run has been confirmed and only "Mark delivery as done" remains
@@ -1345,6 +1350,10 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
         // Dark map: during a nav session the theme is driven by
         // navigationNightMode (not a cloud mapId/color scheme), so force night.
         navigationNightMode={NavigationNightMode.FORCE_NIGHT}
+        // Google's own prompts (a flood or traffic report asking the driver to
+        // confirm it) appear at the bottom, under our trip sheet. The sheet
+        // steps aside while one is up.
+        onPromptVisibilityChanged={setSdkPromptVisible}
       />
       {!SHOW_NATIVE_UI && (
         <GoogleTurnCard
@@ -1499,6 +1508,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
           totalEtaSeconds={navInfo?.finalEtaS}
           onConfirmStop={(idx) => setProofFor({ idx, auto: false })}
           onChooseNext={confirming || rerouting ? undefined : chooseNextDropoff}
+          hidden={sdkPromptVisible}
         />
       )}
 

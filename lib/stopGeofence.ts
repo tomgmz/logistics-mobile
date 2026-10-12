@@ -49,6 +49,9 @@ export interface StopFix {
  * warehouse docks, and the confirmation flow has to keep working there — it
  * asks the driver for a reason instead.
  */
+/** How long to wait for a fresh GPS fix before using the last known one. */
+const FIX_TIMEOUT_MS = 8_000
+
 export async function readCurrentFix(): Promise<StopFix | null> {
   try {
     const { status } = await Location.getForegroundPermissionsAsync()
@@ -57,9 +60,14 @@ export async function readCurrentFix(): Promise<StopFix | null> {
       if (asked.status !== 'granted') return null
     }
 
-    const position = await Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy.High,
-    })
+    // Capped: indoors or under a roof a high-accuracy fix can take minutes or
+    // never come, and the photo upload waiting on it looked stuck on
+    // "Uploading…". The last known position is close enough for a stamp.
+    const position = await Promise.race([
+      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), FIX_TIMEOUT_MS)),
+    ]) ?? await Location.getLastKnownPositionAsync()
+    if (!position) return null
 
     return {
       latitude:   position.coords.latitude,

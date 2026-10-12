@@ -56,6 +56,7 @@ import { StopProofModal } from './StopProofModal'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { captureProofPhoto, CameraPermissionError, photoTakenAt, uploadProofPhoto } from '../../../lib/proofPhoto'
 import { readCurrentFix } from '../../../lib/stopGeofence'
+import { queuedIds, flush } from '../../../lib/offlineQueue'
 
 /**
  * Assignment details — the screen a driver lands on from their booking list, and
@@ -261,6 +262,35 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
   const [returned, setReturned] = useState(false)
   const [finished, setFinished] = useState(false)
 
+  // What is confirmed on this phone but not on the server yet: drop-offs whose
+  // confirmation (with its photo) is still in the offline queue, and the
+  // booking completion. Polled while anything is waiting, so the rows settle on
+  // their own once it goes out.
+  const [sendingStops, setSendingStops] = useState<Set<string>>(new Set())
+  const [completeWaiting, setCompleteWaiting] = useState(false)
+  const refreshQueued = useCallback(async () => {
+    const ids = await queuedIds()
+    const stops = new Set(ids.filter((id) => id.startsWith('trip-stop:')).map((id) => id.slice('trip-stop:'.length)))
+    setSendingStops((prev) => {
+      // Something just went out: re-read the runs so its photo shows.
+      if ([...prev].some((id) => !stops.has(id))) {
+        void fetchTripsWithCache(bookingId).then(({ trips: t }) => setTrips(t)).catch(() => {})
+      }
+      return stops
+    })
+    setCompleteWaiting(ids.includes(`complete:${bookingId}`))
+    return ids.length
+  }, [bookingId])
+
+  useEffect(() => {
+    void refreshQueued()
+    const timer = setInterval(() => {
+      if (sendingStops.size === 0 && !completeWaiting) return
+      void flush().finally(() => { void refreshQueued() })
+    }, 5_000)
+    return () => clearInterval(timer)
+  }, [refreshQueued, sendingStops.size, completeWaiting])
+
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -462,7 +492,10 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
     // Durable: this goes through the offline queue exactly as a confirmation
     // from the navigation map does, so a stop confirmed here with no signal is
     // still sent when one returns.
-    confirmTripStop(target.stop.trip_stop_id, photoUri, proof, null).catch(() => {})
+    setSendingStops((prev) => new Set(prev).add(target.stop.trip_stop_id))
+    confirmTripStop(target.stop.trip_stop_id, photoUri, proof, null)
+      .catch(() => {})
+      .finally(() => { void refreshQueued() })
 
     setTrips((prev) => prev.map((t) => ({
       ...t,
@@ -472,7 +505,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
           : x,
       ),
     })))
-  }, [proofFor])
+  }, [proofFor, refreshQueued])
 
   /* ── Closing the job out ────────────────────────────────────────────────── */
 
@@ -482,9 +515,12 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
       await completeBooking(bookingId)
       setFinished(true)
     } catch { /* queued; the driver is not blocked on the network */ }
+    // Kept on the phone, not lost — but say so, rather than looking finished
+    // while the server still has the booking open.
+    await refreshQueued()
     setDialogBusy(false)
     setDialog(null)
-  }, [bookingId])
+  }, [bookingId, refreshQueued])
 
   const onReturnConfirmed = useCallback(async () => {
     setDialogBusy(true)
@@ -781,6 +817,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
                     readOnly={isSecondDriver}
                     label={label}
                     uploading={uploading}
+                    sending={sendingStops}
                     onUpload={openProof}
                   />
                 )}
@@ -822,6 +859,16 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
           setDockH((prev) => (prev === h ? prev : h))
         }}
       >
+        {completeWaiting && (
+          <View style={s.offlineBanner}>
+            <WifiOff size={15} color={D.amber} />
+            <Text style={s.offlineText}>
+              {sendingStops.size > 0
+                ? 'Saved on this phone. "Mark booking as done" goes out right after the drop-offs still being sent.'
+                : 'Saved on this phone. "Mark booking as done" is sent as soon as there is signal.'}
+            </Text>
+          </View>
+        )}
         {offline && (
           <View style={s.offlineBanner}>
             <WifiOff size={15} color={D.amber} />
@@ -1096,7 +1143,7 @@ function Stop({
  *   grey   nothing is owed; the row shows the document instead
  */
 function StopProofSection({
-  visits, shuttle, label, uploading, onUpload, readOnly = false,
+  visits, shuttle, label, uploading, sending, onUpload, readOnly = false,
 }: {
   visits:    Array<{ trip: Trip; stop: TripStop }>
   shuttle:   boolean
@@ -1105,6 +1152,8 @@ function StopProofSection({
   label:     string
   /** trip_stop_id currently uploading, if any. */
   uploading: string | null
+  /** trip_stop_ids confirmed on this phone whose confirmation + photo are still being sent. */
+  sending:   Set<string>
   onUpload:  (stop: TripStop, label: string) => void
 }) {
   if (visits.length === 0) return null
@@ -1129,7 +1178,16 @@ function StopProofSection({
               <Text style={s.proofTripTag}>TRIP {trip.trip_number}</Text>
             )}
 
-            {settled ? (
+            {sending.has(stop.trip_stop_id) ? (
+              // Confirmed here, photo and all, but still in the offline queue.
+              // Offering "upload" now would only be refused by the server.
+              <View style={s.proofDone}>
+                <ActivityIndicator size="small" color={D.amber} />
+                <Text style={[s.proofDoneText, { color: D.amber }]} numberOfLines={2}>
+                  Sending the confirmation and photo — goes out as soon as there is signal
+                </Text>
+              </View>
+            ) : settled ? (
               <View style={s.proofDone}>
                 <PackageCheck size={15} color={D.green} strokeWidth={2} />
                 <Text style={s.proofDoneText} numberOfLines={1}>
@@ -1166,7 +1224,7 @@ function StopProofSection({
                 recorded and the client has been told it arrived — it is only the
                 paperwork that is outstanding, and a driver should not think they
                 still have to drive back. */}
-            {done && !hasPhoto && !busy && !readOnly ? (
+            {done && !hasPhoto && !busy && !readOnly && !sending.has(stop.trip_stop_id) ? (
               <Text style={s.proofPending} numberOfLines={2}>
                 Delivered — the photo never made it out. Upload it whenever you have signal.
               </Text>

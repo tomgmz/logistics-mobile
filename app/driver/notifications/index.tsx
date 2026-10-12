@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
   View, Text, FlatList, TouchableOpacity,
   ActivityIndicator, RefreshControl, StyleSheet,
@@ -6,7 +6,8 @@ import {
 import { useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ArrowLeft, Bell, CheckCheck } from 'lucide-react-native'
-import { useNotificationStore } from '../../../lib/store/notification.store'
+import { useNotificationStore, NOTIFICATIONS_PAGE_SIZE } from '../../../lib/store/notification.store'
+import Pagination from '../../../components/ui/Pagination'
 import type { AppNotification } from '../../../lib/api/notification.api'
 
 const C = {
@@ -59,8 +60,19 @@ export default function NotificationsScreen() {
   const hydrate     = useNotificationStore((s) => s.hydrate)
   const markRead    = useNotificationStore((s) => s.markRead)
   const markAllRead = useNotificationStore((s) => s.markAllRead)
+  const page        = useNotificationStore((s) => s.page)
+  const total       = useNotificationStore((s) => s.total)
+  const totalPages  = useNotificationStore((s) => s.totalPages)
+  const pageLoading = useNotificationStore((s) => s.pageLoading)
+  const goToPage    = useNotificationStore((s) => s.goToPage)
 
   const [refreshing, setRefreshing] = useState(false)
+  const listRef = useRef<FlatList<AppNotification>>(null)
+
+  const changePage = useCallback(async (p: number) => {
+    await goToPage(p)
+    listRef.current?.scrollToOffset({ offset: 0, animated: false })
+  }, [goToPage])
 
   useEffect(() => { hydrate() }, [hydrate])
 
@@ -107,12 +119,14 @@ export default function NotificationsScreen() {
         <View style={styles.center}><ActivityIndicator size="small" color={C.cyan} /></View>
       ) : (
         <FlatList
+          ref={listRef}
+          style={pageLoading ? { opacity: 0.5 } : undefined}
           data={items}
           keyExtractor={(n) => n.notification_id}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await hydrate(); setRefreshing(false) }} tintColor={C.cyan} />
           }
-          contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+          contentContainerStyle={{ paddingBottom: 16 }}
           ItemSeparatorComponent={() => <View style={styles.itemSep} />}
           ListEmptyComponent={
             <View style={styles.center}>
@@ -122,6 +136,20 @@ export default function NotificationsScreen() {
           }
           renderItem={({ item }) => <NotifRow n={item} onPress={() => onPressItem(item)} />}
         />
+      )}
+
+      {/* Ten per page; the pager stays put at the bottom while the list scrolls. */}
+      {total > 0 && (
+        <View style={[styles.pager, { paddingBottom: insets.bottom + 10 }]}>
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            total={total}
+            pageSize={NOTIFICATIONS_PAGE_SIZE}
+            disabled={pageLoading}
+            onPageChange={(p) => { void changePage(p) }}
+          />
+        </View>
       )}
     </View>
   )
@@ -147,6 +175,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 6,
   },
   markAllText: { color: C.muted, fontSize: 11, fontWeight: '600' },
+  pager: { borderTopWidth: 1, borderTopColor: C.border, paddingHorizontal: 16, paddingTop: 10, backgroundColor: C.bg },
   sep: { height: 1, backgroundColor: C.border, marginHorizontal: 16, marginBottom: 4 },
   itemSep: { height: 1, backgroundColor: 'rgba(255,255,255,0.05)', marginLeft: 40 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 12 },

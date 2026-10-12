@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import api from './api/auth.api'
 
 /**
  * The order the DRIVER chose to work a run's drop-offs in.
@@ -13,8 +14,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
  * Kept on the phone, per run, as the list of trip stop ids in the chosen order.
  * It only has to outlive the app being killed mid-run — without it a restart
  * would quietly send the driver back to ops' order, to a bay they had decided
- * to leave for later. The server keeps no order of its own to enforce: any
- * outstanding drop-off on a loaded run can be confirmed.
+ * to leave for later. The server does not ENFORCE an order (any outstanding
+ * drop-off on a loaded run can be confirmed), but it is told the choice
+ * (syncStopOrder) so the office and the client see where the truck is heading
+ * and arrival times follow it.
  */
 
 const key = (tripId: string) => `stop_order_${tripId}`
@@ -23,6 +26,18 @@ export async function saveStopOrder(tripId: string, tripStopIds: string[]): Prom
   try {
     await AsyncStorage.setItem(key(tripId), JSON.stringify(tripStopIds))
   } catch { /* non-fatal: the order falls back to ops' numbering */ }
+}
+
+/**
+ * Tell the server the run's new order. Best effort and never blocking: the
+ * phone's copy already drives navigation, and the next change (or the next
+ * screen load) sends it again.
+ */
+export async function syncStopOrder(tripId: string, tripStopIds: string[]): Promise<void> {
+  if (tripStopIds.length === 0) return
+  try {
+    await api.put(`/driver/trips/${tripId}/stop-order`, { trip_stop_ids: tripStopIds })
+  } catch { /* offline or refused: the local order still applies */ }
 }
 
 export async function loadStopOrder(tripId: string): Promise<string[] | null> {
