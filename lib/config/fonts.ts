@@ -10,6 +10,15 @@ export const APP_FONTS = {
   'AlegreyaSC-ExtraBold':      require('../../assets/fonts/Alegreya_SC/AlegreyaSC-ExtraBold.ttf'),
   'AlegreyaSC-Black':          require('../../assets/fonts/Alegreya_SC/AlegreyaSC-Black.ttf'),
 
+  'AlegreyaSans-Regular':      require('../../assets/fonts/Alegreya_Sans/AlegreyaSans-Regular.ttf'),
+  'AlegreyaSans-Italic':       require('../../assets/fonts/Alegreya_Sans/AlegreyaSans-Italic.ttf'),
+  'AlegreyaSans-Medium':       require('../../assets/fonts/Alegreya_Sans/AlegreyaSans-Medium.ttf'),
+  'AlegreyaSans-MediumItalic': require('../../assets/fonts/Alegreya_Sans/AlegreyaSans-MediumItalic.ttf'),
+  'AlegreyaSans-Bold':         require('../../assets/fonts/Alegreya_Sans/AlegreyaSans-Bold.ttf'),
+  'AlegreyaSans-BoldItalic':   require('../../assets/fonts/Alegreya_Sans/AlegreyaSans-BoldItalic.ttf'),
+  'AlegreyaSans-ExtraBold':    require('../../assets/fonts/Alegreya_Sans/AlegreyaSans-ExtraBold.ttf'),
+  'AlegreyaSans-Black':        require('../../assets/fonts/Alegreya_Sans/AlegreyaSans-Black.ttf'),
+
   'Fredoka-Light':             require('../../assets/fonts/Fredoka/static/Fredoka-Light.ttf'),
   'Fredoka-Regular':           require('../../assets/fonts/Fredoka/static/Fredoka-Regular.ttf'),
   'Fredoka-Medium':            require('../../assets/fonts/Fredoka/static/Fredoka-Medium.ttf'),
@@ -39,6 +48,18 @@ export const FONTS = {
     boldItalic:   'AlegreyaSC-BoldItalic',
     extraBold:    'AlegreyaSC-ExtraBold',
     black:        'AlegreyaSC-Black',
+  },
+  // Regular (not small caps) Alegreya Sans: messaging only. Everything else
+  // keeps its own face.
+  alegreyaSans: {
+    regular:      'AlegreyaSans-Regular',
+    italic:       'AlegreyaSans-Italic',
+    medium:       'AlegreyaSans-Medium',
+    mediumItalic: 'AlegreyaSans-MediumItalic',
+    bold:         'AlegreyaSans-Bold',
+    boldItalic:   'AlegreyaSans-BoldItalic',
+    extraBold:    'AlegreyaSans-ExtraBold',
+    black:        'AlegreyaSans-Black',
   },
   fredoka: {
     light:    'Fredoka-Light',

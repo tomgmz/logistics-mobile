@@ -8,6 +8,7 @@ import { X, Search, Users, MessageCirclePlus, Check } from 'lucide-react-native'
 import { messagingApi } from '../../lib/api/messaging.api'
 import type { MessagableUser } from '../../types/messaging.types'
 import { roleLabel } from '../../lib/roles'
+import { FONTS } from '../../lib/config/fonts'
 
 const C = {
   bg:       '#0a0a0a',
@@ -255,41 +256,41 @@ const styles = StyleSheet.create({
 
   header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: C.border },
   headerLeft:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  headerTitle: { color: C.white, fontSize: 13, fontWeight: '700', letterSpacing: 1.5, textTransform: 'uppercase' },
+  headerTitle: { color: C.white, fontFamily: FONTS.alegreyaSans.bold, fontSize: 13, letterSpacing: 1.5, textTransform: 'uppercase' },
   closeBtn:    { padding: 4 },
 
   toggle:          { flexDirection: 'row', gap: 6, margin: 12, padding: 4, backgroundColor: C.raised, borderRadius: 12, borderWidth: 1, borderColor: C.border },
   toggleBtn:       { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center' },
   toggleBtnActive: { backgroundColor: C.cyanDim },
-  toggleText:      { color: C.muted, fontSize: 13, fontWeight: '600' },
+  toggleText:      { color: C.muted, fontFamily: FONTS.alegreyaSans.medium, fontSize: 13 },
   toggleTextActive:{ color: C.cyan },
 
-  groupNameInput: { marginHorizontal: 12, marginBottom: 8, backgroundColor: C.raised, borderWidth: 1, borderColor: C.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, color: C.white, fontSize: 14 },
+  groupNameInput: { marginHorizontal: 12, marginBottom: 8, backgroundColor: C.raised, borderWidth: 1, borderColor: C.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, color: C.white, fontFamily: FONTS.alegreyaSans.regular, fontSize: 14 },
 
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 12, paddingBottom: 8 },
   chip:     { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: C.cyanDim, borderWidth: 1, borderColor: 'rgba(77,249,237,0.25)', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
-  chipText: { color: C.cyan, fontSize: 12 },
+  chipText: { color: C.cyan, fontFamily: FONTS.alegreyaSans.regular, fontSize: 12 },
 
   searchWrap:  { flexDirection: 'row', alignItems: 'center', marginHorizontal: 12, marginBottom: 8, backgroundColor: C.raised, borderRadius: 12, borderWidth: 1, borderColor: C.border, paddingHorizontal: 12, height: 42 },
-  searchInput: { flex: 1, color: C.white, fontSize: 14, paddingVertical: 0 },
+  searchInput: { flex: 1, color: C.white, fontFamily: FONTS.alegreyaSans.regular, fontSize: 14, paddingVertical: 0 },
 
   list:   { paddingHorizontal: 8 },
   center: { paddingVertical: 48, alignItems: 'center', justifyContent: 'center' },
-  muted:  { color: C.muted, fontSize: 13 },
+  muted:  { color: C.muted, fontFamily: FONTS.alegreyaSans.regular, fontSize: 13 },
 
   userRow:  { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 8, paddingVertical: 10 },
   avatar:   { width: 40, height: 40, borderRadius: 20, backgroundColor: C.raised, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
-  avatarText:{ color: C.white, fontSize: 13, fontWeight: '700' },
+  avatarText:{ color: C.white, fontFamily: FONTS.alegreyaSans.bold, fontSize: 13 },
   userBody: { flex: 1 },
-  userName: { color: C.white, fontSize: 14 },
-  userRole: { color: C.muted, fontSize: 11, textTransform: 'capitalize', marginTop: 1 },
+  userName: { color: C.white, fontFamily: FONTS.alegreyaSans.regular, fontSize: 14 },
+  userRole: { color: C.muted, fontFamily: FONTS.alegreyaSans.regular, fontSize: 11, textTransform: 'capitalize', marginTop: 1 },
 
   checkbox:   { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' },
   checkboxOn: { backgroundColor: C.cyan, borderColor: C.cyan },
 
   footer:           { paddingHorizontal: 12, paddingTop: 8, borderTopWidth: 1, borderTopColor: C.border },
-  errorText:        { color: C.danger, fontSize: 12, marginBottom: 8 },
+  errorText:        { color: C.danger, fontFamily: FONTS.alegreyaSans.regular, fontSize: 12, marginBottom: 8 },
   createBtn:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: C.cyan, borderRadius: 12, paddingVertical: 12, marginTop: 4 },
   createBtnDisabled:{ opacity: 0.3 },
-  createBtnText:    { color: C.bg, fontSize: 14, fontWeight: '700' },
+  createBtnText:    { color: C.bg, fontFamily: FONTS.alegreyaSans.bold, fontSize: 14 },
 })

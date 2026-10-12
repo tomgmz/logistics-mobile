@@ -16,6 +16,7 @@ import { useMessagingRealtime } from '../../../../hooks/useMessagingRealtime'
 import { setActiveChat } from '../../../../lib/push'
 import EmojiSheet from '../../../../components/messaging/EmojiSheet'
 import type { GroupMessageRaw, ReactionTogglePayload, GroupReadReceiptPayload } from '../../../../types/messaging.types'
+import { FONTS } from '../../../../lib/config/fonts'
 
 const C = {
   bg:       '#0a0a0a',
@@ -130,7 +131,7 @@ const rS = StyleSheet.create({
   badge:       { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   badgeActive: { backgroundColor: 'rgba(77,249,237,0.12)', borderColor: 'rgba(77,249,237,0.35)' },
   emoji:       { fontSize: 14 },
-  count:       { color: C.muted, fontSize: 11, fontWeight: '600' },
+  count:       { color: C.muted, fontFamily: FONTS.alegreyaSans.medium, fontSize: 11 },
   countActive: { color: C.cyan },
 })
 
@@ -155,7 +156,7 @@ function EmojiPicker({ visible, onClose, onPick }: { visible: boolean; onClose: 
 const epS = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: C.overlay, justifyContent: 'flex-end' },
   sheet:    { backgroundColor: '#181818', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 24, paddingTop: 16, paddingBottom: 32, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.07)' },
-  label:    { color: C.muted, fontSize: 11, fontWeight: '600', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 14, textAlign: 'center' },
+  label:    { color: C.muted, fontFamily: FONTS.alegreyaSans.medium, fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 14, textAlign: 'center' },
   row:      { flexDirection: 'row', justifyContent: 'space-between' },
   emojiBtn: { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' },
   emoji:    { fontSize: 24 },
@@ -297,31 +298,31 @@ const bS = StyleSheet.create({
   wrap:         { maxWidth: '80%' },
   wrapMine:     { alignItems: 'flex-end' },
   wrapTheirs:   { alignItems: 'flex-start' },
-  senderName:   { color: C.cyan, fontSize: 11, fontWeight: '600', marginBottom: 2, marginLeft: 2 },
+  senderName:   { color: C.cyan, fontFamily: FONTS.alegreyaSans.medium, fontSize: 11, marginBottom: 2, marginLeft: 2 },
 
   attribution:      { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 },
   attributionMine:  { alignSelf: 'flex-end' },
   attributionTheirs:{ alignSelf: 'flex-start' },
-  attributionText:  { color: 'rgba(255,255,255,0.35)', fontSize: 11 },
+  attributionText:  { color: 'rgba(255,255,255,0.35)', fontFamily: FONTS.alegreyaSans.regular, fontSize: 11 },
 
   quoteCard:       { borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 3, maxWidth: '100%', borderWidth: 1 },
   quoteCardMine:   { backgroundColor: 'rgba(0,0,0,0.15)', borderColor: 'rgba(0,0,0,0.12)', alignSelf: 'flex-end' },
   quoteCardTheirs: { backgroundColor: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.1)', alignSelf: 'flex-start' },
-  quoteText:       { color: 'rgba(255,255,255,0.5)', fontSize: 13, lineHeight: 18 },
+  quoteText:       { color: 'rgba(255,255,255,0.5)', fontFamily: FONTS.alegreyaSans.regular, fontSize: 13, lineHeight: 18 },
 
   // Message bubble
   bubble:       { borderRadius: 18, paddingHorizontal: 14, paddingVertical: 9 },
   bubbleMine:   { backgroundColor: C.cyan, borderBottomRightRadius: 4 },
   bubbleTheirs: { backgroundColor: C.raised, borderWidth: 1, borderColor: C.border, borderBottomLeftRadius: 4 },
-  textMine:     { color: C.cyanText, fontSize: 14, lineHeight: 20 },
-  textTheirs:   { color: C.white,    fontSize: 14, lineHeight: 20 },
+  textMine:     { color: C.cyanText, fontFamily: FONTS.alegreyaSans.regular, fontSize: 14, lineHeight: 20 },
+  textTheirs:   { color: C.white,    fontFamily: FONTS.alegreyaSans.regular, fontSize: 14, lineHeight: 20 },
 
-  time: { color: C.muted, fontSize: 10, marginTop: 3, marginHorizontal: 2 },
+  time: { color: C.muted, fontFamily: FONTS.alegreyaSans.regular, fontSize: 10, marginTop: 3, marginHorizontal: 2 },
 
   seenRow:        { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 3, alignSelf: 'flex-end' },
   seenAvatar:     { width: 14, height: 14, borderRadius: 7, backgroundColor: C.raised, borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' },
-  seenAvatarText: { color: 'rgba(255,255,255,0.7)', fontSize: 7, fontWeight: '700' },
-  seenOverflow:   { color: 'rgba(255,255,255,0.4)', fontSize: 9, marginLeft: 1 },
+  seenAvatarText: { color: 'rgba(255,255,255,0.7)', fontFamily: FONTS.alegreyaSans.bold, fontSize: 7 },
+  seenOverflow:   { color: 'rgba(255,255,255,0.4)', fontFamily: FONTS.alegreyaSans.regular, fontSize: 9, marginLeft: 1 },
 })
 
 function InviteBanner({ groupId, groupName, onResponded }: { groupId: string; groupName: string; onResponded: (a: boolean) => void }) {
@@ -352,8 +353,8 @@ function InviteBanner({ groupId, groupName, onResponded }: { groupId: string; gr
 }
 const invS = StyleSheet.create({
   banner:  { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 12, marginBottom: 10, padding: 12, borderRadius: 14, backgroundColor: 'rgba(245,158,11,0.08)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.25)' },
-  title:   { color: C.amber, fontSize: 12, fontWeight: '700' },
-  sub:     { color: C.muted, fontSize: 11, marginTop: 1 },
+  title:   { color: C.amber, fontFamily: FONTS.alegreyaSans.bold, fontSize: 12 },
+  sub:     { color: C.muted, fontFamily: FONTS.alegreyaSans.regular, fontSize: 11, marginTop: 1 },
   btns:    { flexDirection: 'row', gap: 6 },
   btn:     { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   decline: { backgroundColor: 'rgba(248,113,113,0.12)', borderWidth: 1, borderColor: 'rgba(248,113,113,0.25)' },
@@ -736,28 +737,28 @@ const styles = StyleSheet.create({
   backBtn:      { padding: 8, borderRadius: 10 },
   headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   headerAvatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: C.raised, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
-  headerName:   { color: C.white, fontSize: 15, fontWeight: '600' },
-  headerStatus: { color: C.muted, fontSize: 11, marginTop: 1 },
+  headerName:   { color: C.white, fontFamily: FONTS.alegreyaSans.medium, fontSize: 15 },
+  headerStatus: { color: C.muted, fontFamily: FONTS.alegreyaSans.regular, fontSize: 11, marginTop: 1 },
   headerStatusTyping: { color: C.cyan },
 
   listContent: { paddingHorizontal: 12, paddingVertical: 16, gap: 4 },
   center:      { flex: 1, alignItems: 'center', justifyContent: 'center' },
   optimistic:  { opacity: 0.6 },
-  declinedText: { color: C.muted, fontSize: 14 },
+  declinedText: { color: C.muted, fontFamily: FONTS.alegreyaSans.regular, fontSize: 14 },
 
   dateSep: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 12 },
   dateLine: { flex: 1, height: 1, backgroundColor: C.border },
-  dateText:  { color: C.muted, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1 },
+  dateText:  { color: C.muted, fontFamily: FONTS.alegreyaSans.regular, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1 },
 
   typingRow:   { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 6 },
-  typingLabel: { color: C.muted, fontSize: 12 },
+  typingLabel: { color: C.muted, fontFamily: FONTS.alegreyaSans.regular, fontSize: 12 },
 
   replyPreview:     { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: C.raised, borderTopWidth: 1, borderTopColor: C.border },
-  replyPreviewText: { flex: 1, color: C.dimText, fontSize: 13 },
+  replyPreviewText: { flex: 1, color: C.dimText, fontFamily: FONTS.alegreyaSans.regular, fontSize: 13 },
 
   inputBar:       { flexDirection: 'row', alignItems: 'flex-end', gap: 10, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 10, backgroundColor: C.bg, borderTopWidth: 1, borderTopColor: C.border },
   emojiToggle:    { width: 38, height: 42, alignItems: 'center', justifyContent: 'center' },
-  input:          { flex: 1, backgroundColor: C.raised, borderRadius: 20, borderWidth: 1, borderColor: C.border, paddingHorizontal: 16, paddingVertical: 10, color: C.white, fontSize: 14, maxHeight: 120 },
+  input:          { flex: 1, backgroundColor: C.raised, borderRadius: 20, borderWidth: 1, borderColor: C.border, paddingHorizontal: 16, paddingVertical: 10, color: C.white, fontFamily: FONTS.alegreyaSans.regular, fontSize: 14, maxHeight: 120 },
   sendBtn:        { width: 42, height: 42, borderRadius: 21, backgroundColor: C.cyan, alignItems: 'center', justifyContent: 'center' },
   sendBtnDisabled:{ backgroundColor: C.raised, borderWidth: 1, borderColor: C.border },
 })

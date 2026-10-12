@@ -17,6 +17,7 @@ import { useMessagingRealtime } from '../../../hooks/useMessagingRealtime'
 import { setActiveChat } from '../../../lib/push'
 import EmojiSheet from '../../../components/messaging/EmojiSheet'
 import type { MessageRow, ReactionTogglePayload } from '../../../types/messaging.types'
+import { FONTS } from '../../../lib/config/fonts'
 
 const C = {
   bg:       '#0a0a0a',
@@ -135,7 +136,7 @@ const rS = StyleSheet.create({
   badge:       { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
   badgeActive: { backgroundColor: 'rgba(77,249,237,0.12)', borderColor: 'rgba(77,249,237,0.35)' },
   emoji:       { fontSize: 14 },
-  count:       { color: C.muted, fontSize: 11, fontWeight: '600' },
+  count:       { color: C.muted, fontFamily: FONTS.alegreyaSans.medium, fontSize: 11 },
   countActive: { color: C.cyan },
 })
 
@@ -180,12 +181,12 @@ function EmojiPicker({ visible, onClose, onPick, onDelete }: {
 const epS = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: C.overlay, justifyContent: 'flex-end' },
   sheet:    { backgroundColor: '#181818', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 24, paddingTop: 16, paddingBottom: 32, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.07)' },
-  label:    { color: C.muted, fontSize: 11, fontWeight: '600', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 14, textAlign: 'center' },
+  label:    { color: C.muted, fontFamily: FONTS.alegreyaSans.medium, fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 14, textAlign: 'center' },
   row:      { flexDirection: 'row', justifyContent: 'space-between' },
   emojiBtn: { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' },
   emoji:    { fontSize: 24 },
   deleteRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 18, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(248,113,113,0.25)', backgroundColor: 'rgba(248,113,113,0.08)' },
-  deleteText: { color: '#f87171', fontSize: 14, fontWeight: '600' },
+  deleteText: { color: '#f87171', fontFamily: FONTS.alegreyaSans.medium, fontSize: 14 },
 })
 
 function Bubble({ msg, isMine, showSeen, participantName, currentUserId, onLongPress, onReact, onReply }: {
@@ -316,23 +317,23 @@ const bS = StyleSheet.create({
   attribution:      { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 },
   attributionMine:  { alignSelf: 'flex-end' },
   attributionTheirs:{ alignSelf: 'flex-start' },
-  attributionText:  { color: 'rgba(255,255,255,0.35)', fontSize: 11 },
+  attributionText:  { color: 'rgba(255,255,255,0.35)', fontFamily: FONTS.alegreyaSans.regular, fontSize: 11 },
 
   quoteCard:       { borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 3, maxWidth: '100%', borderWidth: 1 },
   quoteCardMine:   { backgroundColor: 'rgba(0,0,0,0.15)', borderColor: 'rgba(0,0,0,0.12)', alignSelf: 'flex-end' },
   quoteCardTheirs: { backgroundColor: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.1)', alignSelf: 'flex-start' },
-  quoteText:       { color: 'rgba(255,255,255,0.5)', fontSize: 13, lineHeight: 18 },
+  quoteText:       { color: 'rgba(255,255,255,0.5)', fontFamily: FONTS.alegreyaSans.regular, fontSize: 13, lineHeight: 18 },
 
   // Message bubble
   bubble:       { borderRadius: 18, paddingHorizontal: 14, paddingVertical: 9 },
   bubbleMine:   { backgroundColor: C.cyan, borderBottomRightRadius: 4 },
   bubbleTheirs: { backgroundColor: C.raised, borderWidth: 1, borderColor: C.border, borderBottomLeftRadius: 4 },
-  textMine:     { color: C.cyanText, fontSize: 14, lineHeight: 20 },
-  textTheirs:   { color: C.white,    fontSize: 14, lineHeight: 20 },
+  textMine:     { color: C.cyanText, fontFamily: FONTS.alegreyaSans.regular, fontSize: 14, lineHeight: 20 },
+  textTheirs:   { color: C.white,    fontFamily: FONTS.alegreyaSans.regular, fontSize: 14, lineHeight: 20 },
 
   meta:         { flexDirection: 'row', alignItems: 'center', marginTop: 3, marginHorizontal: 2 },
-  time:         { color: C.muted, fontSize: 10 },
-  seen:         { color: C.cyan, fontSize: 10 },
+  time:         { color: C.muted, fontFamily: FONTS.alegreyaSans.regular, fontSize: 10 },
+  seen:         { color: C.cyan, fontFamily: FONTS.alegreyaSans.regular, fontSize: 10 },
 })
 
 export default function DmChatScreen() {
@@ -761,10 +762,10 @@ const styles = StyleSheet.create({
   backBtn:   { padding: 8, borderRadius: 10 },
   headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   headerAvatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: C.raised, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', position: 'relative' },
-  headerAvatarText: { color: C.white, fontSize: 14, fontWeight: '700' },
+  headerAvatarText: { color: C.white, fontFamily: FONTS.alegreyaSans.bold, fontSize: 14 },
   onlineDot: { position: 'absolute', bottom: 0, right: 0, width: 11, height: 11, borderRadius: 6, backgroundColor: '#4ade80', borderWidth: 2, borderColor: C.bg },
-  headerName: { color: C.white, fontSize: 15, fontWeight: '600' },
-  headerStatus: { color: C.muted, fontSize: 11, marginTop: 1 },
+  headerName: { color: C.white, fontFamily: FONTS.alegreyaSans.medium, fontSize: 15 },
+  headerStatus: { color: C.muted, fontFamily: FONTS.alegreyaSans.regular, fontSize: 11, marginTop: 1 },
   headerStatusOnline: { color: '#4ade80' },
 
   listContent: { paddingHorizontal: 12, paddingVertical: 16, gap: 4 },
@@ -773,20 +774,20 @@ const styles = StyleSheet.create({
 
   dateSep: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 12 },
   dateLine: { flex: 1, height: 1, backgroundColor: C.border },
-  dateText:  { color: C.muted, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1 },
+  dateText:  { color: C.muted, fontFamily: FONTS.alegreyaSans.regular, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1 },
 
   typingRow: { paddingHorizontal: 16, paddingVertical: 6 },
   typingWrap: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, marginBottom: 4, alignSelf: 'flex-start' },
   typingAvatar: { width: 28, height: 28, borderRadius: 14, backgroundColor: C.raised, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
-  typingAvatarText: { color: C.white, fontSize: 10, fontWeight: '700' },
+  typingAvatarText: { color: C.white, fontFamily: FONTS.alegreyaSans.bold, fontSize: 10 },
   typingBubble: { backgroundColor: C.raised, borderWidth: 1, borderColor: C.border, borderRadius: 18, borderBottomLeftRadius: 4, paddingHorizontal: 14, paddingVertical: 8 },
 
   replyPreview: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: C.raised, borderTopWidth: 1, borderTopColor: C.border },
-  replyPreviewText: { flex: 1, color: C.dimText, fontSize: 13 },
+  replyPreviewText: { flex: 1, color: C.dimText, fontFamily: FONTS.alegreyaSans.regular, fontSize: 13 },
 
   inputBar: { flexDirection: 'row', alignItems: 'flex-end', gap: 10, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 10, backgroundColor: C.bg, borderTopWidth: 1, borderTopColor: C.border },
   emojiToggle: { width: 38, height: 42, alignItems: 'center', justifyContent: 'center' },
-  input:    { flex: 1, backgroundColor: C.raised, borderRadius: 20, borderWidth: 1, borderColor: C.border, paddingHorizontal: 16, paddingVertical: 10, color: C.white, fontSize: 14, maxHeight: 120 },
+  input:    { flex: 1, backgroundColor: C.raised, borderRadius: 20, borderWidth: 1, borderColor: C.border, paddingHorizontal: 16, paddingVertical: 10, color: C.white, fontFamily: FONTS.alegreyaSans.regular, fontSize: 14, maxHeight: 120 },
   sendBtn:  { width: 42, height: 42, borderRadius: 21, backgroundColor: C.cyan, alignItems: 'center', justifyContent: 'center' },
   sendBtnDisabled: { backgroundColor: C.raised, borderWidth: 1, borderColor: C.border },
 })

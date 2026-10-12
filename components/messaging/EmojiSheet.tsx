@@ -4,6 +4,7 @@ import {
   FlatList, StyleSheet, Dimensions, ActivityIndicator,
 } from 'react-native'
 import { Search } from 'lucide-react-native'
+import { FONTS } from '../../lib/config/fonts'
 
 interface EmojiSkin { unified: string; native: string }
 interface EmojiEntry {
@@ -209,17 +210,17 @@ const s = StyleSheet.create({
   handle:      { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.18)', marginBottom: 10 },
 
   searchRow:   { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.field, borderWidth: 1, borderColor: C.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 8 },
-  searchInput: { flex: 1, color: C.white, fontSize: 14, padding: 0 },
+  searchInput: { flex: 1, color: C.white, fontFamily: FONTS.alegreyaSans.regular, fontSize: 14, padding: 0 },
 
   tabs:        { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, marginBottom: 4, borderBottomWidth: 1, borderBottomColor: C.border },
   tab:         { width: 34, height: 34, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   tabActive:   { backgroundColor: C.active },
-  tabIcon:     { fontSize: 18 },
+  tabIcon:     { fontFamily: FONTS.alegreyaSans.regular, fontSize: 18 },
 
   grid:        { flex: 1 },
   cell:        { width: CELL, height: CELL, alignItems: 'center', justifyContent: 'center' },
   cellEmoji:   { fontSize: 26 },
 
   empty:       { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  emptyText:   { color: 'rgba(255,255,255,0.25)', fontSize: 13 },
+  emptyText:   { color: 'rgba(255,255,255,0.25)', fontFamily: FONTS.alegreyaSans.regular, fontSize: 13 },
 })

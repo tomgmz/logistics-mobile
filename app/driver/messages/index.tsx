@@ -15,6 +15,7 @@ import ComposeModal from '../../../components/messaging/ComposeModal'
 import type {
   ConversationWithDetails, GroupRaw, MessageRow, GroupMessageRaw, MessagableUser,
 } from '../../../types/messaging.types'
+import { FONTS } from '../../../lib/config/fonts'
 
 const C = {
   bg:        '#0a0a0a',
@@ -432,7 +433,7 @@ const styles = StyleSheet.create({
   label: {
     color:         C.muted,
     fontSize:      10,
-    fontWeight:    '700',
+    fontFamily: FONTS.alegreyaSans.bold,
     letterSpacing: 2.5,
     textTransform: 'uppercase',
     marginBottom:  2,
@@ -445,7 +446,7 @@ const styles = StyleSheet.create({
   title: {
     color:      C.white,
     fontSize:   28,
-    fontWeight: '900',
+    fontFamily: FONTS.alegreyaSans.bold,
     letterSpacing: -0.5,
   },
   totalBadge: {
@@ -460,7 +461,7 @@ const styles = StyleSheet.create({
   totalBadgeText: {
     color:      C.bg,
     fontSize:   12,
-    fontWeight: '800',
+    fontFamily: FONTS.alegreyaSans.bold,
   },
   searchWrap: {
     flexDirection:     'row',
@@ -481,6 +482,7 @@ const styles = StyleSheet.create({
     flex:      1,
     color:     C.white,
     fontSize:  14,
+    fontFamily: FONTS.alegreyaSans.regular,
     paddingVertical: 0,
   },
   sep: {
@@ -499,6 +501,7 @@ const styles = StyleSheet.create({
   emptyText: {
     color:     C.muted,
     fontSize:  13,
+    fontFamily: FONTS.alegreyaSans.regular,
     textAlign: 'center',
   },
 
@@ -539,7 +542,7 @@ const styles = StyleSheet.create({
   avatarText: {
     color:      C.white,
     fontSize:   14,
-    fontWeight: '700',
+    fontFamily: FONTS.alegreyaSans.bold,
   },
   pendingDot: {
     position:        'absolute',
@@ -567,7 +570,7 @@ const styles = StyleSheet.create({
     flex:       1,
     color:      'rgba(255,255,255,0.75)',
     fontSize:   14,
-    fontWeight: '500',
+    fontFamily: FONTS.alegreyaSans.medium,
   },
   rowNameUnread: {
     color:      C.white,
@@ -576,6 +579,7 @@ const styles = StyleSheet.create({
   rowTime: {
     color:     C.muted,
     fontSize:  11,
+    fontFamily: FONTS.alegreyaSans.regular,
     flexShrink: 0,
   },
   rowBottom: {
@@ -588,6 +592,7 @@ const styles = StyleSheet.create({
     flex:       1,
     color:      'rgba(255,255,255,0.28)',
     fontSize:   12,
+    fontFamily: FONTS.alegreyaSans.regular,
   },
   rowPreviewUnread: {
     color: 'rgba(255,255,255,0.55)',
@@ -611,7 +616,7 @@ const styles = StyleSheet.create({
   badgeText: {
     color:      C.bg,
     fontSize:   10,
-    fontWeight: '800',
+    fontFamily: FONTS.alegreyaSans.bold,
     lineHeight: 12,
   },
 
