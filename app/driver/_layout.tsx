@@ -7,6 +7,7 @@ import { useAuthStore, useAuthHydrated } from '../../lib/store/auth.store'
 import { useMessagingBadgeSync } from '../../hooks/useMessagingBadgeSync'
 import { useGlobalPresence } from '../../hooks/useGlobalPresence'
 import { useNotificationsRealtime } from '../../hooks/useNotificationsRealtime'
+import { useSessionRevokedRealtime } from '../../hooks/useSessionRevokedRealtime'
 import { useTrackingResume } from '../../hooks/useTrackingResume'
 import { useDriverId } from '../../lib/store/auth.store'
 import { startAutoFlush, flushOnAppForeground } from '../../lib/offlineQueue'
@@ -49,6 +50,8 @@ export default function DriverLayout() {
   useGlobalPresence(currentUserId)
 
   useNotificationsRealtime(currentUserId)
+
+  useSessionRevokedRealtime(currentUserId)
 
   // Live tracking only starts at a pickup confirmation; this puts it back after
   // anything that interrupted it mid-delivery (app killed, signed out and back in).

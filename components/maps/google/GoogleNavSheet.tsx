@@ -59,6 +59,10 @@ const HEADER_BAR_H = 9
  */
 const HEADER_TAB_FLAT = (431 - 152) / HEADER_VB_W
 
+/** One stop on the route stepper, and its dot. */
+const STEP_W   = 76
+const STEP_DOT = 22
+
 /**
  * The peek is the banner header and nothing more — the shape is
  * DetailsPanelContentHeader.svg, the same one the web client's transit-tracking
@@ -234,9 +238,6 @@ export function GoogleNavSheet({
     [expanded, openH, peekH, height],
   )
 
-  const from = legIndex > 0 ? stops[legIndex - 1] : null
-  const to   = stops[legIndex] ?? null
-
   const pickup   = useMemo(() => stops.find((s) => s.kind === 'pickup') ?? null, [stops])
   const dropoffs = useMemo(() => stops.filter((s) => s.kind === 'dropoff'), [stops])
 
@@ -244,11 +245,6 @@ export function GoogleNavSheet({
   // the pickup while the load isn't aboard. Any drop-off after it can be picked
   // to go first instead.
   const nextDropoffIdx = stops[legIndex]?.kind === 'pickup' ? legIndex + 1 : legIndex
-
-  // How far along the run we are, for the truck on the progress line.
-  const progress = stops.length > 1
-    ? Math.min(Math.max(legIndex / (stops.length - 1), 0), 1)
-    : 0
 
   const arrivalClock = useMemo(() => {
     if (etaSeconds == null || etaSeconds <= 0) return null
@@ -360,36 +356,48 @@ export function GoogleNavSheet({
           </Text>
         </View>
 
-        {/* Current leg, with the truck at the run's progress */}
-        <View style={s.legRow}>
-          <Text style={s.legEnd} numberOfLines={1}>
-            <Text style={{ color: D.cyan }}>FROM </Text>
-            {from ? placeName(from.address) : 'Current location'}
-          </Text>
-          <Text style={[s.legEnd, { textAlign: 'right' }]} numberOfLines={1}>
-            <Text style={{ color: D.cyan }}>TO </Text>
-            {to ? placeName(to.address) : '—'}
-          </Text>
-        </View>
-
-        <View style={s.progressWrap}>
-          <View style={s.progressTrack} />
-          <View style={[s.progressFill, { width: `${progress * 100}%` }]} />
-          <View style={[s.truck, { left: `${progress * 100}%` }]}>
-            <Truck size={15} color={D.white} />
-          </View>
-        </View>
-
-        <View style={s.rowBetween}>
-          <View style={s.legCol}>
-            <Text style={s.placeName} numberOfLines={1}>{from ? placeName(from.address) : '—'}</Text>
-            <Text style={s.placeSub}  numberOfLines={1}>{from ? locality(from.address) : ''}</Text>
-          </View>
-          <View style={[s.legCol, { alignItems: 'flex-end' }]}>
-            <Text style={s.placeName} numberOfLines={1}>{to ? placeName(to.address) : '—'}</Text>
-            <Text style={s.placeSub}  numberOfLines={1}>{to ? locality(to.address) : ''}</Text>
-          </View>
-        </View>
+        {/* The run as a stepper: pickup, then each drop-off, stop by stop. */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={s.stepper}
+          style={{ marginTop: 14 }}
+        >
+          {stops.map((stop, i) => {
+            const done    = i < legIndex
+            const current = i === legIndex
+            const isLast  = i === stops.length - 1
+            return (
+              <View key={`${stop.label}-${stop.address}`} style={s.step}>
+                {!isLast && (
+                  <View style={[s.stepLine, { backgroundColor: i < legIndex ? D.cyan : D.track }]} />
+                )}
+                <View style={s.stepTruck}>
+                  {current && <Truck size={13} color={D.cyan} />}
+                </View>
+                <View
+                  style={[
+                    s.stepDot,
+                    done    && { borderColor: D.green, backgroundColor: D.green },
+                    current && { borderColor: D.cyan },
+                  ]}
+                >
+                  {done
+                    ? <Check size={11} color={D.sheet} strokeWidth={3} />
+                    : <Text style={[s.stepNum, current && { color: D.cyan }]}>
+                        {stop.kind === 'pickup' ? 'P' : stop.number ?? i}
+                      </Text>}
+                </View>
+                <Text
+                  style={[s.stepLabel, !done && !current && { color: D.faint }]}
+                  numberOfLines={1}
+                >
+                  {placeName(stop.address)}
+                </Text>
+              </View>
+            )
+          })}
+        </ScrollView>
 
         {/* Route board — pickup on the left, drop-offs down the right */}
         <View style={s.boardHeaders}>
@@ -607,42 +615,44 @@ const s = StyleSheet.create({
     flexShrink: 1,
   },
 
-  legRow: {
-    flexDirection:  'row',
-    justifyContent: 'space-between',
-    gap:            12,
-    marginTop:      10,
+  stepper: {
+    paddingTop:    2,
+    paddingBottom: 4,
   },
-  legEnd: {
-    color:    D.faint,
-    fontSize: 10,
-    flex:     1,
+  step: {
+    width:      STEP_W,
+    alignItems: 'center',
   },
-  legCol: {
-    flex:     1,
-    minWidth: 0,
+  stepLine: {
+    position: 'absolute',
+    top:      16 + STEP_DOT / 2 - 1,
+    left:     STEP_W / 2 + STEP_DOT / 2 + 3,
+    width:    STEP_W - STEP_DOT - 6,
+    height:   2,
   },
-
-  progressWrap: {
-    height:         20,
-    marginTop:      4,
-    marginBottom:   4,
-    justifyContent: 'center',
+  stepTruck: {
+    height:         16,
+    justifyContent: 'flex-end',
   },
-  progressTrack: {
-    height:          3,
-    borderRadius:    2,
-    backgroundColor: D.track,
+  stepDot: {
+    width:           STEP_DOT,
+    height:          STEP_DOT,
+    borderRadius:    STEP_DOT / 2,
+    borderWidth:     2,
+    borderColor:     D.track,
+    alignItems:      'center',
+    justifyContent:  'center',
   },
-  progressFill: {
-    position:        'absolute',
-    height:          3,
-    borderRadius:    2,
-    backgroundColor: D.cyan,
+  stepNum: {
+    color:      D.faint,
+    fontSize:   10,
+    fontFamily: FONTS.spartan.medium,
   },
-  truck: {
-    position:   'absolute',
-    marginLeft: -9,
+  stepLabel: {
+    color:     D.white,
+    fontSize:  10,
+    marginTop: 4,
+    maxWidth:  STEP_W - 6,
   },
 
   placeName: {
