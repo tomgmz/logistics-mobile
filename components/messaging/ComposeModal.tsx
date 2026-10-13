@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import {
+  ScrollView,
   View, Text, Modal, TextInput, TouchableOpacity,
   FlatList, ActivityIndicator, StyleSheet, KeyboardAvoidingView, Platform,
 } from 'react-native'
@@ -149,15 +150,17 @@ export default function ComposeModal({
           )}
 
           {/* Selected chips */}
+          {/* At most two rows; more selected people scroll here, so the list below keeps its room. */}
           {mode === 'group' && selectedUsers.length > 0 && (
-            <View style={styles.chipWrap}>
+            <ScrollView style={styles.chipScroll} contentContainerStyle={styles.chipWrap}
+              nestedScrollEnabled keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator>
               {selectedUsers.map(u => (
                 <TouchableOpacity key={u.user_id} onPress={() => toggle(u.user_id)} style={styles.chip}>
                   <Text style={styles.chipText}>{u.first_name} {u.last_name}</Text>
                   <X size={11} color={C.cyan} />
                 </TouchableOpacity>
               ))}
-            </View>
+            </ScrollView>
           )}
 
           {/* Search */}
@@ -262,6 +265,8 @@ const styles = StyleSheet.create({
 
   groupNameInput: { marginHorizontal: 12, marginBottom: 8, backgroundColor: C.raised, borderWidth: 1, borderColor: C.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, color: C.white, fontFamily: FONTS.alegreyaSans.regular, fontSize: 14 },
 
+  // Two rows of chips (about 28 high each, 6 apart) plus the bottom padding.
+  chipScroll: { maxHeight: 70, flexGrow: 0 },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 12, paddingBottom: 8 },
   chip:     { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: C.cyanDim, borderWidth: 1, borderColor: 'rgba(77,249,237,0.25)', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
   chipText: { color: C.cyan, fontFamily: FONTS.alegreyaSans.regular, fontSize: 12 },
