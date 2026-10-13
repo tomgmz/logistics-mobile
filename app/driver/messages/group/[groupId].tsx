@@ -19,6 +19,7 @@ import GroupSheets, { type GroupSheetView, type SheetMember } from '../../../../
 import ReadTicks, { chooseMessageRemoval, type DeleteScope } from '../../../../components/messaging/ReadTicks'
 import type { GroupMessageRaw, ReactionTogglePayload, GroupReadReceiptPayload, GroupSystemEvent, GroupMemberRequest } from '../../../../types/messaging.types'
 import { FONTS } from '../../../../lib/config/fonts'
+import { nameWithRole } from '../../../../lib/roles'
 
 const C = {
   bg:       '#0a0a0a',
@@ -461,6 +462,12 @@ export default function GroupChatScreen() {
     height: Math.max(kbHeight.value, insets.bottom),
   }))
 
+  // Shown above someone's messages: "Tom Ervin Gomez (Company Administrator)".
+  const senderLabel = (uid: string): string => {
+    const m = members.find(x => x.user_id === uid)
+    return m ? nameWithRole(m.first_name, m.last_name, m.role) : memberName(uid)
+  }
+
   const memberName = useCallback((uid: string): string => {
     if (uid === currentUserId) return 'You'
     return membersMap[uid] ?? 'Member'
@@ -787,7 +794,7 @@ export default function GroupChatScreen() {
                   <GroupBubble
                     msg={item.msg}
                     isMine={isMine}
-                    senderName={isMine ? 'You' : memberName(item.msg.sender_id)}
+                    senderName={isMine ? 'You' : senderLabel(item.msg.sender_id)}
                     memberName={memberName}
                     currentUserId={currentUserId}
                     seen={isMine && seenByAll(item.msg)}

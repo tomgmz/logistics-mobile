@@ -19,6 +19,7 @@ import EmojiSheet from '../../../components/messaging/EmojiSheet'
 import ReadTicks, { chooseMessageRemoval, type DeleteScope } from '../../../components/messaging/ReadTicks'
 import type { MessageRow, ReactionTogglePayload } from '../../../types/messaging.types'
 import { FONTS } from '../../../lib/config/fonts'
+import { roleLabel } from '../../../lib/roles'
 
 const C = {
   bg:       '#0a0a0a',
@@ -343,9 +344,10 @@ export default function DmChatScreen() {
   const { user }      = useAuthStore()
   const currentUserId = user?.user_id ?? ''
 
-  const { conversationId, participantName, participantId, bookingId } = useLocalSearchParams<{
+  const { conversationId, participantName, participantRole, participantId, bookingId } = useLocalSearchParams<{
     conversationId:  string
     participantName: string
+    participantRole?: string
     participantId:   string
     bookingId?:      string
   }>()
@@ -632,7 +634,9 @@ export default function DmChatScreen() {
             {isOnline && <View style={styles.onlineDot} />}
           </View>
           <View>
-            <Text style={styles.headerName} numberOfLines={1}>{name}</Text>
+            <Text style={styles.headerName} numberOfLines={1}>
+              {participantRole ? `${name} (${roleLabel(participantRole)})` : name}
+            </Text>
             <Text style={[styles.headerStatus, isOnline && styles.headerStatusOnline]}>
               {isTyping ? 'typing…' : isOnline ? 'Active now' : 'Offline'}
             </Text>

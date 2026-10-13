@@ -65,3 +65,17 @@ export function matchesPersonSearch(
   const name = `${person.first_name ?? ''} ${person.last_name ?? ''}`.toLowerCase()
   return name.includes(q) || roleSearchText(person.role).includes(q)
 }
+
+/**
+ * A person's name with their role, as messaging shows it:
+ * "Tom Ervin Gomez (Company Administrator)". No role, just the name.
+ */
+export function nameWithRole(
+  first: string | null | undefined,
+  last: string | null | undefined,
+  role: string | null | undefined,
+): string {
+  const name  = `${first ?? ''} ${last ?? ''}`.trim()
+  const label = roleLabel(role)
+  return label ? `${name} (${label})` : name
+}

@@ -12,7 +12,7 @@ import { messagingApi } from '../../../lib/api/messaging.api'
 import { useMessagingRealtime } from '../../../hooks/useMessagingRealtime'
 import { useMessagingStore } from '../../../lib/store/messaging.store'
 import ComposeModal from '../../../components/messaging/ComposeModal'
-import { matchesPersonSearch } from '../../../lib/roles'
+import { matchesPersonSearch, nameWithRole } from '../../../lib/roles'
 import type {
   ConversationWithDetails, GroupRaw, MessageRow, GroupMessageRaw, MessagableUser,
 } from '../../../types/messaging.types'
@@ -93,7 +93,7 @@ function DmRow({ item, currentUserId, isOnline, onPress, index }: {
         <View style={styles.rowBody}>
           <View style={styles.rowTop}>
             <Text style={[styles.rowName, hasUnread && styles.rowNameUnread]} numberOfLines={1}>
-              {u.first_name} {u.last_name}
+              {nameWithRole(u.first_name, u.last_name, u.role)}
             </Text>
             {last && (
               <Text style={styles.rowTime}>{formatTime(last.sent_at)}</Text>
@@ -349,6 +349,7 @@ export default function MessagesScreen() {
                     params: {
                       conversationId: item.data.conversation_id,
                       participantName: `${item.data.other_user.first_name ?? ''} ${item.data.other_user.last_name ?? ''}`.trim(),
+                      participantRole: item.data.other_user.role ?? '',
                       participantId: item.data.other_user.user_id,
                     },
                   })
@@ -398,6 +399,7 @@ export default function MessagesScreen() {
             params: {
               conversationId: conversationId ?? 'new',
               participantName: `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim(),
+              participantRole: u.role ?? '',
               participantId: u.user_id,
               bookingId: u.booking_id ?? '',
             },
