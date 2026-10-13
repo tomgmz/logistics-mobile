@@ -628,7 +628,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
     <View style={s.root}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
-      {/* Header — back, ref + schedule, status tag */}
+      {/* Header — back, then ref, schedule and the status tag below it */}
       <View style={[s.header, { paddingTop: insets.top + 8 }]}>
         {onBack && (
           <TouchableOpacity
@@ -650,11 +650,11 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
             {fmtDate(booking.schedule_date)}
             {booking.call_time ? ` · ${fmtTime(booking.call_time)}` : ''}
           </Text>
-        </View>
 
-        <View style={[s.tag, { backgroundColor: tag.bg, borderColor: tag.color }]}>
-          <View style={[s.tagDot, { backgroundColor: tag.color }]} />
-          <Text style={[s.tagText, { color: tag.color }]}>{tag.label}</Text>
+          <View style={[s.tag, { backgroundColor: tag.bg, borderColor: tag.color }]}>
+            <View style={[s.tagDot, { backgroundColor: tag.color }]} />
+            <Text style={[s.tagText, { color: tag.color }]}>{tag.label}</Text>
+          </View>
         </View>
       </View>
 
@@ -1499,7 +1499,9 @@ const s = StyleSheet.create({
     fontSize:  12,
     marginTop: 5,
   },
+  // Sits under the date and time, sized to its label rather than the row.
   tag: {
+    alignSelf:         'flex-start',
     height:            18,
     marginTop:         8,
     flexDirection:     'row',
