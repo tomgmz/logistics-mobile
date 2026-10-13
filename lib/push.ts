@@ -70,7 +70,14 @@ export async function registerForPushNotifications(): Promise<void> {
     const { data: token } = await Notifications.getExpoPushTokenAsync(
       projectId ? { projectId } : undefined
     )
-    if (!token || token === lastToken) return
+    if (!token) return
+    // Always tell the server, even when the token is unchanged. This runs once
+    // per sign-in, and the phone's token stays the same across accounts: if a
+    // previous driver's sign-out never reached the server (no signal, an expired
+    // session), skipping this left the phone registered to THEM, so it kept
+    // getting their notifications (a booking assigned to one driver alerting
+    // another on the same phone). Registering moves the token to whoever is
+    // signed in now.
     lastToken = token
 
     await api.post('/notifications/push/subscribe', {
@@ -85,10 +92,12 @@ export async function registerForPushNotifications(): Promise<void> {
 
 /** Remove this device's token from the backend (call on logout). */
 export async function unregisterPushNotifications(): Promise<void> {
+  const token = lastToken
+  // Forget it either way: the next sign-in registers this phone afresh.
+  lastToken = null
   try {
-    if (!lastToken) return
-    await api.post('/notifications/push/unsubscribe', { token: lastToken })
-    lastToken = null
+    if (!token) return
+    await api.post('/notifications/push/unsubscribe', { token })
   } catch (err) {
     console.warn('[push] unregister failed', err)
   }
