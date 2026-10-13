@@ -93,9 +93,20 @@ export function setSessionExpiredHandler(fn: () => void) {
   _onSessionExpired = fn
 }
 
+/**
+ * True when a refresh failed because the session is really over: the API
+ * answered 401, or there is no refresh token to try. Anything else (no signal,
+ * the API waking up, a 5xx) is temporary: the driver stays signed in and the
+ * next request tries again. Drivers lose signal on the road all the time.
+ */
+function isSessionDead(err: unknown): boolean {
+  if ((err as { noRefreshToken?: boolean } | null)?.noRefreshToken) return true
+  return axios.isAxiosError(err) && err.response?.status === 401
+}
+
 async function doRefresh(): Promise<string> {
   const refreshToken = await TokenStore.getRefresh()
-  if (!refreshToken) throw new Error('No refresh token stored.')
+  if (!refreshToken) throw Object.assign(new Error('No refresh token stored.'), { noRefreshToken: true })
 
   const { data } = await axios.post<{ status: string; data: { accessToken: string } }>(
     `${getApiUrl()}/auth/refresh`,
@@ -142,8 +153,10 @@ api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
         processQueue(null, token)
       } catch (e) {
         processQueue(e)
-        await TokenStore.clearAll()
-        _onSessionExpired?.()
+        if (isSessionDead(e)) {
+          await TokenStore.clearAll()
+          _onSessionExpired?.()
+        }
         throw e
       } finally {
         isRefreshing = false
@@ -197,6 +210,7 @@ api.interceptors.response.use(
         return api(original)
       } catch (refreshError) {
         processQueue(refreshError)
+        if (!isSessionDead(refreshError)) return Promise.reject(error)
         await TokenStore.clearAll()
         _onSessionExpired?.()
         return Promise.reject(refreshError)
