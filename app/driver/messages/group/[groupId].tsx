@@ -15,7 +15,7 @@ import { messagingApi } from '../../../../lib/api/messaging.api'
 import { useMessagingRealtime } from '../../../../hooks/useMessagingRealtime'
 import { setActiveChat } from '../../../../lib/push'
 import EmojiSheet from '../../../../components/messaging/EmojiSheet'
-import type { GroupMessageRaw, ReactionTogglePayload, GroupReadReceiptPayload } from '../../../../types/messaging.types'
+import type { GroupMessageRaw, ReactionTogglePayload, GroupReadReceiptPayload, GroupSystemEvent } from '../../../../types/messaging.types'
 import { FONTS } from '../../../../lib/config/fonts'
 
 const C = {
@@ -69,6 +69,34 @@ interface GMsg {
   sent_at:  string
   reply_to: { message_id: string; content: string; sender_id: string } | null
   reactions:{ emoji: string; user_id: string }[]
+  kind:     'text' | 'system'
+  meta:     GroupSystemEvent | null
+}
+
+/** "A and B", "A, B and C". */
+function joinNames(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? ''
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+}
+
+/**
+ * The sentence for a group event line, from the reader's side: "You named the
+ * group Dispatch." / "Ana Cruz added you to the group." Falls back to the
+ * stored sentence when the event cannot be read.
+ */
+function groupEventText(msg: GMsg, currentUserId: string, nameOf: (uid: string) => string): string {
+  const meta = msg.meta
+  if (!meta) return msg.content
+  const actor = msg.sender_id === currentUserId ? 'You' : nameOf(msg.sender_id)
+  if (meta.event === 'renamed') return `${actor} named the group ${meta.name}.`
+  if (meta.event === 'added') {
+    const names = meta.user_ids.map((id, i) => (id === currentUserId ? 'you' : meta.names[i] ?? nameOf(id)))
+    return `${actor} added ${joinNames(names)} to the group.`
+  }
+  if (meta.event === 'removed') {
+    return `${actor} removed ${meta.user_id === currentUserId ? 'you' : meta.name} from the group.`
+  }
+  return msg.content
 }
 
 interface ReactionGroup { emoji: string; count: number; reacted: boolean }
@@ -442,6 +470,8 @@ export default function GroupChatScreen() {
     sent_at:  raw.sent_at,
     reply_to: raw.reply_to,
     reactions:raw.reactions ?? [],
+    kind:     raw.message_type === 'system' ? 'system' : 'text',
+    meta:     raw.meta ?? null,
   }), [])
 
   const fetchMessages = useCallback(async () => {
@@ -531,6 +561,8 @@ export default function GroupChatScreen() {
       id: oid, group_id: groupId, sender_id: currentUserId, content: body,
       sent_at: new Date().toISOString(),
       reply_to: replyTo ? { message_id: replyTo.id, content: replyTo.content, sender_id: replyTo.sender_id } : null,
+      kind:     'text' as const,
+      meta:     null,
       reactions: [],
     }])
     setText('')
@@ -644,6 +676,10 @@ export default function GroupChatScreen() {
                   <View style={styles.dateLine} />
                 </View>
               )
+              // A group event is a centered line, never a speech bubble.
+              if (item.msg.kind === 'system') return (
+                <Text style={styles.eventLine}>{groupEventText(item.msg, currentUserId, memberName)}</Text>
+              )
               const isMine = item.msg.sender_id === currentUserId
               const isOpt  = item.msg.id.startsWith('optimistic-')
               return (
@@ -730,6 +766,15 @@ export default function GroupChatScreen() {
 }
 
 const styles = StyleSheet.create({
+  eventLine: {
+    alignSelf:        'center',
+    textAlign:        'center',
+    fontSize:         12,
+    lineHeight:       17,
+    color:            'rgba(255,255,255,0.45)',
+    paddingHorizontal: 28,
+    paddingVertical:  8,
+  },
   root:     { flex: 1, backgroundColor: C.bg },
   flex:     { flex: 1 },
 

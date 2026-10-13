@@ -56,7 +56,16 @@ export interface GroupMessageRaw {
   reply_to_message_id:  string | null
   reply_to:             MessageReplyTo | null
   reactions:            MessageReaction[]
+  /** 'system' = a group event (renamed, people added or removed), not a message. */
+  message_type?:        'text' | 'system'
+  meta?:                GroupSystemEvent | null
 }
+
+/** A group event, shown as a centered line in the chat rather than a bubble. */
+export type GroupSystemEvent =
+  | { event: 'renamed'; name: string; previous_name?: string | null }
+  | { event: 'added'; user_ids: string[]; names: string[] }
+  | { event: 'removed'; user_id: string; name: string }
 
 export interface GroupMemberRaw {
   status:       'pending' | 'accepted' | 'declined'
