@@ -94,6 +94,8 @@ export interface GroupRaw {
 export interface GroupInvitePayload      { group_id: string; group_name: string }
 /** A group was renamed, gained or lost members, or got a member request. */
 export interface GroupUpdatedPayload     { group_id: string; name?: string }
+/** A message was unsent for everyone. */
+export interface MessageUnsentPayload    { message_id: string; conversation_id?: string; group_id?: string }
 
 /** A member's request to add or remove someone, waiting on the group's creator. */
 export interface GroupMemberRequest {

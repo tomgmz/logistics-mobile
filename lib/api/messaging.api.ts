@@ -60,8 +60,9 @@ export const messagingApi = {
   markAsRead: (conversationId: string) =>
     patch<void>(`${B}/conversations/${conversationId}/read`),
 
-  deleteMessage: (messageId: string) =>
-    del<void>(`${B}/messages/${messageId}`),
+  // 'me' deletes it for the caller; 'everyone' unsends it (sender only).
+  deleteMessage: (messageId: string, scope: 'me' | 'everyone' = 'me') =>
+    del<void>(`${B}/messages/${messageId}${scope === 'everyone' ? '?scope=everyone' : ''}`),
 
   getGroups: () =>
     get<GroupRaw[]>(`${B}/groups`),
@@ -98,8 +99,8 @@ export const messagingApi = {
     post<void>(`${B}/groups/${groupId}/requests/${requestId}/decide`, { approve }),
 
   // Delete for me: hides a group message from the caller only.
-  hideGroupMessage: (groupId: string, messageId: string) =>
-    del<void>(`${B}/groups/${groupId}/messages/${messageId}`),
+  hideGroupMessage: (groupId: string, messageId: string, scope: 'me' | 'everyone' = 'me') =>
+    del<void>(`${B}/groups/${groupId}/messages/${messageId}${scope === 'everyone' ? '?scope=everyone' : ''}`),
 
   reactToMessage: (conversationId: string, messageId: string, emoji: string) =>
     post<{ action: 'added' | 'removed' }>(`${B}/conversations/${conversationId}/messages/${messageId}/react`, { emoji }),

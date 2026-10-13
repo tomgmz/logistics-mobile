@@ -234,17 +234,19 @@ export default function MessagesScreen() {
     },
     onGroupMessage: (raw: GroupMessageRaw) => {
       const isMyMsg = raw.sender_id === currentUserId
+      // A group event line (renamed, people added) is never unread, like on the web.
+      const isEvent = raw.message_type === 'system'
       let known = false
       setGroups(prev => {
         known = prev.some(g => g.group_id === raw.group_id)
         return prev.map(g => {
           if (g.group_id !== raw.group_id) return g
           if (isMyMsg && g.unread_count > 0) decrementUnread(g.unread_count)
-          else if (!isMyMsg) incrementUnread()
+          else if (!isMyMsg && !isEvent) incrementUnread()
           return {
             ...g,
             last_message: { message_id: raw.message_id, content: raw.content, sent_at: raw.sent_at, sender_id: raw.sender_id },
-            unread_count: isMyMsg ? 0 : g.unread_count + 1,
+            unread_count: isMyMsg ? 0 : isEvent ? g.unread_count : g.unread_count + 1,
           }
         })
       })
@@ -253,6 +255,7 @@ export default function MessagesScreen() {
     onGroupInvite: () => fetchAll(),
     // Renamed, members changed, or someone was removed: reload the list.
     onGroupUpdated: () => fetchAll(),
+    onMessageUnsent: () => fetchAll(),
   })
 
   const q = search.toLowerCase()

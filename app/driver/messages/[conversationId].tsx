@@ -16,7 +16,7 @@ import { messagingApi } from '../../../lib/api/messaging.api'
 import { useMessagingRealtime } from '../../../hooks/useMessagingRealtime'
 import { setActiveChat } from '../../../lib/push'
 import EmojiSheet from '../../../components/messaging/EmojiSheet'
-import ReadTicks, { confirmDeleteMessage } from '../../../components/messaging/ReadTicks'
+import ReadTicks, { chooseMessageRemoval, type DeleteScope } from '../../../components/messaging/ReadTicks'
 import type { MessageRow, ReactionTogglePayload } from '../../../types/messaging.types'
 import { FONTS } from '../../../lib/config/fonts'
 
@@ -171,7 +171,7 @@ function EmojiPicker({ visible, onClose, onPick, onDelete }: {
               activeOpacity={0.7}
             >
               <Trash2 size={16} color="#f87171" />
-              <Text style={epS.deleteText}>Delete for me</Text>
+              <Text style={epS.deleteText}>Remove message</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -457,6 +457,7 @@ export default function DmChatScreen() {
 
   const { broadcastTyping } = useMessagingRealtime({
     currentUserId,
+    onMessageUnsent: ({ message_id }) => setMessages(prev => prev.filter(m => m.id !== message_id)),
     conversationId: isDraft ? `draft:${participantId}` : activeConvId,
     onNewMessage: (raw) => {
       const inc = toItem(raw)
@@ -569,10 +570,10 @@ export default function DmChatScreen() {
     }
   }
 
-  const handleDelete = async (messageId: string) => {
+  const handleDelete = async (messageId: string, scope: DeleteScope = 'me') => {
     if (messageId.startsWith('optimistic-')) return
     setMessages(prev => prev.filter(m => m.id !== messageId))
-    try { await messagingApi.deleteMessage(messageId) }
+    try { await messagingApi.deleteMessage(messageId, scope) }
     catch { fetchMessages() }
   }
 
@@ -753,7 +754,10 @@ export default function DmChatScreen() {
         onPick={(emoji) => { if (pickerMsgId) handleReact(pickerMsgId, emoji) }}
         onDelete={() => {
           const id = pickerMsgId
-          if (id) confirmDeleteMessage(() => { void handleDelete(id) })
+          if (!id) return
+          const mine = messages.some(m => m.id === id && m.sender_id === currentUserId)
+          // Let the long-press sheet finish closing first; iOS drops an alert opened mid-dismiss.
+          setTimeout(() => chooseMessageRemoval(mine, (scope) => { void handleDelete(id, scope) }), 300)
         }}
       />
     </View>

@@ -16,7 +16,7 @@ import { useMessagingRealtime } from '../../../../hooks/useMessagingRealtime'
 import { setActiveChat } from '../../../../lib/push'
 import EmojiSheet from '../../../../components/messaging/EmojiSheet'
 import GroupSheets, { type GroupSheetView, type SheetMember } from '../../../../components/messaging/GroupSheets'
-import ReadTicks, { confirmDeleteMessage } from '../../../../components/messaging/ReadTicks'
+import ReadTicks, { chooseMessageRemoval, type DeleteScope } from '../../../../components/messaging/ReadTicks'
 import type { GroupMessageRaw, ReactionTogglePayload, GroupReadReceiptPayload, GroupSystemEvent, GroupMemberRequest } from '../../../../types/messaging.types'
 import { FONTS } from '../../../../lib/config/fonts'
 
@@ -183,7 +183,7 @@ function EmojiPicker({ visible, onClose, onPick, onDelete }: {
           {onDelete && (
             <TouchableOpacity style={epS.deleteRow} onPress={() => { onDelete(); onClose() }} activeOpacity={0.7}>
               <Trash2 size={16} color="#f87171" />
-              <Text style={epS.deleteText}>Delete for me</Text>
+              <Text style={epS.deleteText}>Remove message</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -565,6 +565,7 @@ export default function GroupChatScreen() {
 
   const { broadcastTyping } = useMessagingRealtime({
     currentUserId,
+    onMessageUnsent: ({ message_id }) => setMessages(prev => prev.filter(m => m.id !== message_id)),
     conversationId: `group:${groupId}`,
     onGroupMessage: (raw) => {
       if (raw.group_id !== groupId) return
@@ -633,10 +634,10 @@ export default function GroupChatScreen() {
   }
 
   // Delete for me: everyone else in the group keeps the message.
-  const handleDelete = async (messageId: string) => {
+  const handleDelete = async (messageId: string, scope: DeleteScope = 'me') => {
     if (messageId.startsWith('optimistic-')) return
     setMessages(prev => prev.filter(m => m.id !== messageId))
-    try { await messagingApi.hideGroupMessage(groupId, messageId) }
+    try { await messagingApi.hideGroupMessage(groupId, messageId, scope) }
     catch { fetchMessages() }
   }
 
@@ -872,7 +873,10 @@ export default function GroupChatScreen() {
         onPick={(emoji) => { if (pickerMsgId) handleReact(pickerMsgId, emoji) }}
         onDelete={() => {
           const id = pickerMsgId
-          if (id) confirmDeleteMessage(() => { void handleDelete(id) })
+          if (!id) return
+          const mine = messages.some(m => m.id === id && m.sender_id === currentUserId && m.kind !== 'system')
+          // Let the long-press sheet finish closing first; iOS drops an alert opened mid-dismiss.
+          setTimeout(() => chooseMessageRemoval(mine, (scope) => { void handleDelete(id, scope) }), 300)
         }}
       />
 

@@ -11,17 +11,32 @@ export default function ReadTicks({ seen, size = 12 }: { seen: boolean; size?: n
     : <Check size={size} color="rgba(255,255,255,0.35)" accessibilityLabel="Sent" />
 }
 
-/**
- * "Delete this message?" before any message is removed. Deleting is only ever
- * for the person doing it; everyone else in the conversation keeps it.
- */
-export function confirmDeleteMessage(onConfirm: () => void): void {
-  Alert.alert(
-    'Delete this message?',
-    'It will be deleted for you only. Everyone else in this conversation will still see it.',
-    [
+export type DeleteScope = 'me' | 'everyone'
+
+function confirmScope(scope: DeleteScope, onConfirm: (scope: DeleteScope) => void): void {
+  if (scope === 'everyone') {
+    Alert.alert('Unsend this message?', 'It will be removed for everyone in this conversation.', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete for me', style: 'destructive', onPress: onConfirm },
-    ],
-  )
+      { text: 'Unsend', style: 'destructive', onPress: () => onConfirm('everyone') },
+    ])
+  } else {
+    Alert.alert('Delete this message?', 'It will be deleted for you only. Everyone else in this conversation will still see it.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete for me', style: 'destructive', onPress: () => onConfirm('me') },
+    ])
+  }
+}
+
+/**
+ * Removing a message, in two steps (same as the web): choose "Unsend for
+ * everyone" (your own messages only) or "Delete for me", then confirm. With
+ * only one option — someone else's message — it goes straight to confirming.
+ */
+export function chooseMessageRemoval(canUnsend: boolean, onConfirm: (scope: DeleteScope) => void): void {
+  if (!canUnsend) { confirmScope('me', onConfirm); return }
+  Alert.alert('Remove this message', undefined, [
+    { text: 'Unsend for everyone', style: 'destructive', onPress: () => confirmScope('everyone', onConfirm) },
+    { text: 'Delete for me', onPress: () => confirmScope('me', onConfirm) },
+    { text: 'Cancel', style: 'cancel' },
+  ])
 }
