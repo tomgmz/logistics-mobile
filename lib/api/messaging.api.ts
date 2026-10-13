@@ -5,6 +5,7 @@ import type {
   GroupRaw,
   GroupMessageRaw,
   MessagableUser,
+  GroupMemberRequest,
 } from '../../types/messaging.types'
 
 interface ApiRes<T> { success: boolean; data: T }
@@ -76,6 +77,29 @@ export const messagingApi = {
 
   markGroupRead: (groupId: string) =>
     patch<void>(`${B}/groups/${groupId}/read`),
+
+  // Only the group's creator renames it.
+  renameGroup: (groupId: string, name: string) =>
+    patch<{ name: string }>(`${B}/groups/${groupId}`, { name }),
+
+  // The creator adds directly; anyone else's choice becomes a request for the creator.
+  addGroupMembers: (groupId: string, memberIds: string[]) =>
+    post<{ added: number; requested: number }>(`${B}/groups/${groupId}/members`, { member_ids: memberIds }),
+
+  // Same rule for removing someone.
+  removeGroupMember: (groupId: string, userId: string) =>
+    del<{ removed: boolean; requested: boolean }>(`${B}/groups/${groupId}/members/${userId}`),
+
+  // The creator's queue of add/remove requests.
+  getGroupMemberRequests: (groupId: string) =>
+    get<GroupMemberRequest[]>(`${B}/groups/${groupId}/requests`),
+
+  decideGroupMemberRequest: (groupId: string, requestId: string, approve: boolean) =>
+    post<void>(`${B}/groups/${groupId}/requests/${requestId}/decide`, { approve }),
+
+  // Delete for me: hides a group message from the caller only.
+  hideGroupMessage: (groupId: string, messageId: string) =>
+    del<void>(`${B}/groups/${groupId}/messages/${messageId}`),
 
   reactToMessage: (conversationId: string, messageId: string, emoji: string) =>
     post<{ action: 'added' | 'removed' }>(`${B}/conversations/${conversationId}/messages/${messageId}/react`, { emoji }),

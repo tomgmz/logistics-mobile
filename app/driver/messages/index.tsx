@@ -12,6 +12,7 @@ import { messagingApi } from '../../../lib/api/messaging.api'
 import { useMessagingRealtime } from '../../../hooks/useMessagingRealtime'
 import { useMessagingStore } from '../../../lib/store/messaging.store'
 import ComposeModal from '../../../components/messaging/ComposeModal'
+import { matchesPersonSearch } from '../../../lib/roles'
 import type {
   ConversationWithDetails, GroupRaw, MessageRow, GroupMessageRaw, MessagableUser,
 } from '../../../types/messaging.types'
@@ -250,19 +251,19 @@ export default function MessagesScreen() {
       if (!known) fetchAll()
     },
     onGroupInvite: () => fetchAll(),
+    // Renamed, members changed, or someone was removed: reload the list.
+    onGroupUpdated: () => fetchAll(),
   })
 
   const q = search.toLowerCase()
 
   const unified: UnifiedItem[] = [
     ...conversations
-      .filter(c => {
-        const u = c.other_user
-        return `${u.first_name ?? ''} ${u.last_name ?? ''}`.toLowerCase().includes(q)
-      })
+      // By name or role, e.g. "company administrator".
+      .filter(c => matchesPersonSearch(search, c.other_user))
       .map(c => ({ kind: 'dm' as const, data: c, lastAt: c.last_message?.sent_at ?? c.created_at })),
     ...groups
-      .filter(g => g.name.toLowerCase().includes(q))
+      .filter(g => g.name.toLowerCase().includes(q.trim()))
       .map(g => ({ kind: 'group' as const, data: g, lastAt: g.last_message?.sent_at ?? g.created_at })),
   ].sort((a, b) => b.lastAt.localeCompare(a.lastAt))
 
@@ -295,7 +296,7 @@ export default function MessagesScreen() {
         <TextInput
           value={search}
           onChangeText={setSearch}
-          placeholder="Search conversations…"
+          placeholder="Search by name or role…"
           placeholderTextColor="rgba(255,255,255,0.22)"
           style={styles.searchInput}
         />

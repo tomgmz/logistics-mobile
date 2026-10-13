@@ -3,7 +3,7 @@ import type { MutableRefObject } from 'react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import type {
-  MessageRow, GroupMessageRaw, GroupInvitePayload,
+  MessageRow, GroupMessageRaw, GroupInvitePayload, GroupUpdatedPayload,
   ReadReceiptPayload, GroupReadReceiptPayload, ReactionTogglePayload,
 } from '../types/messaging.types'
 
@@ -18,6 +18,7 @@ export interface UseMessagingRealtimeOptions {
   onGroupMessage?:     (msg:     GroupMessageRaw)          => void
   onGroupReadReceipt?: (payload: GroupReadReceiptPayload)  => void
   onGroupInvite?:      (payload: GroupInvitePayload)       => void
+  onGroupUpdated?:     (payload: GroupUpdatedPayload)      => void
   onPresenceChange?:   (onlineUserIds: string[])           => void
   onTyping?:           (userId: string, isTyping: boolean) => void
 }
@@ -74,6 +75,9 @@ function createEntry(
     })
     .on('broadcast', { event: 'group_invite' }, ({ payload }) => {
       emit((o) => o.onGroupInvite?.(payload as GroupInvitePayload))
+    })
+    .on('broadcast', { event: 'group_updated' }, ({ payload }) => {
+      emit((o) => o.onGroupUpdated?.(payload as GroupUpdatedPayload))
     })
     .on('broadcast', { event: 'typing' }, ({ payload }) => {
       const p = payload as { user_id: string; is_typing: boolean }

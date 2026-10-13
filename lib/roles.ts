@@ -36,3 +36,32 @@ const TEXT_TOKENS: [RegExp, string][] = [
 export function expandText(text: string): string {
   return TEXT_TOKENS.reduce((s, [rx, rep]) => s.replace(rx, rep), text ?? '')
 }
+
+// Short forms people still type when searching for a role, though the UI never
+// shows them.
+const ROLE_SEARCH_ALIASES: Record<string, string> = {
+  admin:              'admin',
+  it_admin:           'it admin',
+  general_manager:    'gm',
+  operations_manager: 'ops',
+  fleet_manager:      'fleet',
+}
+
+/** Everything a role can be searched by, lowercased: "company administrator", "operations manager", "gm". */
+export function roleSearchText(role: string | null | undefined): string {
+  if (!role) return ''
+  return [roleLabel(role), role.replace(/_/g, ' '), ROLE_SEARCH_ALIASES[role] ?? '']
+    .join(' ')
+    .toLowerCase()
+}
+
+/** Whether a person matches a search box query, by name or by role. */
+export function matchesPersonSearch(
+  query: string,
+  person: { first_name?: string | null; last_name?: string | null; role?: string | null },
+): boolean {
+  const q = query.trim().toLowerCase()
+  if (!q) return true
+  const name = `${person.first_name ?? ''} ${person.last_name ?? ''}`.toLowerCase()
+  return name.includes(q) || roleSearchText(person.role).includes(q)
+}

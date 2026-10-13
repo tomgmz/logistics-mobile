@@ -92,6 +92,17 @@ export interface GroupRaw {
 }
 
 export interface GroupInvitePayload      { group_id: string; group_name: string }
+/** A group was renamed, gained or lost members, or got a member request. */
+export interface GroupUpdatedPayload     { group_id: string; name?: string }
+
+/** A member's request to add or remove someone, waiting on the group's creator. */
+export interface GroupMemberRequest {
+  request_id:   string
+  action:       'add' | 'remove'
+  requested_by: { user_id: string; name: string }
+  target:       { user_id: string; name: string }
+  created_at:   string
+}
 export interface ReadReceiptPayload      { conversation_id: string; reader_id: string; last_read_at: string }
 export interface GroupReadReceiptPayload { group_id: string; user_id: string; read_at: string }
 export interface ReactionTogglePayload   {

@@ -2,11 +2,11 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import {
   View, Text, FlatList, TouchableOpacity, TextInput,
   StyleSheet, ActivityIndicator,
-  Animated, Modal, Keyboard,
+  Animated, Modal, Keyboard, Alert,
 } from 'react-native'
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { ArrowLeft, Send, CornerUpLeft, X, Users, Check, X as XIcon, Smile } from 'lucide-react-native'
+import { ArrowLeft, Send, CornerUpLeft, X, Users, Check, X as XIcon, Smile, MoreVertical, UserPlus, Pencil, Inbox, Trash2 } from 'lucide-react-native'
 import Reanimated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated'
 import { useKeyboardHandler } from 'react-native-keyboard-controller'
 import { GestureDetector, Gesture } from 'react-native-gesture-handler'
@@ -15,7 +15,9 @@ import { messagingApi } from '../../../../lib/api/messaging.api'
 import { useMessagingRealtime } from '../../../../hooks/useMessagingRealtime'
 import { setActiveChat } from '../../../../lib/push'
 import EmojiSheet from '../../../../components/messaging/EmojiSheet'
-import type { GroupMessageRaw, ReactionTogglePayload, GroupReadReceiptPayload, GroupSystemEvent } from '../../../../types/messaging.types'
+import GroupSheets, { type GroupSheetView, type SheetMember } from '../../../../components/messaging/GroupSheets'
+import ReadTicks, { confirmDeleteMessage } from '../../../../components/messaging/ReadTicks'
+import type { GroupMessageRaw, ReactionTogglePayload, GroupReadReceiptPayload, GroupSystemEvent, GroupMemberRequest } from '../../../../types/messaging.types'
 import { FONTS } from '../../../../lib/config/fonts'
 
 const C = {
@@ -163,7 +165,9 @@ const rS = StyleSheet.create({
   countActive: { color: C.cyan },
 })
 
-function EmojiPicker({ visible, onClose, onPick }: { visible: boolean; onClose: () => void; onPick: (e: string) => void }) {
+function EmojiPicker({ visible, onClose, onPick, onDelete }: {
+  visible: boolean; onClose: () => void; onPick: (e: string) => void; onDelete?: () => void
+}) {
   return (
     <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity style={epS.backdrop} activeOpacity={1} onPress={onClose}>
@@ -176,6 +180,12 @@ function EmojiPicker({ visible, onClose, onPick }: { visible: boolean; onClose: 
               </TouchableOpacity>
             ))}
           </View>
+          {onDelete && (
+            <TouchableOpacity style={epS.deleteRow} onPress={() => { onDelete(); onClose() }} activeOpacity={0.7}>
+              <Trash2 size={16} color="#f87171" />
+              <Text style={epS.deleteText}>Delete for me</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </TouchableOpacity>
     </Modal>
@@ -188,15 +198,18 @@ const epS = StyleSheet.create({
   row:      { flexDirection: 'row', justifyContent: 'space-between' },
   emojiBtn: { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' },
   emoji:    { fontSize: 24 },
+  deleteRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 18, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(248,113,113,0.25)', backgroundColor: 'rgba(248,113,113,0.08)' },
+  deleteText: { color: '#f87171', fontFamily: FONTS.alegreyaSans.medium, fontSize: 14 },
 })
 
-function GroupBubble({ msg, isMine, senderName, currentUserId, seenBy, onLongPress, onReact, memberName, onReply }: {
+function GroupBubble({ msg, isMine, senderName, currentUserId, seen, onLongPress, onReact, memberName, onReply }: {
   msg:           GMsg
   isMine:        boolean
   senderName:    string
   memberName:    (uid: string) => string
   currentUserId: string
-  seenBy:        { user_id: string; first_name: string }[]
+  /** Seen by everyone else in the group: double check. */
+  seen:          boolean
   onLongPress:   (id: string) => void
   onReact:       (id: string, emoji: string) => void
   onReply:       (m: GMsg) => void
@@ -293,18 +306,10 @@ function GroupBubble({ msg, isMine, senderName, currentUserId, seenBy, onLongPre
             onToggle={(emoji) => onReact(msg.id, emoji)}
           />
 
-          <Text style={[bS.time, isMine && { alignSelf: 'flex-end' }]}>{formatMsgTime(msg.sent_at)}</Text>
-
-          {isMine && seenBy.length > 0 && (
-            <View style={bS.seenRow}>
-              {seenBy.slice(0, 3).map(s => (
-                <View key={s.user_id} style={bS.seenAvatar}>
-                  <Text style={bS.seenAvatarText}>{s.first_name[0]?.toUpperCase() ?? '?'}</Text>
-                </View>
-              ))}
-              {seenBy.length > 3 && <Text style={bS.seenOverflow}>+{seenBy.length - 3}</Text>}
-            </View>
-          )}
+          <View style={[bS.metaRow, isMine && { alignSelf: 'flex-end' }]}>
+            <Text style={bS.time}>{formatMsgTime(msg.sent_at)}</Text>
+            {isMine && <ReadTicks seen={seen && !msg.id.startsWith('optimistic-')} size={11} />}
+          </View>
         </Reanimated.View>
 
         {/* Reply icon — right of bubble for theirs, fades in as bubble slides right */}
@@ -345,9 +350,11 @@ const bS = StyleSheet.create({
   textMine:     { color: C.cyanText, fontFamily: FONTS.alegreyaSans.regular, fontSize: 14, lineHeight: 20 },
   textTheirs:   { color: C.white,    fontFamily: FONTS.alegreyaSans.regular, fontSize: 14, lineHeight: 20 },
 
-  time: { color: C.muted, fontFamily: FONTS.alegreyaSans.regular, fontSize: 10, marginTop: 3, marginHorizontal: 2 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 3, marginHorizontal: 2 },
+  time: { color: C.muted, fontFamily: FONTS.alegreyaSans.regular, fontSize: 10 },
 
-  seenRow:        { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 3, alignSelf: 'flex-end' },
+  // Seen avatars sit at the right edge under the newest message each member read.
+  seenRow:        { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 2, marginBottom: 4, alignSelf: 'flex-end' },
   seenAvatar:     { width: 14, height: 14, borderRadius: 7, backgroundColor: C.raised, borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' },
   seenAvatarText: { color: 'rgba(255,255,255,0.7)', fontFamily: FONTS.alegreyaSans.bold, fontSize: 7 },
   seenOverflow:   { color: 'rgba(255,255,255,0.4)', fontFamily: FONTS.alegreyaSans.regular, fontSize: 9, marginLeft: 1 },
@@ -417,7 +424,15 @@ export default function GroupChatScreen() {
   const [pickerMsgId, setPickerMsgId] = useState<string | null>(null)
   const [emojiOpen,   setEmojiOpen]   = useState(false)
   const [membersMap,  setMembersMap]  = useState<Record<string, string>>({})
-  const [members,     setMembers]     = useState<{ user_id: string; first_name: string; status: string; last_read_at: string | null }[]>([])
+  const [members,     setMembers]     = useState<(SheetMember & { last_read_at: string | null })[]>([])
+  const [title,       setTitle]       = useState<string | null>(null)
+  const [createdBy,   setCreatedBy]   = useState('')
+  const [requests,    setRequests]    = useState<GroupMemberRequest[]>([])
+  const [sheet,       setSheet]       = useState<GroupSheetView | null>(null)
+  const inputRef = useRef<TextInput>(null)
+
+  // Only the creator renames the group and changes who is in it; everyone else asks.
+  const isCreator = !!createdBy && createdBy === currentUserId
 
   const listRef      = useRef<FlatList>(null)
   const pendingIds   = useRef<Set<string>>(new Set())
@@ -451,16 +466,26 @@ export default function GroupChatScreen() {
     return membersMap[uid] ?? 'Member'
   }, [membersMap, currentUserId])
 
-  const seenByFor = useCallback((msg: GMsg, isMine: boolean): { user_id: string; first_name: string }[] => {
-    if (!isMine || msg.id.startsWith('optimistic-')) return []
+  const others = members.filter(m => m.status === 'accepted' && m.user_id !== currentUserId)
+
+  // Your message gets the double check once every other member has read it.
+  const seenByAll = useCallback((msg: GMsg): boolean => {
+    if (!others.length) return false
     const sentMs = parsePHT(msg.sent_at).getTime()
-    return members.filter(m =>
-      m.status === 'accepted' &&
-      m.user_id !== currentUserId &&
-      m.last_read_at !== null &&
-      parsePHT(m.last_read_at).getTime() >= sentMs
-    )
-  }, [members, currentUserId])
+    return others.every(m => m.last_read_at !== null && parsePHT(m.last_read_at).getTime() >= sentMs)
+  }, [others])
+
+  // Each member's avatar appears once, under the newest message they have read.
+  const seenAt: Record<string, typeof members> = {}
+  for (const m of others) {
+    if (!m.last_read_at) continue
+    const readMs = parsePHT(m.last_read_at).getTime()
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i]
+      if (msg.kind === 'system' || msg.id.startsWith('optimistic-') || msg.sender_id === m.user_id) continue
+      if (parsePHT(msg.sent_at).getTime() <= readMs) { (seenAt[msg.id] ??= []).push(m); break }
+    }
+  }
 
   const toItem = useCallback((raw: GroupMessageRaw): GMsg => ({
     id:       raw.message_id,
@@ -474,28 +499,50 @@ export default function GroupChatScreen() {
     meta:     raw.meta ?? null,
   }), [])
 
+  // The group itself: name, creator, members, and the creator's requests.
+  const loadGroup = useCallback(async () => {
+    if (!groupId) return
+    try {
+      const rawGroups = await messagingApi.getGroups()
+      const found = rawGroups.find(g => g.group_id === groupId)
+      if (!found) {
+        // Taken out of the group (or it is gone): nothing left to show here.
+        if (myStatus === 'accepted') {
+          Alert.alert('Removed from group', 'You are no longer a member of this group.')
+          router.back()
+        }
+        return
+      }
+      const map: Record<string, string> = {}
+      for (const m of found.members) {
+        map[m.user.user_id] = `${m.user.first_name ?? ''} ${m.user.last_name ?? ''}`.trim()
+      }
+      setMembersMap(map)
+      setMembers(found.members.map(m => ({
+        user_id:      m.user.user_id,
+        first_name:   m.user.first_name ?? '',
+        last_name:    m.user.last_name ?? '',
+        role:         m.user.role,
+        status:       m.status,
+        last_read_at: m.last_read_at ?? null,
+      })))
+      setTitle(found.name)
+      setCreatedBy(found.created_by)
+      if (found.created_by === currentUserId) {
+        messagingApi.getGroupMemberRequests(groupId).then(rs => setRequests(rs ?? [])).catch(() => {})
+      } else {
+        setRequests([])
+      }
+    } catch { /* silent */ }
+  }, [groupId, myStatus, currentUserId, router])
+
+  useEffect(() => { loadGroup() }, [loadGroup])
+
   const fetchMessages = useCallback(async () => {
     if (!groupId || myStatus !== 'accepted') return
     try {
-      const [rawMsgs, rawGroups] = await Promise.all([
-        messagingApi.getGroupMessages(groupId, { limit: 60 }),
-        messagingApi.getGroups(),
-      ])
+      const rawMsgs = await messagingApi.getGroupMessages(groupId, { limit: 60 })
       setMessages(rawMsgs.map(toItem))
-      const found = rawGroups.find(g => g.group_id === groupId)
-      if (found) {
-        const map: Record<string, string> = {}
-        for (const m of found.members) {
-          map[m.user.user_id] = `${m.user.first_name ?? ''} ${m.user.last_name ?? ''}`.trim()
-        }
-        setMembersMap(map)
-        setMembers(found.members.map(m => ({
-          user_id:      m.user.user_id,
-          first_name:   m.user.first_name ?? '',
-          status:       m.status,
-          last_read_at: m.last_read_at ?? null,
-        })))
-      }
     } catch { /* silent */ }
     finally { setLoading(false) }
   }, [groupId, myStatus, toItem])
@@ -532,6 +579,7 @@ export default function GroupChatScreen() {
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80)
     },
     onReactionToggle: applyReaction,
+    onGroupUpdated: (p) => { if (p.group_id === groupId) loadGroup() },
     onGroupReadReceipt: ({ user_id, read_at }: GroupReadReceiptPayload) => {
       setMembers(prev => prev.map(m => m.user_id === user_id ? { ...m, last_read_at: read_at } : m))
     },
@@ -566,6 +614,8 @@ export default function GroupChatScreen() {
       reactions: [],
     }])
     setText('')
+    // Stay in the box, so the next message can be typed straight away.
+    inputRef.current?.focus()
     setReplyTo(null)
     if (meTypingTimer.current) clearTimeout(meTypingTimer.current)
     stopMeTyping()
@@ -580,6 +630,14 @@ export default function GroupChatScreen() {
       pendingIds.current.delete(oid)
       setMessages(prev => prev.filter(m => m.id !== oid))
     } finally { setSending(false) }
+  }
+
+  // Delete for me: everyone else in the group keeps the message.
+  const handleDelete = async (messageId: string) => {
+    if (messageId.startsWith('optimistic-')) return
+    setMessages(prev => prev.filter(m => m.id !== messageId))
+    try { await messagingApi.hideGroupMessage(groupId, messageId) }
+    catch { fetchMessages() }
   }
 
   const handleReact = async (messageId: string, emoji: string) => {
@@ -619,7 +677,10 @@ export default function GroupChatScreen() {
     entries.push({ type: 'msg', key: m.id, msg: m })
   }
 
-  const name = groupName ?? 'Group'
+  const name = title ?? groupName ?? 'Group'
+  const creatorLine = createdBy === currentUserId
+    ? 'You created this group'
+    : createdBy ? `${memberName(createdBy)} created this group` : ''
   const typingLabel = typingUsers.length === 1 ? 'Someone is typing…' : typingUsers.length > 1 ? 'Several people are typing…' : null
 
   return (
@@ -640,7 +701,22 @@ export default function GroupChatScreen() {
             </Text>
           </View>
         </View>
+        <TouchableOpacity onPress={() => setSheet('menu')} activeOpacity={0.7} style={styles.backBtn}
+          accessibilityLabel="Group options" hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+          <MoreVertical size={20} color={C.muted} />
+        </TouchableOpacity>
       </View>
+
+      {/* The creator's requests waiting for a decision. */}
+      {isCreator && myStatus === 'accepted' && requests.length > 0 && (
+        <TouchableOpacity style={styles.requestBar} activeOpacity={0.8} onPress={() => setSheet('requests')}>
+          <Inbox size={15} color={C.cyan} />
+          <Text style={styles.requestBarText}>
+            {requests.length} member request{requests.length !== 1 ? 's' : ''} waiting for your approval
+          </Text>
+          <Text style={styles.requestBarLink}>Review</Text>
+        </TouchableOpacity>
+      )}
 
         {myStatus === 'pending' && (
           <InviteBanner
@@ -668,6 +744,29 @@ export default function GroupChatScreen() {
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
+            ListHeaderComponent={myStatus === 'accepted' ? (
+              <View style={styles.intro}>
+                <View style={styles.introAvatar}><Users size={26} color="rgba(255,255,255,0.6)" /></View>
+                <Text style={styles.introName}>{name}</Text>
+                {!!creatorLine && <Text style={styles.introSub}>{creatorLine}</Text>}
+                <View style={styles.introBtns}>
+                  <TouchableOpacity style={styles.introBtn} onPress={() => setSheet('add')} activeOpacity={0.7}>
+                    <View style={styles.introBtnCircle}><UserPlus size={17} color={C.white} /></View>
+                    <Text style={styles.introBtnText}>Add</Text>
+                  </TouchableOpacity>
+                  {isCreator && (
+                    <TouchableOpacity style={styles.introBtn} onPress={() => setSheet('rename')} activeOpacity={0.7}>
+                      <View style={styles.introBtnCircle}><Pencil size={17} color={C.white} /></View>
+                      <Text style={styles.introBtnText}>Name</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity style={styles.introBtn} onPress={() => setSheet('members')} activeOpacity={0.7}>
+                    <View style={styles.introBtnCircle}><Users size={17} color={C.white} /></View>
+                    <Text style={styles.introBtnText}>Members</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : null}
             renderItem={({ item }) => {
               if (item.type === 'date') return (
                 <View style={styles.dateSep}>
@@ -690,11 +789,21 @@ export default function GroupChatScreen() {
                     senderName={isMine ? 'You' : memberName(item.msg.sender_id)}
                     memberName={memberName}
                     currentUserId={currentUserId}
-                    seenBy={seenByFor(item.msg, isMine)}
+                    seen={isMine && seenByAll(item.msg)}
                     onLongPress={setPickerMsgId}
                     onReact={handleReact}
                     onReply={setReplyTo}
                   />
+                  {(seenAt[item.msg.id]?.length ?? 0) > 0 && (
+                    <View style={bS.seenRow}>
+                      {seenAt[item.msg.id].slice(0, 3).map(m => (
+                        <View key={m.user_id} style={bS.seenAvatar}>
+                          <Text style={bS.seenAvatarText}>{m.first_name[0]?.toUpperCase() ?? '?'}</Text>
+                        </View>
+                      ))}
+                      {seenAt[item.msg.id].length > 3 && <Text style={bS.seenOverflow}>+{seenAt[item.msg.id].length - 3}</Text>}
+                    </View>
+                  )}
                 </View>
               )
             }}
@@ -729,6 +838,7 @@ export default function GroupChatScreen() {
               <Smile size={22} color={emojiOpen ? C.cyan : C.muted} />
             </TouchableOpacity>
             <TextInput
+              ref={inputRef}
               value={text}
               onChangeText={handleChangeText}
               onFocus={() => setEmojiOpen(false)}
@@ -760,6 +870,24 @@ export default function GroupChatScreen() {
         visible={!!pickerMsgId}
         onClose={() => setPickerMsgId(null)}
         onPick={(emoji) => { if (pickerMsgId) handleReact(pickerMsgId, emoji) }}
+        onDelete={() => {
+          const id = pickerMsgId
+          if (id) confirmDeleteMessage(() => { void handleDelete(id) })
+        }}
+      />
+
+      <GroupSheets
+        view={sheet}
+        groupId={groupId ?? ''}
+        groupName={name}
+        createdBy={createdBy}
+        currentUserId={currentUserId}
+        canAct={myStatus === 'accepted'}
+        members={members}
+        requests={requests}
+        onView={setSheet}
+        onClose={() => setSheet(null)}
+        onChanged={loadGroup}
       />
     </View>
   )
@@ -767,6 +895,7 @@ export default function GroupChatScreen() {
 
 const styles = StyleSheet.create({
   eventLine: {
+    fontFamily:       FONTS.alegreyaSans.regular,
     alignSelf:        'center',
     textAlign:        'center',
     fontSize:         12,
@@ -787,6 +916,19 @@ const styles = StyleSheet.create({
   headerStatusTyping: { color: C.cyan },
 
   listContent: { paddingHorizontal: 12, paddingVertical: 16, gap: 4 },
+
+  requestBar:     { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: 'rgba(77,249,237,0.07)', borderBottomWidth: 1, borderBottomColor: C.border },
+  requestBarText: { flex: 1, color: 'rgba(255,255,255,0.85)', fontFamily: FONTS.alegreyaSans.regular, fontSize: 13 },
+  requestBarLink: { color: C.cyan, fontFamily: FONTS.alegreyaSans.medium, fontSize: 13 },
+
+  intro:          { alignItems: 'center', paddingTop: 12, paddingBottom: 22, gap: 4 },
+  introAvatar:    { width: 64, height: 64, borderRadius: 32, backgroundColor: C.raised, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
+  introName:      { color: C.white, fontFamily: FONTS.alegreyaSans.bold, fontSize: 17, textAlign: 'center' },
+  introSub:       { color: C.muted, fontFamily: FONTS.alegreyaSans.regular, fontSize: 12 },
+  introBtns:      { flexDirection: 'row', gap: 26, marginTop: 12 },
+  introBtn:       { alignItems: 'center', gap: 6 },
+  introBtnCircle: { width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center' },
+  introBtnText:   { color: 'rgba(255,255,255,0.7)', fontFamily: FONTS.alegreyaSans.regular, fontSize: 12 },
   center:      { flex: 1, alignItems: 'center', justifyContent: 'center' },
   optimistic:  { opacity: 0.6 },
   declinedText: { color: C.muted, fontFamily: FONTS.alegreyaSans.regular, fontSize: 14 },

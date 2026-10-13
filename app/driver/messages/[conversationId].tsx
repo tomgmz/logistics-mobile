@@ -16,6 +16,7 @@ import { messagingApi } from '../../../lib/api/messaging.api'
 import { useMessagingRealtime } from '../../../hooks/useMessagingRealtime'
 import { setActiveChat } from '../../../lib/push'
 import EmojiSheet from '../../../components/messaging/EmojiSheet'
+import ReadTicks, { confirmDeleteMessage } from '../../../components/messaging/ReadTicks'
 import type { MessageRow, ReactionTogglePayload } from '../../../types/messaging.types'
 import { FONTS } from '../../../lib/config/fonts'
 
@@ -291,7 +292,7 @@ function Bubble({ msg, isMine, showSeen, participantName, currentUserId, onLongP
 
           <View style={[bS.meta, isMine && { alignSelf: 'flex-end' }]}>
             <Text style={bS.time}>{formatMsgTime(msg.sent_at)}</Text>
-            {isMine && showSeen && <Text style={bS.seen}> · Seen</Text>}
+            {isMine && <ReadTicks seen={showSeen} size={11} />}
           </View>
         </Reanimated.View>
 
@@ -331,7 +332,7 @@ const bS = StyleSheet.create({
   textMine:     { color: C.cyanText, fontFamily: FONTS.alegreyaSans.regular, fontSize: 14, lineHeight: 20 },
   textTheirs:   { color: C.white,    fontFamily: FONTS.alegreyaSans.regular, fontSize: 14, lineHeight: 20 },
 
-  meta:         { flexDirection: 'row', alignItems: 'center', marginTop: 3, marginHorizontal: 2 },
+  meta:         { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 3, marginHorizontal: 2 },
   time:         { color: C.muted, fontFamily: FONTS.alegreyaSans.regular, fontSize: 10 },
   seen:         { color: C.cyan, fontFamily: FONTS.alegreyaSans.regular, fontSize: 10 },
 })
@@ -544,6 +545,8 @@ export default function DmChatScreen() {
   const clearInput = () => {
     setText('')
     inputRef.current?.clear()
+    // Stay in the box, so the next message can be typed straight away.
+    inputRef.current?.focus()
   }
 
   const handleReact = async (messageId: string, emoji: string) => {
@@ -605,13 +608,13 @@ export default function DmChatScreen() {
     entries.push({ type: 'msg', key: msg.id, msg })
   }
 
-  const lastSeenId = useMemo(() => {
-    if (!otherLastReadAt) return null
-    const readMs = parsePHT(otherLastReadAt).getTime()
-    return messages
-      .filter(m => m.sender_id === currentUserId && !m.id.startsWith('optimistic-') && parsePHT(m.sent_at).getTime() <= readMs)
-      .at(-1)?.id ?? null
-  }, [messages, otherLastReadAt, currentUserId])
+  // Every message of yours up to the other person's last read has been seen.
+  const readMs = useMemo(
+    () => (otherLastReadAt ? parsePHT(otherLastReadAt).getTime() : null),
+    [otherLastReadAt],
+  )
+  const isSeen = (m: MsgItem) =>
+    readMs !== null && !m.id.startsWith('optimistic-') && parsePHT(m.sent_at).getTime() <= readMs
 
   const name = participantName ?? 'Chat'
 
@@ -646,7 +649,7 @@ export default function DmChatScreen() {
             style={styles.flex}
             data={entries}
             keyExtractor={e => e.key}
-            extraData={lastSeenId}
+            extraData={otherLastReadAt}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
@@ -677,7 +680,7 @@ export default function DmChatScreen() {
                   <Bubble
                     msg={item.msg}
                     isMine={isMine}
-                    showSeen={item.msg.id === lastSeenId}
+                    showSeen={isSeen(item.msg)}
                     participantName={name}
                     currentUserId={currentUserId}
                     onLongPress={setPickerMsgId}
@@ -748,7 +751,10 @@ export default function DmChatScreen() {
         visible={!!pickerMsgId}
         onClose={() => setPickerMsgId(null)}
         onPick={(emoji) => { if (pickerMsgId) handleReact(pickerMsgId, emoji) }}
-        onDelete={() => { if (pickerMsgId) handleDelete(pickerMsgId) }}
+        onDelete={() => {
+          const id = pickerMsgId
+          if (id) confirmDeleteMessage(() => { void handleDelete(id) })
+        }}
       />
     </View>
   )

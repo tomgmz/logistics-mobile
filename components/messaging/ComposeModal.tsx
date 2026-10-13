@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { X, Search, Users, MessageCirclePlus, Check } from 'lucide-react-native'
 import { messagingApi } from '../../lib/api/messaging.api'
 import type { MessagableUser } from '../../types/messaging.types'
-import { roleLabel } from '../../lib/roles'
+import { roleLabel, matchesPersonSearch } from '../../lib/roles'
 import { FONTS } from '../../lib/config/fonts'
 
 const C = {
@@ -61,13 +61,8 @@ export default function ComposeModal({
       .finally(() => setLoading(false))
   }, [visible])
 
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase()
-    return users.filter(u =>
-      `${u.first_name ?? ''} ${u.last_name ?? ''}`.toLowerCase().includes(q) ||
-      u.role.toLowerCase().includes(q)
-    )
-  }, [users, search])
+  // By name or role: "company administrator", "operations manager", "gm".
+  const filtered = useMemo(() => users.filter(u => matchesPersonSearch(search, u)), [users, search])
 
   const selectedUsers = useMemo(
     () => users.filter(u => selected.has(u.user_id)),
