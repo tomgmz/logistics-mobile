@@ -17,13 +17,15 @@ import {
   RefreshControl,
   ActivityIndicator,
 } from 'react-native'
-import { useRouter } from 'expo-router'
+import { useFocusEffect, useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ChevronsRight, ChevronRight, PackageOpen } from 'lucide-react-native'
 
 import { useDriverId, useAuthHydrated } from '../../../lib/store/auth.store'
 import { useAvailabilityStore } from '../../../lib/store/availability.store'
 import AvailabilityToggle from '../../../components/ui/AvailabilityToggle'
+import CoachMarkTour, { CoachStep } from '../../../components/CoachMarkTour'
+import { useCoachTarget } from '../../../lib/coachMarks'
 import { FONTS } from '../../../lib/config/fonts'
 import {
   BookingWithRelations,
@@ -53,6 +55,38 @@ const ROUTE_PREVIEW_STOPS = 3
 /** Height the docked availability switch reserves at the foot of the scroll. */
 const DOCK_HEIGHT = 74
 
+/**
+ * First-visit tour of Home. The top-bar step points into the driver layout's
+ * bar, which tags its own buttons with the same id.
+ */
+const HOME_TOUR: CoachStep[] = [
+  {
+    target: 'home.availability',
+    title:  'Turn yourself on',
+    body:   'Switch this on when you can work. No delivery reaches you while it is off. Tap it to pick the days you can work.',
+  },
+  {
+    target: 'home.order',
+    title:  'Your current order',
+    body:   'The delivery you are working on shows here. Tap it for the client, cargo, vehicle and route. "See All" lists every assignment.',
+  },
+  {
+    target: 'home.routes',
+    title:  'Check your routes',
+    body:   'A shortcut straight into your current delivery, where you start navigation.',
+  },
+  {
+    target: 'home.quick',
+    title:  'Maps and Reports',
+    body:   'Maps lets you look around and search places. Reports is where you raise an accident, breakdown or delay, or send a quick alert.',
+  },
+  {
+    target: 'topbar.actions',
+    title:  'Messages, alerts and your account',
+    body:   'Chat with the office and your client, see your notifications, and open your profile to sign out.',
+  },
+]
+
 export default function DriverHome() {
   const router      = useRouter()
   const insets      = useSafeAreaInsets()
@@ -64,6 +98,17 @@ export default function DriverHome() {
   const [refreshing, setRefreshing] = useState(false)
 
   const refreshAvailability = useAvailabilityStore((s) => s.refresh)
+
+  const availabilityTarget = useCoachTarget('home.availability')
+  const orderTarget        = useCoachTarget('home.order')
+  const routesTarget       = useCoachTarget('home.routes')
+  const quickTarget        = useCoachTarget('home.quick')
+
+  // Back from starting a trip, the pill has to move from "Assigned" to "On
+  // delivery" without a pull-to-refresh, so re-read it whenever home is shown.
+  useFocusEffect(useCallback(() => {
+    if (hasHydrated && driverId) void refreshAvailability()
+  }, [hasHydrated, driverId, refreshAvailability]))
 
   const load = useCallback(async (isRefresh = false) => {
     if (!hasHydrated || !driverId) return
@@ -151,9 +196,11 @@ export default function DriverHome() {
         />
 
         <View className="px-6 pt-2.5">
-          <HeroCard onPress={openRoute} />
+          <View ref={routesTarget} collapsable={false}>
+            <HeroCard onPress={openRoute} />
+          </View>
 
-          <View className="flex-row gap-[5px] mt-[9px]">
+          <View ref={quickTarget} collapsable={false} className="flex-row gap-[5px] mt-[9px]">
             <QuickAction
               icon={<Image source={mapIconImg} style={{ width: 17.5, height: 17.5 }} resizeMode="contain" />}
               label="Maps"
@@ -187,6 +234,7 @@ export default function DriverHome() {
             </Pressable>
           </View>
 
+          <View ref={orderTarget} collapsable={false}>
           {loading ? (
             <View className="items-center justify-center py-16 gap-3">
               <ActivityIndicator size="large" color="#ffffff" />
@@ -200,6 +248,7 @@ export default function DriverHome() {
           ) : (
             <NoActiveOrder onPress={() => openAssignments('All')} />
           )}
+          </View>
 
           {active.length > 1 && (
             <Pressable
@@ -218,11 +267,15 @@ export default function DriverHome() {
       {/* Nothing reaches this driver unless they turn themselves on here, so it
           sits under the thumb rather than inside the scroll. */}
       <View
+        ref={availabilityTarget}
+        collapsable={false}
         className="absolute inset-x-0 bottom-0 border-t border-white/[0.06] bg-black px-6 pt-3"
         style={{ paddingBottom: insets.bottom + 12 }}
       >
         <AvailabilityToggle />
       </View>
+
+      <CoachMarkTour tourId="home" steps={HOME_TOUR} ready={!loading} />
     </View>
   )
 }

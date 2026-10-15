@@ -54,6 +54,8 @@ import {
 import { attachStopProof } from '../../../lib/api/stopProof.api'
 import { StopProofModal } from './StopProofModal'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
+import CoachMarkTour, { CoachStep } from '../../CoachMarkTour'
+import { useCoachTarget } from '../../../lib/coachMarks'
 import { captureProofPhoto, CameraPermissionError, photoTakenAt, uploadProofPhoto } from '../../../lib/proofPhoto'
 import { readCurrentFix } from '../../../lib/stopGeofence'
 import { queuedIds, flush } from '../../../lib/offlineQueue'
@@ -221,6 +223,25 @@ function dimensions(c: CargoItem): string | null {
   return `${l} × ${w} × ${h} cm`
 }
 
+/** First-visit tour of a delivery, shown the first time a driver opens one. */
+const DETAILS_TOUR: CoachStep[] = [
+  {
+    target: 'booking.header',
+    title:  'This delivery at a glance',
+    body:   'The booking number, the day and call time, and its status, which changes as you pick up and deliver.',
+  },
+  {
+    target: 'booking.route',
+    title:  'The route',
+    body:   'The pickup, then every drop-off. At each stop the app asks for a proof photo before the stop can be confirmed.',
+  },
+  {
+    target: 'booking.actions',
+    title:  'Your next step',
+    body:   'This button always shows what to do next: Start Navigation on the delivery day, Complete Delivery when every stop is done, then confirm the vehicle is back. Preview route shows the map at any time.',
+  },
+]
+
 export default function BookingDetailsScreen({ bookingId, onStart, onPreview, onBack }: Props) {
   const insets = useSafeAreaInsets()
 
@@ -260,6 +281,10 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
   // Set locally the moment the driver confirms, so the button settles
   // immediately instead of waiting on a refetch that may be offline.
   const [returned, setReturned] = useState(false)
+
+  const headerTarget  = useCoachTarget('booking.header')
+  const routeTarget   = useCoachTarget('booking.route')
+  const actionsTarget = useCoachTarget('booking.actions')
   const [finished, setFinished] = useState(false)
 
   // What is confirmed on this phone but not on the server yet: drop-offs whose
@@ -629,7 +654,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
       {/* Header — back, then ref, schedule and the status tag below it */}
-      <View style={[s.header, { paddingTop: insets.top + 8 }]}>
+      <View ref={headerTarget} collapsable={false} style={[s.header, { paddingTop: insets.top + 8 }]}>
         {onBack && (
           <TouchableOpacity
             onPress={onBack}
@@ -689,6 +714,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
             are most of the work. A single-run booking gets the plain list — it
             is what it has always been, and labelling it "TRIP 1 OF 1" would be
             ceremony around a fact the driver already knows. */}
+        <View ref={routeTarget} collapsable={false}>
         <Card
           icon={<Road size={16} color={D.cyan} />}
           title="ROUTE"
@@ -788,6 +814,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
             </View>
           )}
         </Card>
+        </View>
 
         {/* Cargo, grouped by the stop it comes off at — and, once the job is
             moving, the proof for that stop sitting directly under it. Putting
@@ -853,6 +880,8 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
 
       {/* Start navigation */}
       <View
+        ref={actionsTarget}
+        collapsable={false}
         style={[s.dock, { paddingBottom: insets.bottom + 14 }]}
         onLayout={(e) => {
           const h = Math.round(e.nativeEvent.layout.height)
@@ -1048,6 +1077,10 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
         onConfirm={onReturnConfirmed}
         onCancel={() => setDialog(null)}
       />
+
+      {/* The second driver's screen has none of the main driver's actions, so
+          the tour waits for a booking they are the main driver on. */}
+      <CoachMarkTour tourId="booking-details" steps={DETAILS_TOUR} ready={!isSecondDriver} />
     </View>
   )
 }

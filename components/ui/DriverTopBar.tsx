@@ -32,6 +32,7 @@ import { unregisterPushNotifications } from '../../lib/push'
 import { FONTS } from '../../lib/config/fonts'
 import ReusableModal from './ReusableModal'
 import { roleLabel } from '../../lib/roles'
+import { useCoachTarget } from '../../lib/coachMarks'
 
 const logoImg = require('../../assets/Final_Logo.png')
 
@@ -78,6 +79,9 @@ export default function DriverTopBar() {
   const clearUser    = useAuthStore((s) => s.clearUser)
   const totalUnread  = useMessagingStore((s) => s.totalUnread)
   const unreadNotifs = useNotificationStore((s) => s.unreadCount)
+
+  // The Home tour points at these three buttons.
+  const actionsTarget = useCoachTarget('topbar.actions')
 
   const [menuOpen,    setMenuOpen]    = useState(false)
   const [logoutModal, setLogoutModal] = useState(false)
@@ -156,7 +160,7 @@ export default function DriverTopBar() {
           )}
         </View>
 
-        <View style={styles.right}>
+        <View ref={actionsTarget} collapsable={false} style={styles.right}>
           <CircleButton
             label="Messages"
             badge={totalUnread}
