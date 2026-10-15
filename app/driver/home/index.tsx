@@ -157,7 +157,7 @@ export default function DriverHome() {
             <QuickAction
               icon={<Image source={mapIconImg} style={{ width: 17.5, height: 17.5 }} resizeMode="contain" />}
               label="Maps"
-              onPress={openRoute}
+              onPress={() => router.push('/driver/maps')}
             />
             <QuickAction
               icon={<Image source={wrenchIconImg} style={{ width: 18, height: 18 }} resizeMode="contain" />}
