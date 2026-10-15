@@ -75,6 +75,7 @@ export default function BrowseMapScreen({ onBack }: Props) {
   const insets = useSafeAreaInsets()
 
   const controller = useRef<MapViewController | null>(null)
+  const mapReady   = useRef(false)
   const session    = useRef(newSessionToken())
   const requestId  = useRef(0)
   const timer      = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -83,10 +84,21 @@ export default function BrowseMapScreen({ onBack }: Props) {
   const [query,       setQuery]       = useState('')
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [searching,   setSearching]   = useState(false)
+  // The last search came back empty — said out loud, not shown as a blank.
+  const [noResults,   setNoResults]   = useState(false)
   const [place,       setPlace]       = useState<Place | null>(null)
   const [locating,    setLocating]    = useState(false)
   const [notice,      setNotice]      = useState<string | null>(null)
   const [canShowMe,   setCanShowMe]   = useState(false)
+  // Only while the field isn't focused: show the start of a long address, not its end.
+  const [focused,     setFocused]     = useState(false)
+
+  /**
+   * The map, but only once it can take commands. The controller arrives when
+   * the ref attaches, before the native map exists, and a camera move in that
+   * window rejects with "Make sure the map view has been initialized".
+   */
+  const liveMap = () => (mapReady.current ? controller.current : null)
 
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
 
@@ -108,14 +120,18 @@ export default function BrowseMapScreen({ onBack }: Props) {
     }
     lastFix.current = fix
     setCanShowMe(true)
-    controller.current?.moveCamera({ target: { lat: fix.latitude, lng: fix.longitude }, zoom: 15 })
+    // Not ready yet: onMapReady moves to lastFix when it is.
+    liveMap()?.moveCamera({ target: { lat: fix.latitude, lng: fix.longitude }, zoom: 15 })
   }, [])
 
-  const onMapReady = useCallback((c: MapViewController) => {
-    controller.current = c
-    c.moveCamera({ target: DEFAULT_CENTER, zoom: 11 })
-    void goToCurrentLocation(true)
-  }, [goToCurrentLocation])
+  const onMapReady = useCallback(() => {
+    mapReady.current = true
+    const fix = lastFix.current
+    if (fix) controller.current?.moveCamera({ target: { lat: fix.latitude, lng: fix.longitude }, zoom: 15 })
+  }, [])
+
+  // Look for the driver straight away; the camera follows once the map is ready.
+  useEffect(() => { void goToCurrentLocation(true) }, [goToCurrentLocation])
 
   const search = useCallback(async (text: string) => {
     const id = ++requestId.current
@@ -127,11 +143,14 @@ export default function BrowseMapScreen({ onBack }: Props) {
         ...(lastFix.current && { near: lastFix.current }),
       })
       if (id !== requestId.current) return
-      setSuggestions(data.data ?? [])
+      const list: Suggestion[] = Array.isArray(data?.data) ? data.data : []
+      setSuggestions(list)
+      setNoResults(list.length === 0)
       setNotice(null)
     } catch {
       if (id !== requestId.current) return
       setSuggestions([])
+      setNoResults(false)
       setNotice('Place search is unavailable right now.')
     } finally {
       if (id === requestId.current) setSearching(false)
@@ -140,6 +159,7 @@ export default function BrowseMapScreen({ onBack }: Props) {
 
   const onChangeQuery = (text: string) => {
     setQuery(text)
+    setNoResults(false)
     if (timer.current) clearTimeout(timer.current)
     if (text.trim().length < MIN_QUERY) {
       requestId.current++
@@ -153,10 +173,12 @@ export default function BrowseMapScreen({ onBack }: Props) {
   const clearSearch = () => {
     requestId.current++
     setQuery('')
+    setNoResults(false)
+    setNotice(null)
     setSuggestions([])
     setSearching(false)
     setPlace(null)
-    controller.current?.removeMarker('search')
+    liveMap()?.removeMarker('search')
   }
 
   const pick = async (s: Suggestion) => {
@@ -172,7 +194,7 @@ export default function BrowseMapScreen({ onBack }: Props) {
       const found: Place = data.data
       setPlace(found)
       setQuery(found.address)
-      const map = controller.current
+      const map = liveMap()
       if (map) {
         map.removeMarker('search')
         void map.addMarker({
@@ -202,8 +224,10 @@ export default function BrowseMapScreen({ onBack }: Props) {
         myLocationEnabled={canShowMe}
         myLocationButtonEnabled={false}
         mapToolbarEnabled={false}
+        initialCameraPosition={{ target: DEFAULT_CENTER, zoom: 11 }}
         onMapClick={() => Keyboard.dismiss()}
-        onMapViewControllerCreated={onMapReady}
+        onMapReady={onMapReady}
+        onMapViewControllerCreated={(c) => { controller.current = c }}
       />
 
       {/* Header: back + search */}
@@ -229,6 +253,9 @@ export default function BrowseMapScreen({ onBack }: Props) {
             returnKeyType="search"
             autoCorrect={false}
             selectTextOnFocus
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            selection={focused ? undefined : { start: 0, end: 0 }}
             accessibilityLabel="Search a place or address"
           />
           {searching ? (
@@ -241,34 +268,44 @@ export default function BrowseMapScreen({ onBack }: Props) {
         </View>
       </View>
 
-      {suggestions.length > 0 && (
+      {/* Under the search bar, not in the footer: the keyboard covers the footer
+          while the driver is typing, which is exactly when these matter. */}
+      {suggestions.length > 0 ? (
         <View style={[s.suggestions, { top: insets.top + 60 }]}>
           {suggestions.slice(0, 6).map((item, i) => (
-            <Pressable
+            // Plain TouchableOpacity with static styles: the earlier Pressable
+            // style function was dropped on device and broke the row layout.
+            <TouchableOpacity
               key={item.placeId}
               onPress={() => void pick(item)}
-              style={({ pressed }) => [s.suggestion, i > 0 && s.suggestionDivider, pressed && s.suggestionPressed]}
+              activeOpacity={0.6}
+              style={[s.suggestion, i > 0 && s.suggestionDivider]}
               accessibilityRole="button"
+              accessibilityLabel={item.secondary ? `${item.primary}, ${item.secondary}` : item.primary}
             >
-              <MapPin size={16} color={C.cyan} />
+              <MapPin size={18} color={C.cyan} />
               <View style={s.suggestionText}>
                 <Text style={s.suggestionPrimary} numberOfLines={1}>{item.primary}</Text>
                 {!!item.secondary && (
                   <Text style={s.suggestionSecondary} numberOfLines={1}>{item.secondary}</Text>
                 )}
               </View>
-            </Pressable>
+            </TouchableOpacity>
           ))}
         </View>
-      )}
+      ) : (notice || (noResults && !searching)) ? (
+        <View style={[s.suggestions, s.status, { top: insets.top + 60 }]}>
+          <Text style={notice ? s.statusError : s.statusText}>
+            {notice ?? 'No places found. Try another name or address.'}
+          </Text>
+        </View>
+      ) : null}
 
       {/* Footer: the picked place, any notice, and Current location */}
       <View style={[s.footer, { paddingBottom: insets.bottom + 16 }]} pointerEvents="box-none">
-        {!!notice && <Text style={s.notice}>{notice}</Text>}
-
         {place && (
           <View style={s.placeCard}>
-            <MapPin size={16} color={C.cyan} />
+            <MapPin size={18} color={C.cyan} />
             <Text style={s.placeText} numberOfLines={2}>{place.address}</Text>
           </View>
         )}
@@ -342,7 +379,7 @@ const s = StyleSheet.create({
     position:        'absolute',
     left:            16,
     right:           16,
-    borderRadius:    12,
+    borderRadius:    16,
     backgroundColor: C.card,
     borderWidth:     0.5,
     borderColor:     C.line,
@@ -351,20 +388,21 @@ const s = StyleSheet.create({
   suggestion: {
     flexDirection:     'row',
     alignItems:        'center',
-    gap:               10,
-    paddingHorizontal: 14,
-    paddingVertical:   12,
+    gap:               14,
+    paddingHorizontal: 18,
+    paddingVertical:   14,
   },
   suggestionDivider: {
     borderTopWidth: 0.5,
     borderTopColor: C.line,
   },
-  suggestionPressed: { backgroundColor: 'rgba(255,255,255,0.06)' },
+  status:      { paddingHorizontal: 18, paddingVertical: 14 },
+  statusText:  { color: C.faint, fontSize: 13 },
+  statusError: { color: C.error, fontSize: 13 },
   suggestionText:    { flex: 1 },
   suggestionPrimary: {
-    color:      C.white,
-    fontSize:   14,
-    fontFamily: FONTS.spartan.medium,
+    color:    C.white,
+    fontSize: 13,
   },
   suggestionSecondary: {
     color:     C.faint,
@@ -381,25 +419,14 @@ const s = StyleSheet.create({
     gap:               10,
     alignItems:        'flex-end',
   },
-  notice: {
-    alignSelf:         'stretch',
-    color:             C.error,
-    fontSize:          12,
-    textAlign:         'center',
-    paddingVertical:   8,
-    paddingHorizontal: 12,
-    borderRadius:      10,
-    backgroundColor:   'rgba(0,0,0,0.8)',
-    overflow:          'hidden',
-  },
   placeCard: {
     alignSelf:         'stretch',
     flexDirection:     'row',
     alignItems:        'center',
-    gap:               10,
-    paddingHorizontal: 14,
-    paddingVertical:   12,
-    borderRadius:      12,
+    gap:               14,
+    paddingHorizontal: 18,
+    paddingVertical:   14,
+    borderRadius:      16,
     backgroundColor:   C.card,
     borderWidth:       0.5,
     borderColor:       C.line,

@@ -882,8 +882,8 @@ export default function SignInScreen() {
     step === 'otp'    ? (role === 'driver' ? 2 : 1) :
                         2
 
-  const slide = (key: string, dir: 1 | -1 = 1) => ({
-    key,
+  // No key in here: React wants it passed directly, so each step sets its own.
+  const slide = (dir: 1 | -1 = 1) => ({
     from:       { opacity: 0, translateX: 16 * dir },
     animate:    { opacity: 1, translateX: 0 },
     exit:       { opacity: 0, translateX: -16 * dir },
@@ -967,7 +967,7 @@ export default function SignInScreen() {
           <AnimatePresence exitBeforeEnter>
 
             {step === 'email' && (
-              <MotiView {...slide('email', -1)}>
+              <MotiView key="email" {...slide(-1)}>
                 <StepHeading
                   title="Sign in"
                   subtitle="Enter your work email to get started."
@@ -1040,7 +1040,7 @@ export default function SignInScreen() {
             )}
 
             {step === 'method' && (
-              <MotiView {...slide('method')}>
+              <MotiView key="method" {...slide()}>
                 <StepHeading title="How do you want to sign in?" />
                 <EmailChip email={email} onChange={handleChangeEmail} />
 
@@ -1065,7 +1065,7 @@ export default function SignInScreen() {
             )}
 
             {step === 'otp' && (
-              <MotiView {...slide('otp')}>
+              <MotiView key="otp" {...slide()}>
                 <StepHeading title="Enter your code" subtitle="We emailed a 6-digit code to" />
                 <EmailChip email={email} onChange={handleChangeEmail} />
 
@@ -1147,7 +1147,7 @@ export default function SignInScreen() {
             )}
 
             {step === 'password' && (
-              <MotiView {...slide('password')}>
+              <MotiView key="password" {...slide()}>
                 <StepHeading title="Enter your password" />
                 <EmailChip email={email} onChange={handleChangeEmail} />
 
