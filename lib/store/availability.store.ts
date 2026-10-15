@@ -14,6 +14,8 @@ import { driverApi, DriverAvailabilityStatus } from '../api/driver.api'
 interface AvailabilityStore {
   status:     DriverAvailabilityStatus | null
   onDelivery: boolean
+  // The delivery has left — "On delivery". Crewed but not yet left is "Assigned".
+  inTransit:  boolean
   loading:    boolean
   error:      string | null
 
@@ -35,6 +37,7 @@ interface AvailabilityStore {
 export const useAvailabilityStore = create<AvailabilityStore>((set, get) => ({
   status:     null,
   onDelivery: false,
+  inTransit:  false,
   loading:    false,
   error:      null,
 
@@ -60,7 +63,7 @@ export const useAvailabilityStore = create<AvailabilityStore>((set, get) => ({
         driverApi.getAvailabilityDays(monthKey),
       ])
       set({
-        status: next.status, onDelivery: next.on_delivery, error: null,
+        status: next.status, onDelivery: next.on_delivery, inTransit: next.in_transit ?? false, error: null,
         month: month.month, days: month.days, today: month.today,
       })
     } catch {
@@ -103,7 +106,7 @@ export const useAvailabilityStore = create<AvailabilityStore>((set, get) => ({
   },
 
   reset: () => set({
-    status: null, onDelivery: false, loading: false, error: null,
+    status: null, onDelivery: false, inTransit: false, loading: false, error: null,
     month: null, days: [], today: null, loadingDays: false, savingDays: false,
   }),
 }))

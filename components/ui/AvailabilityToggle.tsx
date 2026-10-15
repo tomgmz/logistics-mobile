@@ -23,6 +23,7 @@ export default function AvailabilityToggle() {
 
   const status     = useAvailabilityStore((s) => s.status)
   const onDelivery = useAvailabilityStore((s) => s.onDelivery)
+  const inTransit  = useAvailabilityStore((s) => s.inTransit)
   const days       = useAvailabilityStore((s) => s.days)
   const today      = useAvailabilityStore((s) => s.today)
 
@@ -32,7 +33,9 @@ export default function AvailabilityToggle() {
   const known    = today != null
   const workingToday = known && days.includes(today)
 
-  const label = onDelivery ? 'On delivery'
+  // Crewed onto a booking reads "Assigned" until it actually leaves; only then
+  // is the driver "On delivery".
+  const label = onDelivery ? (inTransit ? 'On delivery' : 'Assigned')
     : blocked ? (status === 'on_leave' ? 'On leave' : 'Inactive')
     : !known ? 'Your availability'
     : workingToday ? 'Available today'

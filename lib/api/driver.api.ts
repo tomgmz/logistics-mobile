@@ -20,8 +20,11 @@ export type DriverAvailabilityStatus =
 export interface DriverAvailability {
   driver_id:   string
   status:      DriverAvailabilityStatus
-  // True while out on a delivery. Nothing the driver can change from their side.
+  // True while crewed onto a delivery. Nothing the driver can change from their side.
   on_delivery: boolean
+  // True once that delivery is under way (booking 'in_transit'); before that the
+  // driver is only assigned. Optional: an older backend doesn't send it.
+  in_transit?: boolean
 }
 
 /**
