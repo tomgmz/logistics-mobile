@@ -11,6 +11,7 @@ import {
 import { MotiView, AnimatePresence } from 'moti'
 import { Easing } from 'react-native-reanimated'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { X } from 'lucide-react-native'
 
 import { useAvailabilityStore } from '../../lib/store/availability.store'
 import { PencilCheckIcon } from './icons/AvailabilityIcons'
@@ -28,6 +29,10 @@ import { ConfirmDialog } from './ConfirmDialog'
  * Two kinds of day cannot be ticked, and both are drawn in the muted grey the
  * design uses: days outside this month, and days already past (the driver cannot
  * re-plan yesterday). Sundays are tickable — transit runs seven days a week.
+ *
+ * A ticked day is a circle once it is saved and a square while it is only in
+ * the draft, so the driver can see what still needs saving. The X discards the
+ * draft (after asking, if anything changed); every other way out saves it.
  */
 
 const COLORS = {
@@ -110,8 +115,8 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
   // and a reload mid-edit doesn't yank days out from under their thumb.
   const [draft, setDraft] = useState<string[]>([])
   const [dirty, setDirty] = useState(false)
-  // Whether the "are you sure" card is up over the calendar.
-  const [confirming, setConfirming] = useState(false)
+  // Which "are you sure" card is up over the calendar: saving, or discarding.
+  const [confirming, setConfirming] = useState<'save' | 'discard' | null>(null)
 
   const now      = new Date()
   const year     = now.getFullYear()
@@ -125,7 +130,7 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
   useEffect(() => {
     if (!open) return
     setDirty(false)
-    setConfirming(false)
+    setConfirming(null)
     void loadDays(monthKey)
   }, [open, monthKey, loadDays])
 
@@ -144,9 +149,21 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
   const performCommit = useCallback(() => {
     void saveDays(monthKey, draft).catch(() => {})
     setDirty(false)
-    setConfirming(false)
+    setConfirming(null)
     onClose()
   }, [draft, monthKey, saveDays, onClose])
+
+  /** The X: leave without saving. The next open re-reads the saved month. */
+  const performDiscard = useCallback(() => {
+    setDirty(false)
+    setConfirming(null)
+    onClose()
+  }, [onClose])
+
+  const requestDiscard = useCallback(() => {
+    if (!dirty) { onClose(); return }
+    setConfirming('discard')
+  }, [dirty, onClose])
 
   /**
    * Every way out of the calendar comes through here, and a changed month is
@@ -162,7 +179,7 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
    */
   const requestCommit = useCallback(() => {
     if (!dirty) { onClose(); return }
-    setConfirming(true)
+    setConfirming('save')
   }, [dirty, onClose])
 
   useEffect(() => {
@@ -173,6 +190,11 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
 
   const cells    = useMemo(() => buildMonth(year, month), [year, month])
   const selected = useMemo(() => new Set(draft), [draft])
+  // What the server holds — those ticks are circles; draft-only ticks are squares.
+  const saved    = useMemo(
+    () => new Set(storedMonth === monthKey ? storedDays : []),
+    [storedDays, storedMonth, monthKey],
+  )
 
   // Says what confirming actually does, in the driver's terms. Clearing the
   // month is called out separately: it is the one answer that takes them out of
@@ -229,6 +251,17 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
             >
               {/* The same title slot as the pill it grew out of. */}
               <View style={styles.header}>
+                <Pressable
+                  onPress={requestDiscard}
+                  disabled={savingDays}
+                  hitSlop={12}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close without saving"
+                  style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+                >
+                  <X size={16} color={COLORS.cyan} strokeWidth={2.4} />
+                </Pressable>
+
                 <View style={styles.headerText}>
                   <Text style={styles.title}>Your Availability</Text>
                   <Text style={styles.subtitle}>
@@ -273,6 +306,8 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
                       const isSelected = cell.day != null && selected.has(cell.day)
                       const isPast     = cell.day != null && cell.day < today
                       const editable   = cell.day != null && !isPast
+                      const isSaved    = isSelected && saved.has(cell.day!)
+                      const shape      = !isSelected ? 'plain' : isSaved ? 'saved' : 'draft'
 
                       return (
                         <Pressable
@@ -287,10 +322,16 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
                             : undefined}
                         >
                           {({ pressed }) => (
+                            // Keyed on its shape so Android redraws it from scratch: a
+                            // background added to an already-drawn view can lose its
+                            // rounded corners, which made saved days square on the
+                            // first open (they arrive from the server after mount).
                             <View
+                              key={shape}
                               style={[
                                 styles.dayCircle,
                                 isSelected && styles.dayCircleSelected,
+                                shape === 'draft' && styles.daySquare,
                                 isSelected && isPast && styles.dayCirclePast,
                                 pressed && editable && styles.dayCirclePressed,
                               ]}
@@ -322,7 +363,7 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
       {/* Sits over the calendar rather than replacing it, so the driver can read
           back the days they ticked while answering. */}
       <ConfirmDialog
-        visible={confirming}
+        visible={confirming === 'save'}
         title="CONFIRM YOUR SCHEDULE"
         message={confirmMessage}
         confirmLabel="Confirm"
@@ -330,7 +371,18 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
         tone="cyan"
         busy={savingDays}
         onConfirm={performCommit}
-        onCancel={() => setConfirming(false)}
+        onCancel={() => setConfirming(null)}
+      />
+
+      <ConfirmDialog
+        visible={confirming === 'discard'}
+        title="DISCARD YOUR CHANGES?"
+        message={`The days you changed in ${MONTHS[month]} ${year} will not be saved. Your schedule stays as it was.`}
+        confirmLabel="Discard"
+        cancelLabel="Keep editing"
+        tone="red"
+        onConfirm={performDiscard}
+        onCancel={() => setConfirming(null)}
       />
     </Modal>
   )
@@ -357,7 +409,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems:    'flex-start',
-    gap:           7,
+    gap:           10,
   },
   headerText: { flex: 1 },
   title: {
@@ -418,6 +470,8 @@ const styles = StyleSheet.create({
   },
   // Days already worked through stay ticked, but read as history, not as a plan.
   dayCirclePast:    { opacity: 0.45 },
+  // Ticked but not saved yet.
+  daySquare:        { borderRadius: 4 },
   dayCirclePressed: { backgroundColor: 'rgba(255,255,255,0.10)' },
 
   day: {
