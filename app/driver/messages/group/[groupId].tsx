@@ -6,7 +6,7 @@ import {
 } from 'react-native'
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { ArrowLeft, Send, CornerUpLeft, X, Users, Check, X as XIcon, Smile, MoreVertical, UserPlus, Pencil, Inbox, Trash2 } from 'lucide-react-native'
+import { ArrowLeft, Send, CornerUpLeft, X, Users, Check, X as XIcon, Smile, MoreVertical, UserPlus, Pencil, Inbox, Trash2, ImagePlus } from 'lucide-react-native'
 import Reanimated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated'
 import { useKeyboardHandler } from 'react-native-keyboard-controller'
 import { GestureDetector, Gesture } from 'react-native-gesture-handler'
@@ -15,6 +15,10 @@ import { messagingApi } from '../../../../lib/api/messaging.api'
 import { useMessagingRealtime } from '../../../../hooks/useMessagingRealtime'
 import { setActiveChat } from '../../../../lib/push'
 import EmojiSheet from '../../../../components/messaging/EmojiSheet'
+import { useStickToEnd } from '../../../../hooks/useStickToEnd'
+import ChatPhotoSheet from '../../../../components/messaging/ChatPhotoSheet'
+import ChatPhotoBubble from '../../../../components/messaging/ChatPhotoBubble'
+import { PHOTO_PLACEHOLDER } from '../../../../lib/chatPhoto'
 import GroupSheets, { type GroupSheetView, type SheetMember } from '../../../../components/messaging/GroupSheets'
 import ReadTicks, { chooseMessageRemoval, type DeleteScope } from '../../../../components/messaging/ReadTicks'
 import type { GroupMessageRaw, ReactionTogglePayload, GroupReadReceiptPayload, GroupSystemEvent, GroupMemberRequest } from '../../../../types/messaging.types'
@@ -74,6 +78,8 @@ interface GMsg {
   reactions:{ emoji: string; user_id: string }[]
   kind:     'text' | 'system'
   meta:     GroupSystemEvent | null
+  attachment_url?:     string | null
+  attachment_stamped?: boolean
 }
 
 /** "A and B", "A, B and C". */
@@ -297,7 +303,10 @@ function GroupBubble({ msg, isMine, senderName, currentUserId, seen, onLongPress
             delayLongPress={350}
             style={[bS.bubble, isMine ? bS.bubbleMine : bS.bubbleTheirs]}
           >
-            <Text style={isMine ? bS.textMine : bS.textTheirs}>{msg.content}</Text>
+            {msg.attachment_url
+              ? <ChatPhotoBubble url={msg.attachment_url} stamped={msg.attachment_stamped} caption={msg.content}
+                  textStyle={isMine ? bS.textMine : bS.textTheirs} />
+              : <Text style={isMine ? bS.textMine : bS.textTheirs}>{msg.content}</Text>}
           </TouchableOpacity>
 
           <ReactionStrip
@@ -424,6 +433,7 @@ export default function GroupChatScreen() {
   const [typingUsers, setTyping]      = useState<string[]>([])
   const [pickerMsgId, setPickerMsgId] = useState<string | null>(null)
   const [emojiOpen,   setEmojiOpen]   = useState(false)
+  const [photoOpen,   setPhotoOpen]   = useState(false)
   const [membersMap,  setMembersMap]  = useState<Record<string, string>>({})
   const [members,     setMembers]     = useState<(SheetMember & { last_read_at: string | null })[]>([])
   const [title,       setTitle]       = useState<string | null>(null)
@@ -440,6 +450,9 @@ export default function GroupChatScreen() {
   const typingTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   const meTypingRef   = useRef(false)
   const meTypingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Opens on the latest message and stays there while the list fills in.
+  const stick = useStickToEnd(listRef)
 
   const scrollToEnd = useCallback(() => {
     listRef.current?.scrollToEnd({ animated: true })
@@ -504,6 +517,8 @@ export default function GroupChatScreen() {
     reactions:raw.reactions ?? [],
     kind:     raw.message_type === 'system' ? 'system' : 'text',
     meta:     raw.meta ?? null,
+    attachment_url:     raw.attachment_url ?? null,
+    attachment_stamped: !!raw.attachment_stamped,
   }), [])
 
   // The group itself: name, creator, members, and the creator's requests.
@@ -604,15 +619,20 @@ export default function GroupChatScreen() {
   })
 
   useEffect(() => {
-    if (!loading && messages.length > 0) setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 100)
+    // Opening the chat: back on the latest message (useStickToEnd keeps it there).
+    if (!loading && messages.length > 0) { stick.pin(); listRef.current?.scrollToEnd({ animated: false }) }
   }, [loading])
 
-  const handleSend = async () => {
-    const body = text.trim()
-    if (!body || !groupId || myStatus !== 'accepted') return
+  /** Sends the typed text, or (with `photo`) an uploaded photo and its caption. */
+  const handleSend = async (photo?: { url: string; caption: string }) => {
+    const typed = photo ? photo.caption : text.trim()
+    if ((!typed && !photo) || !groupId || myStatus !== 'accepted') return
+    // Matches what the server stores, so the live echo replaces the optimistic bubble.
+    const body = photo && !typed ? PHOTO_PLACEHOLDER : typed
 
     const oid = `optimistic-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     pendingIds.current.add(oid)
+    stick.pin()
     setMessages(prev => [...prev, {
       id: oid, group_id: groupId, sender_id: currentUserId, content: body,
       sent_at: new Date().toISOString(),
@@ -620,10 +640,13 @@ export default function GroupChatScreen() {
       kind:     'text' as const,
       meta:     null,
       reactions: [],
+      attachment_url: photo?.url ?? null,
     }])
-    setText('')
-    // Stay in the box, so the next message can be typed straight away.
-    inputRef.current?.focus()
+    if (!photo) {
+      setText('')
+      // Stay in the box, so the next message can be typed straight away.
+      inputRef.current?.focus()
+    }
     setReplyTo(null)
     if (meTypingTimer.current) clearTimeout(meTypingTimer.current)
     stopMeTyping()
@@ -631,7 +654,7 @@ export default function GroupChatScreen() {
 
     try {
       setSending(true)
-      const saved = await messagingApi.sendGroupMessage(groupId, { content: body, reply_to_message_id: replyTo?.id })
+      const saved = await messagingApi.sendGroupMessage(groupId, { content: typed, attachment_url: photo?.url, reply_to_message_id: replyTo?.id })
       setMessages(prev => prev.map(m => m.id === oid ? toItem(saved) : m))
       pendingIds.current.delete(oid)
     } catch {
@@ -752,6 +775,10 @@ export default function GroupChatScreen() {
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
+            onContentSizeChange={stick.onContentSizeChange}
+            onLayout={stick.onLayout}
+            onScroll={stick.onScroll}
+            scrollEventThrottle={64}
             ListHeaderComponent={myStatus === 'accepted' ? (
               <View style={styles.intro}>
                 <View style={styles.introAvatar}><Users size={26} color="rgba(255,255,255,0.6)" /></View>
@@ -845,6 +872,15 @@ export default function GroupChatScreen() {
             >
               <Smile size={22} color={emojiOpen ? C.cyan : C.muted} />
             </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => { Keyboard.dismiss(); setEmojiOpen(false); setPhotoOpen(true) }}
+              activeOpacity={0.7}
+              style={styles.emojiToggle}
+              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+              accessibilityLabel="Send a photo"
+            >
+              <ImagePlus size={22} color={C.muted} />
+            </TouchableOpacity>
             <TextInput
               ref={inputRef}
               value={text}
@@ -857,7 +893,7 @@ export default function GroupChatScreen() {
               maxLength={5000}
             />
             <TouchableOpacity
-              onPress={handleSend}
+              onPress={() => void handleSend()}
               disabled={!text.trim() || sending}
               activeOpacity={0.75}
               style={[styles.sendBtn, (!text.trim() || sending) && styles.sendBtnDisabled]}
@@ -867,6 +903,11 @@ export default function GroupChatScreen() {
           </View>
         )}
 
+        <ChatPhotoSheet
+          visible={photoOpen}
+          onClose={() => setPhotoOpen(false)}
+          onSend={(url, caption) => { setPhotoOpen(false); void handleSend({ url, caption }) }}
+        />
         <EmojiSheet
           visible={emojiOpen}
           onClose={() => setEmojiOpen(false)}

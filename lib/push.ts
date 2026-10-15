@@ -129,18 +129,51 @@ function routeFromNotification(data: Record<string, unknown> | undefined): void 
   }
 }
 
+// A tap that launches the app arrives before the start screen has routed:
+// opening the chat then was undone a moment later by the start screen's own
+// redirect to Home. So until `markNavigationReady` the tap is held and opened
+// on top of Home afterwards (Back then returns to Home, as a warm tap does).
+let navigationReady = false
+let pendingTap: Record<string, unknown> | undefined
+// The cold-start tap can be reported by both the listener and
+// getLastNotificationResponseAsync; each notification opens once.
+const handledTaps = new Set<string>()
+
+function onTap(response: Notifications.NotificationResponse): void {
+  const id = response.notification.request.identifier
+  if (handledTaps.has(id)) return
+  handledTaps.add(id)
+  // Otherwise the next launch reports the same old tap again.
+  try { Notifications.clearLastNotificationResponse() } catch { /* older native build */ }
+
+  const data = response.notification.request.content.data as Record<string, unknown> | undefined
+  if (navigationReady) routeFromNotification(data)
+  else pendingTap = data
+}
+
+/**
+ * Called by the start screen once it has sent the user to their home screen.
+ * Opens a notification tap that launched the app, if there was one.
+ */
+export function markNavigationReady(): void {
+  if (navigationReady) return
+  navigationReady = true
+  const data = pendingTap
+  pendingTap = undefined
+  // After the redirect that was just issued has been applied.
+  if (data) setTimeout(() => routeFromNotification(data), 0)
+}
+
 /**
  * Wire notification-tap handling. Returns a cleanup function. Call once the user
  * is signed in (e.g. from the root layout).
  */
 export function initPushResponders(): () => void {
-  const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-    routeFromNotification(response.notification.request.content.data as Record<string, unknown> | undefined)
-  })
+  const sub = Notifications.addNotificationResponseReceivedListener(onTap)
 
   // Handle a tap that launched the app from a cold start.
   Notifications.getLastNotificationResponseAsync().then((response) => {
-    if (response) routeFromNotification(response.notification.request.content.data as Record<string, unknown> | undefined)
+    if (response) onTap(response)
   })
 
   return () => sub.remove()

@@ -44,6 +44,10 @@ export interface MessageRow {
   reply_to_message_id:  string | null
   reply_to:             MessageReplyTo | null
   reactions:            MessageReaction[]
+  message_type?:        'text' | 'image' | 'system'
+  /** A photo message's picture; `content` is then its caption (or "📷 Photo"). */
+  attachment_url?:      string | null
+  attachment_stamped?:  boolean
 }
 
 
@@ -57,8 +61,10 @@ export interface GroupMessageRaw {
   reply_to:             MessageReplyTo | null
   reactions:            MessageReaction[]
   /** 'system' = a group event (renamed, people added or removed), not a message. */
-  message_type?:        'text' | 'system'
+  message_type?:        'text' | 'image' | 'system'
   meta?:                GroupSystemEvent | null
+  attachment_url?:      string | null
+  attachment_stamped?:  boolean
 }
 
 /** A group event, shown as a centered line in the chat rather than a bubble. */

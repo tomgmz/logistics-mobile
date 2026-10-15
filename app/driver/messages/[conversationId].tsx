@@ -6,7 +6,7 @@ import {
 } from 'react-native'
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { ArrowLeft, Send, CornerUpLeft, X, Smile, Trash2 } from 'lucide-react-native'
+import { ArrowLeft, Send, CornerUpLeft, X, Smile, Trash2, ImagePlus } from 'lucide-react-native'
 import Reanimated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated'
 import { useKeyboardHandler } from 'react-native-keyboard-controller'
 import { GestureDetector, Gesture } from 'react-native-gesture-handler'
@@ -14,8 +14,12 @@ import { useAuthStore } from '../../../lib/store/auth.store'
 import { useMessagingStore } from '../../../lib/store/messaging.store'
 import { messagingApi } from '../../../lib/api/messaging.api'
 import { useMessagingRealtime } from '../../../hooks/useMessagingRealtime'
+import { useStickToEnd } from '../../../hooks/useStickToEnd'
 import { setActiveChat } from '../../../lib/push'
 import EmojiSheet from '../../../components/messaging/EmojiSheet'
+import ChatPhotoSheet from '../../../components/messaging/ChatPhotoSheet'
+import ChatPhotoBubble from '../../../components/messaging/ChatPhotoBubble'
+import { PHOTO_PLACEHOLDER } from '../../../lib/chatPhoto'
 import ReadTicks, { chooseMessageRemoval, type DeleteScope } from '../../../components/messaging/ReadTicks'
 import type { MessageRow, ReactionTogglePayload } from '../../../types/messaging.types'
 import { FONTS } from '../../../lib/config/fonts'
@@ -82,6 +86,8 @@ interface MsgItem {
   sent_at:         string
   reply_to:        { message_id: string; content: string; sender_id: string } | null
   reactions:       { emoji: string; user_id: string }[]
+  attachment_url?:     string | null
+  attachment_stamped?: boolean
 }
 
 function TypingDots() {
@@ -281,7 +287,10 @@ function Bubble({ msg, isMine, showSeen, participantName, currentUserId, onLongP
             delayLongPress={350}
             style={[bS.bubble, isMine ? bS.bubbleMine : bS.bubbleTheirs]}
           >
-            <Text style={isMine ? bS.textMine : bS.textTheirs}>{msg.content}</Text>
+            {msg.attachment_url
+              ? <ChatPhotoBubble url={msg.attachment_url} stamped={msg.attachment_stamped} caption={msg.content}
+                  textStyle={isMine ? bS.textMine : bS.textTheirs} onLongPress={() => onLongPress(msg.id)} />
+              : <Text style={isMine ? bS.textMine : bS.textTheirs}>{msg.content}</Text>}
           </TouchableOpacity>
 
           <ReactionStrip
@@ -373,6 +382,7 @@ export default function DmChatScreen() {
   const isOnline                              = !!participantId && onlineUserIds.includes(participantId)
   const [pickerMsgId,     setPickerMsgId]     = useState<string | null>(null)
   const [emojiOpen,       setEmojiOpen]       = useState(false)
+  const [photoOpen,       setPhotoOpen]       = useState(false)
   const [otherLastReadAt, setOtherLastReadAt] = useState<string | null>(null)
 
   const listRef     = useRef<FlatList>(null)
@@ -386,6 +396,9 @@ export default function DmChatScreen() {
   const lastSent    = useRef<{ body: string; at: number } | null>(null)
   const meTypingRef    = useRef(false)
   const meTypingTimer  = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Opens on the latest message and stays there while the list fills in.
+  const stick = useStickToEnd(listRef)
 
   const scrollToEnd = useCallback(() => {
     listRef.current?.scrollToEnd({ animated: true })
@@ -416,6 +429,8 @@ export default function DmChatScreen() {
     sent_at:         raw.sent_at,
     reply_to:        raw.reply_to,
     reactions:       raw.reactions ?? [],
+    attachment_url:     raw.attachment_url ?? null,
+    attachment_stamped: !!raw.attachment_stamped,
   }), [])
 
   const fetchMessages = useCallback(async () => {
@@ -485,21 +500,27 @@ export default function DmChatScreen() {
     },
   })
 
+  // Opening the chat: back on the latest message (useStickToEnd keeps it there).
   useEffect(() => {
     if (!loading && messages.length > 0) {
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 100)
+      stick.pin()
+      listRef.current?.scrollToEnd({ animated: false })
     }
   }, [loading])
 
-  const handleSend = async () => {
-    const body = text.trim()
-    if (!body || sendingRef.current) return
-    if (lastSent.current && lastSent.current.body === body && Date.now() - lastSent.current.at < 2000) {
+  /** Sends the typed text, or (with `photo`) an uploaded photo and its caption. */
+  const handleSend = async (photo?: { url: string; caption: string }) => {
+    const typed = photo ? photo.caption : text.trim()
+    if ((!typed && !photo) || sendingRef.current) return
+    // A captionless photo is stored with the placeholder text; using it here
+    // lets the live echo match and replace the optimistic bubble.
+    const body = photo && !typed ? PHOTO_PLACEHOLDER : typed
+    if (!photo && lastSent.current && lastSent.current.body === body && Date.now() - lastSent.current.at < 2000) {
       clearInput()
       return
     }
     sendingRef.current = true
-    lastSent.current = { body, at: Date.now() }
+    if (!photo) lastSent.current = { body, at: Date.now() }
 
     const oid = `optimistic-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const replyToId = replyTo?.id
@@ -512,9 +533,11 @@ export default function DmChatScreen() {
       sent_at:         new Date().toISOString(),
       reply_to:        replyTo ? { message_id: replyTo.id, content: replyTo.content, sender_id: replyTo.sender_id } : null,
       reactions:       [],
+      attachment_url:  photo?.url ?? null,
     }
+    stick.pin()
     setMessages(prev => [...prev, optimistic])
-    clearInput()
+    if (!photo) clearInput()
     setReplyTo(null)
     if (meTypingTimer.current) clearTimeout(meTypingTimer.current)
     stopMeTyping()
@@ -525,12 +548,14 @@ export default function DmChatScreen() {
       const saved = isDraft
         ? await messagingApi.sendDirectMessage({
             target_user_id:      participantId,
-            content:             body,
+            content:             typed,
+            attachment_url:      photo?.url,
             reply_to_message_id: replyToId,
             booking_id:          bookingId || undefined,
           })
         : await messagingApi.sendMessage(activeConvId, {
-            content:             body,
+            content:             typed,
+            attachment_url:      photo?.url,
             reply_to_message_id: replyToId,
           })
       if (isDraft) setActiveConvId(saved.conversation_id)
@@ -658,6 +683,10 @@ export default function DmChatScreen() {
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
+            onContentSizeChange={stick.onContentSizeChange}
+            onLayout={stick.onLayout}
+            onScroll={stick.onScroll}
+            scrollEventThrottle={64}
             renderItem={({ item }) => {
               if (item.type === 'date') {
                 return (
@@ -723,6 +752,15 @@ export default function DmChatScreen() {
           >
             <Smile size={22} color={emojiOpen ? C.cyan : C.muted} />
           </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => { Keyboard.dismiss(); setEmojiOpen(false); setPhotoOpen(true) }}
+            activeOpacity={0.7}
+            style={styles.emojiToggle}
+            hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+            accessibilityLabel="Send a photo"
+          >
+            <ImagePlus size={22} color={C.muted} />
+          </TouchableOpacity>
           <TextInput
             ref={inputRef}
             value={text}
@@ -735,7 +773,7 @@ export default function DmChatScreen() {
             maxLength={5000}
           />
           <TouchableOpacity
-            onPress={handleSend}
+            onPress={() => void handleSend()}
             disabled={!text.trim() || sending}
             activeOpacity={0.75}
             style={[styles.sendBtn, (!text.trim() || sending) && styles.sendBtnDisabled]}
@@ -743,6 +781,12 @@ export default function DmChatScreen() {
             <Send size={17} color={text.trim() ? C.cyanText : C.muted} />
           </TouchableOpacity>
         </View>
+
+        <ChatPhotoSheet
+          visible={photoOpen}
+          onClose={() => setPhotoOpen(false)}
+          onSend={(url, caption) => { setPhotoOpen(false); void handleSend({ url, caption }) }}
+        />
 
         <EmojiSheet
           visible={emojiOpen}

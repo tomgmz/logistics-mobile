@@ -42,7 +42,7 @@ export const messagingApi = {
   resolveConversation: (target_user_id: string) =>
     get<{ conversation_id: string | null }>(`${B}/conversations/resolve`, { target_user_id }),
 
-  sendDirectMessage: (body: { target_user_id: string; content: string; reply_to_message_id?: string; booking_id?: string }) =>
+  sendDirectMessage: (body: { target_user_id: string; content: string; attachment_url?: string; reply_to_message_id?: string; booking_id?: string }) =>
     post<MessageRow>(`${B}/conversations/direct`, body),
 
   createGroup: (body: { name: string; member_ids: string[] }) =>
@@ -54,7 +54,7 @@ export const messagingApi = {
   getMessages: (conversationId: string, params?: { limit?: number; before?: string }) =>
     get<MessageRow[]>(`${B}/conversations/${conversationId}/messages`, params),
 
-  sendMessage: (conversationId: string, body: { content: string; reply_to_message_id?: string }) =>
+  sendMessage: (conversationId: string, body: { content: string; attachment_url?: string; reply_to_message_id?: string }) =>
     post<MessageRow>(`${B}/conversations/${conversationId}/messages`, body),
 
   markAsRead: (conversationId: string) =>
@@ -73,7 +73,7 @@ export const messagingApi = {
   getGroupMessages: (groupId: string, params?: { limit?: number; before?: string }) =>
     get<GroupMessageRaw[]>(`${B}/groups/${groupId}/messages`, params),
 
-  sendGroupMessage: (groupId: string, body: { content: string; reply_to_message_id?: string }) =>
+  sendGroupMessage: (groupId: string, body: { content: string; attachment_url?: string; reply_to_message_id?: string }) =>
     post<GroupMessageRaw>(`${B}/groups/${groupId}/messages`, body),
 
   markGroupRead: (groupId: string) =>

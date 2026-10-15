@@ -4,6 +4,7 @@ import SignInScreen from '../components/SignIn'
 import SplashScreen from '../components/SplashScreen'
 import Onboarding, { hasSeenOnboarding } from '../components/Onboarding'
 import { useAuthStore, useAuthHydrated } from '../lib/store/auth.store'
+import { markNavigationReady } from '../lib/push'
 
 function getRoleRoute(role: string): string {
   if (role === 'admin') return '/admin'
@@ -25,7 +26,10 @@ export default function Index() {
 
   useEffect(() => {
     if (!splashDone || !authReady || !introDone) return
-    if (user) router.replace(getRoleRoute(user.role))
+    if (!user) return
+    router.replace(getRoleRoute(user.role))
+    // A notification tap that opened the app goes on top of the home screen now.
+    markNavigationReady()
   }, [splashDone, authReady, introDone, user])
 
   if (!splashDone || introDone === null) {
