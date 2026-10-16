@@ -42,8 +42,8 @@ import { uploadProofPhoto, type ProofStamp } from './proofPhoto'
 const MAX_CONFLICT_ATTEMPTS = 5
 
 export interface QueuedAction {
-  id:        string                    // 'pickup:<bookingId>' | 'delivery:<stopId>' | 'complete:<bookingId>'
-  kind:      'pickup' | 'delivery' | 'complete'
+  id:        string                    // 'pickup:<bookingId>' | 'delivery:<stopId>' | 'complete:<bookingId>' | 'pause:<bookingId>:<ms>' | 'resume:<bookingId>:<ms>'
+  kind:      'pickup' | 'delivery' | 'complete' | 'pause' | 'resume'
   url:       string                    // '/driver/bookings/:id/pickup' | '.../destinations/:id/delivered' | '.../complete'
   body:      Record<string, unknown>   // { proof_photo_url } for stops; empty for completion
   // Local file URI of a proof photo that still needs uploading. Once uploaded,

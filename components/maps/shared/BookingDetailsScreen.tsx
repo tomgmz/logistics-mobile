@@ -23,6 +23,7 @@ import {
   MapPin,
   Navigation,
   PackageCheck,
+  PauseCircle,
   Road,
   Truck,
   User,
@@ -60,6 +61,9 @@ import { captureProofPhoto, CameraPermissionError, photoTakenAt, uploadProofPhot
 import { readCurrentFix } from '../../../lib/stopGeofence'
 import { queuedIds, flush } from '../../../lib/offlineQueue'
 import { loadResumableNavSession, type NavSession } from '../../../lib/navSession'
+import { currentPause, forgetPause, pauseTrip, resumeTrip, type TripPause } from '../../../lib/tripPause'
+import { PauseTripModal } from './PauseTripModal'
+import { PausedBanner } from './PausedBanner'
 
 /**
  * Assignment details — the screen a driver lands on from their booking list, and
@@ -283,6 +287,11 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
   // immediately instead of waiting on a refetch that may be offline.
   const [returned, setReturned] = useState(false)
 
+  // The pause in force (weather, breakdown, closed stop…), and whether the
+  // "why are you stopping" pop-up is open.
+  const [pause, setPause]         = useState<TripPause | null>(null)
+  const [pauseOpen, setPauseOpen] = useState(false)
+
   const headerTarget  = useCoachTarget('booking.header')
   const routeTarget   = useCoachTarget('booking.route')
   const actionsTarget = useCoachTarget('booking.actions')
@@ -341,10 +350,12 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
       // Keep a copy so navigation can still derive its stops if the network
       // drops before/at start.
       saveBookingCache(bookingId, data.data)
+      setPause(await currentPause(bookingId, data.data))
     } catch (e: any) {
       // Network failed — fall back to the last cached copy if we have one, so
       // the driver still sees the job details instead of a dead end.
       const cached = await loadBookingCache<Booking>(bookingId)
+      setPause(await currentPause(bookingId))
       if (cached) {
         setBooking(cached)
         setFromCache(true)
@@ -473,6 +484,18 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
     onStart(!!resumable?.earlyStart)
   }, [currentGate, resumable, onStart])
 
+  const confirmPause = useCallback(async (reason: Parameters<typeof pauseTrip>[1], note: string) => {
+    setPause(await pauseTrip(bookingId, reason, note))
+    setPauseOpen(false)
+  }, [bookingId])
+
+  const confirmResume = useCallback(() => {
+    Alert.alert('Resume the delivery?', 'The office and the client will see that you are moving again.', [
+      { text: 'Not yet', style: 'cancel' },
+      { text: 'Resume', onPress: () => { setPause(null); void resumeTrip(bookingId) } },
+    ])
+  }, [bookingId])
+
   /* ── Proof of delivery, supplied from here ──────────────────────────────
    *
    * Two different things behind one button, because to the driver they are one
@@ -549,6 +572,9 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
     confirmTripStop(target.stop.trip_stop_id, photoUri, proof, null)
       .catch(() => {})
       .finally(() => { void refreshQueued() })
+    // The server ends a pause when this confirmation lands; so does the phone.
+    void forgetPause(bookingId)
+    setPause(null)
 
     setTrips((prev) => prev.map((t) => ({
       ...t,
@@ -558,7 +584,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
           : x,
       ),
     })))
-  }, [proofFor, refreshQueued])
+  }, [proofFor, refreshQueued, bookingId])
 
   /* ── Closing the job out ────────────────────────────────────────────────── */
 
@@ -969,6 +995,8 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
                 {`You are the second driver on this booking. ${leadName || 'The main driver'} confirms the pickup, stops and proof photos in the app.`}
               </Text>
             </View>
+            {/* The main driver pauses and resumes; the second driver just sees it. */}
+            {pause && !isDone && <PausedBanner pause={pause} />}
             {onPreview && (
               <TouchableOpacity
                 activeOpacity={0.75}
@@ -1058,6 +1086,26 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
           </TouchableOpacity>
         )}
 
+        {/* Pausing: once the job has started (moving, or navigation begun before
+            the pickup — a closed pickup point is one of the reasons), and until
+            every drop-off is done. */}
+        {(inTransit || resumable) && !isDone && (
+          pause ? (
+            <PausedBanner pause={pause} onResume={confirmResume} />
+          ) : (
+            <TouchableOpacity
+              activeOpacity={0.75}
+              onPress={() => setPauseOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Pause this delivery and say why"
+              style={[s.previewBtn, { borderColor: D.amber }]}
+            >
+              <PauseCircle size={16} color={D.amber} strokeWidth={2} />
+              <Text style={[s.previewText, { color: D.amber }]}>Pause Delivery</Text>
+            </TouchableOpacity>
+          )
+        )}
+
         {/* Always available: seeing the run is never gated, only running it. */}
         {onPreview && !isDone && !inTransit && (
           <TouchableOpacity
@@ -1074,6 +1122,12 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
         </>
         )}
       </View>
+
+      <PauseTripModal
+        visible={pauseOpen}
+        onCancel={() => setPauseOpen(false)}
+        onConfirm={confirmPause}
+      />
 
       {/* Confirming a stop from here rather than from the map: same modal, so a
           stop confirmed in the yard carries the same photo AND position as one

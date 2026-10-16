@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { ActivityIndicator, Alert, Linking, PixelRatio, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { Signpost, CheckCircle2, PackageCheck, WifiOff } from 'lucide-react-native'
+import { Signpost, CheckCircle2, PackageCheck, PauseCircle, WifiOff } from 'lucide-react-native'
 import NetInfo from '@react-native-community/netinfo'
 import * as Location from 'expo-location'
 import {
@@ -52,6 +52,9 @@ import {
 } from '../../../lib/navSession'
 import { GoogleTurnCard } from './GoogleTurnCard'
 import { StopProofModal } from '../shared/StopProofModal'
+import { PauseTripModal } from '../shared/PauseTripModal'
+import { PausedBanner } from '../shared/PausedBanner'
+import { currentPause, forgetPause, pauseTrip, resumeTrip, type TripPause } from '../../../lib/tripPause'
 import { groupCargoByDestination, manifestFor } from '../../../lib/cargoManifest'
 import { legCoordinates } from '../../../lib/stopGeofence'
 import { GoogleNavSheet, SHEET_PEEK_H } from './GoogleNavSheet'
@@ -185,7 +188,7 @@ const MAP_BTN_PITCH = MAP_BTN_SIZE + 6
 
 /**
  * The column under the compass, one evenly spaced slot per button: SOS, the
- * avoid-highways toggle, then confirm-stop.
+ * avoid-highways toggle, confirm-stop, then pause/resume.
  *
  * Every button in it is MAP_BTN_SIZE wide at MAP_BTN_RIGHT, the compass's own
  * box — same width and same margin is what puts their centres on one line, so
@@ -315,6 +318,10 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
   const [proofFor, setProofFor] = useState<{ idx: number; auto: boolean } | null>(null)
   // Set once the driver marks the whole delivery done — shows the closing card.
   const [completed, setCompleted]   = useState(false)
+  // The pause in force (weather, breakdown, closed stop…), and whether the
+  // "why are you stopping" pop-up is open.
+  const [pause, setPause]         = useState<TripPause | null>(null)
+  const [pauseOpen, setPauseOpen] = useState(false)
   // Bumped by the error screen's Retry button to re-run init (e.g. after the
   // driver turns GPS on).
   const [retry, setRetry] = useState(0)
@@ -519,12 +526,49 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
     return () => clearTimeout(t)
   }, [toggleError])
 
+  /**
+   * The pause as this phone should show it: its own record while a pause or
+   * resume is still queued, the server's once the queue is clear (so a pause the
+   * office ended from the web clears here too).
+   */
+  const refreshPause = useCallback(async () => {
+    let server: any = null
+    try {
+      const { data } = await api.get(`/booking/${bookingId}`)
+      server = data?.data ?? null
+      if (server) saveBookingCache(bookingId, server)
+    } catch { /* offline: the phone's own record stands */ }
+    setPause(await currentPause(bookingId, server))
+  }, [bookingId])
+
+  useEffect(() => { void refreshPause() }, [refreshPause])
+
+  const confirmPause = useCallback(async (reason: Parameters<typeof pauseTrip>[1], note: string) => {
+    const p = await pauseTrip(bookingId, reason, note)
+    setPause(p)
+    setPauseOpen(false)
+  }, [bookingId])
+
+  const confirmResume = useCallback(() => {
+    Alert.alert('Resume the delivery?', 'The office and the client will see that you are moving again.', [
+      { text: 'Not yet', style: 'cancel' },
+      {
+        text: 'Resume',
+        onPress: () => {
+          setPause(null)
+          void resumeTrip(bookingId)
+        },
+      },
+    ])
+  }, [bookingId])
+
   // What to do when the connection comes back. Defined in render so it closes
   // over the latest applyDestinations; invoked via the ref from the NetInfo
   // subscription below.
   handleReconnectRef.current = () => {
-    // Push any status updates that queued up while we were in the dead zone.
-    flush().catch(() => {})
+    // Push any status updates that queued up while we were in the dead zone,
+    // then re-read the pause: the office may have ended it from the web.
+    flush().catch(() => {}).finally(() => { void refreshPause() })
 
     if (guidingRef.current && !applyingRef.current) {
       // Guidance kept running on the cached route while offline but couldn't
@@ -665,6 +709,9 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
       ? confirmTripPickup(bookingId, leg.tripId, photoUri, earlyStartRef.current, proof, nextStop)
       : confirmTripStop(leg.tripStopId, photoUri, proof, nextStop)
     persist.catch(() => {})
+    // The server ends a pause when this confirmation lands; so does the phone.
+    void forgetPause(bookingId)
+    setPause(null)
 
     legIndexRef.current = idx + 1
     setLegIndex(idx + 1)
@@ -1574,6 +1621,36 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
         </TouchableOpacity>
       )}
 
+      {/* Pause — weather, a breakdown, a closed pickup or drop-off. Under the
+          confirm disc in the same column; while paused it turns into Resume. */}
+      {!SHOW_NATIVE_UI && stops.length > 0 && !completed && (
+        <TouchableOpacity
+          onPress={() => (pause ? confirmResume() : setPauseOpen(true))}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel={pause ? 'Resume the delivery' : 'Pause the delivery'}
+          style={[MAP_BTN, { top: insets.top + mapBtnSlotTop(3), zIndex: 25, borderColor: C.orange }]}
+        >
+          <PauseCircle size={22} color={C.orange} strokeWidth={1.5} />
+        </TouchableOpacity>
+      )}
+
+      {/* Paused: say so where the driver is looking, with the way out. Shares
+          the banner column under the turn card, below the offline banner. */}
+      {!SHOW_NATIVE_UI && pause && !completed && (
+        <PausedBanner
+          pause={pause}
+          onResume={confirmResume}
+          style={{
+            position: 'absolute',
+            left:     16,
+            right:    MAP_BTN_RIGHT + MAP_BTN_SIZE + 12,
+            top:      insets.top + (offline ? 148 : 104),
+            zIndex:   26,
+          }}
+        />
+      )}
+
       {/* Trip panel over the bottom of the map — ETA strip collapsed, the whole
           route board when expanded. Replaces Google's footer. */}
       {!SHOW_NATIVE_UI && !completed && stops.length > 0 && (
@@ -1590,6 +1667,12 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
       )}
 
       {proofModal}
+
+      <PauseTripModal
+        visible={pauseOpen}
+        onCancel={() => setPauseOpen(false)}
+        onConfirm={confirmPause}
+      />
 
       {/* Closing card — shown once the driver marks the delivery done. The
           status update may still be queued (dead zone); it syncs on reconnect,
