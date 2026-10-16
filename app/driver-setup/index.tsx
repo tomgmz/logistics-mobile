@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ActivityIndicator, Pressable, Text, View } from 'react-native'
+import { ActivityIndicator, Text, TouchableOpacity, View } from 'react-native'
 import { router, useLocalSearchParams } from 'expo-router'
 
 import { BG_MAIN, CYAN, ERROR, MUTED } from '../../components/auth/password-fields'
@@ -18,6 +18,8 @@ import {
   PasskeyCancelled,
 } from '../../lib/passkeys'
 import { getMobileRoute } from '../../lib/config/roleRoutes'
+import { signOutDriver } from '../../lib/signOut'
+import { queuedCountFor } from '../../lib/offlineQueue'
 
 /**
  * Passkey setup, for a driver from an outside vendor.
@@ -51,6 +53,25 @@ export default function DriverSetupScreen() {
   const token = typeof rawToken === 'string' ? rawToken : ''
 
   const setUser = useAuthStore((s) => s.setUser)
+  // Someone already signed in on this phone. Setting up a new account signs
+  // them out — say so, and let the person holding the phone decide.
+  const current = useAuthStore((s) => s.user)
+  const [handover, setHandover] = useState<'ask' | 'blocked' | 'done'>('done')
+  const [pendingCount, setPendingCount] = useState(0)
+  const [switching, setSwitching] = useState(false)
+  useEffect(() => {
+    if (!current) { setHandover('done'); return }
+    let alive = true
+    void queuedCountFor(current.user_id).then((n) => {
+      if (!alive) return
+      setPendingCount(n)
+      setHandover(n > 0 ? 'blocked' : 'ask')
+    })
+    return () => { alive = false }
+  // Only on arrival: once the driver chooses to switch, `current` clears and
+  // the screen must not re-ask.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const [state,      setState]      = useState<InviteState>('checking')
   const [firstName,  setFirstName]  = useState<string | null>(null)
@@ -124,6 +145,55 @@ export default function DriverSetupScreen() {
       setSubmitting(false)
     }
   }, [submitting, token, setUser])
+
+  const currentName = current
+    ? [current.first_name, current.last_name].filter(Boolean).join(' ') || 'another driver'
+    : ''
+
+  // Another driver's deliveries are still on this phone, unsent. Switching now
+  // would strand them until that driver signs back in here — stop, and say how
+  // to get them out first.
+  if (handover === 'blocked') {
+    return (
+      <Centered title="Finish sending first" backLabel="Back to the app" onBack={() => router.replace(getMobileRoute(current?.role ?? 'driver'))}>
+        <Text style={{ color: MUTED, fontSize: 13, textAlign: 'center', lineHeight: 19 }}>
+          {currentName} is signed in on this phone and has {pendingCount} update{pendingCount === 1 ? '' : 's'} that
+          {pendingCount === 1 ? ' has' : ' have'} not been sent yet (deliveries confirmed without signal).
+          {'\n\n'}Connect this phone to the internet and open the app so they go out, then open your setup link again.
+        </Text>
+      </Centered>
+    )
+  }
+
+  if (handover === 'ask') {
+    return (
+      <Centered title="Switch accounts?" backLabel={`Stay signed in as ${currentName}`} onBack={() => router.replace(getMobileRoute(current?.role ?? 'driver'))}>
+        <Text style={{ color: MUTED, fontSize: 13, textAlign: 'center', lineHeight: 19 }}>
+          {currentName} is signed in on this phone. Setting up your own sign-in will sign {currentName} out of this app.
+        </Text>
+        <TouchableOpacity
+          onPress={async () => {
+            setSwitching(true)
+            await signOutDriver()
+            setSwitching(false)
+            setHandover('done')
+          }}
+          disabled={switching}
+          activeOpacity={0.7}
+          style={{
+            marginTop: 4, paddingVertical: 12, paddingHorizontal: 28, borderRadius: 10,
+            backgroundColor: 'rgba(77,249,237,0.12)', borderWidth: 1, borderColor: 'rgba(77,249,237,0.4)',
+            opacity: switching ? 0.6 : 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+          }}
+        >
+          {switching && <ActivityIndicator size="small" color={CYAN} />}
+          <Text style={{ color: CYAN, fontSize: 13, fontWeight: '700', letterSpacing: 1, textAlign: 'center', flexShrink: 1 }}>
+            Sign out {currentName} and continue
+          </Text>
+        </TouchableOpacity>
+      </Centered>
+    )
+  }
 
   if (state === 'checking') {
     return (
@@ -203,45 +273,52 @@ export default function DriverSetupScreen() {
         </Text>
       )}
 
-      <Pressable
+      <TouchableOpacity
         onPress={enroll}
         disabled={submitting}
-        style={({ pressed }) => ({
+        activeOpacity={0.7}
+        style={{
           marginTop: 6, paddingVertical: 14, paddingHorizontal: 34, borderRadius: 10,
           borderWidth: 1, borderColor: 'rgba(77,249,237,0.4)',
           backgroundColor: 'rgba(77,249,237,0.06)',
-          opacity: pressed || submitting ? 0.6 : 1,
+          opacity: submitting ? 0.6 : 1,
           flexDirection: 'row', alignItems: 'center', gap: 10,
-        })}
+        }}
       >
         {submitting && <ActivityIndicator size="small" color={CYAN} />}
         <Text style={{ color: CYAN, fontSize: 14, fontWeight: '700', letterSpacing: 1 }}>
           {submitting ? 'Setting up…' : 'Set up sign-in'}
         </Text>
-      </Pressable>
+      </TouchableOpacity>
     </View>
   )
 }
 
 /** The dead-end layout, shared by the states that end in a trip back to sign-in. */
-function Centered({ title, children }: { title: string; children: React.ReactNode }) {
+function Centered({ title, children, backLabel = 'Back to sign in', onBack }: {
+  title: string
+  children: React.ReactNode
+  backLabel?: string
+  onBack?: () => void
+}) {
   return (
     <View style={{ flex: 1, backgroundColor: BG_MAIN, alignItems: 'center', justifyContent: 'center', gap: 16, paddingHorizontal: 28 }}>
       <Text style={{ color: '#fff', fontSize: 18, fontWeight: '800', letterSpacing: 2, textTransform: 'uppercase', textAlign: 'center' }}>
         {title}
       </Text>
       {children}
-      <Pressable
-        onPress={() => router.replace('/sign-in')}
-        style={({ pressed }) => ({
+      <TouchableOpacity
+        onPress={onBack ?? (() => router.replace('/sign-in'))}
+        activeOpacity={0.7}
+        style={{
           marginTop: 8, paddingVertical: 12, paddingHorizontal: 28, borderRadius: 10,
-          borderWidth: 1, borderColor: 'rgba(77,249,237,0.4)', opacity: pressed ? 0.7 : 1,
-        })}
+          borderWidth: 1, borderColor: 'rgba(77,249,237,0.4)',
+        }}
       >
         <Text style={{ color: CYAN, fontSize: 13, fontWeight: '700', letterSpacing: 1 }}>
-          Back to sign in
+          {backLabel}
         </Text>
-      </Pressable>
+      </TouchableOpacity>
     </View>
   )
 }

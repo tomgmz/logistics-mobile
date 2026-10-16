@@ -106,11 +106,19 @@ export async function resumeTrip(bookingId: string): Promise<void> {
 }
 
 /**
- * A pickup or drop-off was just confirmed. The server ends a pause on its own
- * when that arrives (the truck is plainly moving), so the phone forgets it too.
+ * A pickup or drop-off is being confirmed: the truck is plainly moving, so any
+ * pause this phone holds ends now.
+ *
+ * Sent as a real resume, queued BEFORE the confirmation, rather than left to the
+ * server's automatic end. The queue drains in order, so the resume lands first
+ * and carries the moment the driver confirmed; left to the server, a pause ended
+ * in a dead zone would be stamped with whenever the phone found signal again,
+ * hours later. The server's automatic end stays as the backstop for a pause this
+ * phone did not know about.
  */
-export function forgetPause(bookingId: string): Promise<void> {
-  return writeLocal(bookingId, null)
+export async function endPauseForProgress(bookingId: string): Promise<void> {
+  if (!(await readLocal(bookingId))) return
+  await resumeTrip(bookingId)
 }
 
 /**

@@ -21,7 +21,7 @@ import { useFocusEffect, useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ChevronsRight, ChevronRight, PackageOpen } from 'lucide-react-native'
 
-import { useDriverId, useAuthHydrated } from '../../../lib/store/auth.store'
+import { useDriverId, useAuthHydrated, useAuthStore } from '../../../lib/store/auth.store'
 import { useAvailabilityStore } from '../../../lib/store/availability.store'
 import AvailabilityToggle from '../../../components/ui/AvailabilityToggle'
 import CoachMarkTour, { CoachStep } from '../../../components/CoachMarkTour'
@@ -92,6 +92,7 @@ export default function DriverHome() {
   const insets      = useSafeAreaInsets()
   const hasHydrated = useAuthHydrated()
   const driverId    = useDriverId()
+  const isVendorDriver = useAuthStore((s) => s.user?.drivers?.is_external === true)
 
   const [bookings,   setBookings]   = useState<BookingWithRelations[]>([])
   const [loading,    setLoading]    = useState(true)
@@ -272,7 +273,10 @@ export default function DriverHome() {
         className="absolute inset-x-0 bottom-0 border-t border-white/[0.06] bg-black px-6 pt-3"
         style={{ paddingBottom: insets.bottom + 12 }}
       >
-        <AvailabilityToggle />
+        {/* A vendor's driver is crewed booking by booking and is not in the
+            company pool, so the calendar does not apply — it only ever read
+            "Inactive" for them. */}
+        {!isVendorDriver && <AvailabilityToggle />}
       </View>
 
       <CoachMarkTour tourId="home" steps={HOME_TOUR} ready={!loading} />
@@ -358,7 +362,9 @@ function ActiveOrderCard({
 
   const truck      = booking.truck_assignments?.[0]?.trucks
   const truckModel = truck?.truck_models?.name ?? truck?.truck_models?.vehicle_type ?? booking.truck_type_needed
-  const plate      = truck?.plate_number
+  // A vendor's vehicle is not in the fleet: its plate rides on the delivery.
+  const vendorDelivery = (booking as { deliveries?: Array<{ vendor_vehicle_plate?: string | null }> }).deliveries?.[0]
+  const plate      = truck?.plate_number ?? vendorDelivery?.vendor_vehicle_plate ?? undefined
 
   return (
     <Pressable

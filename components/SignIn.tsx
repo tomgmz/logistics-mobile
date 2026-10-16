@@ -1252,6 +1252,14 @@ export default function SignInScreen() {
 
       </KeyboardAwareScrollView>
 
+      {/* The screen scrolls up under the status bar while the keyboard is open;
+          without this the headline slid behind the clock and icons. An opaque
+          strip the height of the status bar keeps them readable. */}
+      <View
+        pointerEvents="none"
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top, backgroundColor: '#000' }}
+      />
+
       <ConfirmDialog
         visible={confirmReset}
         title="Reset your password?"

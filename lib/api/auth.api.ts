@@ -250,6 +250,8 @@ export interface AuthUser {
     license_number:   string
     license_expiry:   string
     status:           string
+    /** A vendor's driver (passkey sign-in, crewed per booking, not in the company pool). */
+    is_external?:     boolean
   } | null
 
   clients?: {

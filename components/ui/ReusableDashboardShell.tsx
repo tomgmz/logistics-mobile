@@ -7,9 +7,7 @@ import { Home, Package, Truck, BarChart2, Users } from 'lucide-react-native'
 import ReusableHeader from './ReusableHeader'
 import ReusableSidebar, { NavItem } from './ReusableSideBar'
 import { useAuthStore } from '../../lib/store/auth.store'
-import { useAvailabilityStore } from '../../lib/store/availability.store'
-import { logout } from '../../lib/api/auth.api'
-import { unregisterPushNotifications } from '../../lib/push'
+import { signOutDriver } from '../../lib/signOut'
 
 const ICON_COLOR = 'rgba(255,255,255,0.40)'
 const ICON_SIZE  = 17
@@ -33,20 +31,12 @@ export default function ReusableDashboardShell({
 }: ReusableDashboardShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const router    = useRouter()
-  const clearUser = useAuthStore((s) => s.clearUser)
 
   const handleLogout = async () => {
-    try {
-      await unregisterPushNotifications()
-      await logout()
-    } catch {
-    } finally {
-      clearUser()
-      // Availability is per driver — drop it so the next sign-in on this device
-      // doesn't show the previous driver's switch state.
-      useAvailabilityStore.getState().reset()
-      router.replace('/')
-    }
+    // Stops tracking, ends the nav session and clears the driver's local state
+    // too — see lib/signOut.
+    await signOutDriver()
+    router.replace('/')
   }
 
   return (

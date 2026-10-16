@@ -3,6 +3,7 @@ import NetInfo from '@react-native-community/netinfo'
 import { AppState, AppStateStatus } from 'react-native'
 
 import api from './api/auth.api'
+import { useAuthStore } from './store/auth.store'
 import { uploadProofPhoto, type ProofStamp } from './proofPhoto'
 
 /**
@@ -54,6 +55,12 @@ export interface QueuedAction {
   stamp?:    ProofStamp
   createdAt: number
   attempts:  number
+  // The driver signed in when this was queued. Only sent while that same driver
+  // is signed in: a confirmation made in a dead zone by one driver must never go
+  // out under another's session (a vendor driver setting up on a shared phone,
+  // or a sign-out and sign-in before signal returns). Absent on entries queued
+  // before this field existed, which are sent as before.
+  userId?:   string | null
 }
 
 const QUEUE_KEY = 'nav_action_queue'
@@ -86,11 +93,12 @@ async function writeQueue(queue: QueuedAction[]): Promise<void> {
 /**
  * Persist an action. No-op if one with the same id is already queued.
  */
-export function enqueue(action: Omit<QueuedAction, 'createdAt' | 'attempts'>): Promise<void> {
+export function enqueue(action: Omit<QueuedAction, 'createdAt' | 'attempts' | 'userId'>): Promise<void> {
   return runExclusive(async () => {
     const queue = await readQueue()
     if (queue.some((a) => a.id === action.id)) return
-    queue.push({ ...action, createdAt: Date.now(), attempts: 0 })
+    const userId = useAuthStore.getState().user?.user_id ?? null
+    queue.push({ ...action, userId, createdAt: Date.now(), attempts: 0 })
     await writeQueue(queue)
   })
 }
@@ -104,16 +112,27 @@ export function enqueue(action: Omit<QueuedAction, 'createdAt' | 'attempts'>): P
 export function flush(): Promise<void> {
   return runExclusive(async () => {
     const net = await NetInfo.fetch()
-    if (!net.isConnected) return
+    if (!reachable(net)) return
+
+    // The radio says online; make sure the server actually answers before
+    // sending anything heavy. Right after signal returns the network is "up"
+    // with no working path yet, and a queued proof photo (60 s upload timeout)
+    // sent then would hang that long — holding every later flush behind it.
+    if (!(await serverReachable())) return
 
     const queue = await readQueue()
     if (queue.length === 0) return
 
+    const me = useAuthStore.getState().user?.user_id ?? null
     const remaining: QueuedAction[] = []
     let stop = false
 
     for (const queued of queue) {
       if (stop) { remaining.push(queued); continue }
+      // Another driver's work, or nobody is signed in: hold it untouched for its
+      // owner. Different drivers' entries are for different bookings, so skipping
+      // past them cannot reorder anything that depends on them.
+      if (!me || (queued.userId && queued.userId !== me)) { remaining.push(queued); continue }
 
       // Carries a photo that hasn't been uploaded yet (the stop was confirmed in
       // a dead zone). Upload it first and fold the hosted URL into the body —
@@ -199,6 +218,12 @@ export async function queuedIds(): Promise<string[]> {
   return (await readQueue()).map((a) => a.id)
 }
 
+/** How many entries are waiting that belong to this driver. */
+export async function queuedCountFor(userId: string | null | undefined): Promise<number> {
+  if (!userId) return 0
+  return (await readQueue()).filter((a) => !a.userId || a.userId === userId).length
+}
+
 /**
  * What the driver has confirmed that the server may not know about yet.
  *
@@ -239,16 +264,54 @@ let wasConnected = true
  * Install a single connectivity listener that flushes on the offline→online
  * edge. Call once from a long-lived layout. Returns an unsubscribe.
  */
+/**
+ * Online means the internet is reachable, not merely that some network is up.
+ * Many phones keep a Wi-Fi-calling or carrier IMS link "connected" with no data
+ * at all; judged by isConnected alone, losing and regaining signal never showed
+ * as a reconnection, and queued deliveries waited until the app happened to be
+ * reopened. `isInternetReachable` is null while unknown, which counts as online.
+ */
+/** A 5-second look at the API's health endpoint: is there a working path right now? */
+async function serverReachable(): Promise<boolean> {
+  const base = (process.env.EXPO_PUBLIC_API_URL ?? '').replace(/\/$/, '')
+  if (!base) return true
+  const ctrl = new AbortController()
+  const t = setTimeout(() => ctrl.abort(), 5_000)
+  try {
+    const res = await fetch(`${base}/health`, { signal: ctrl.signal })
+    return res.ok
+  } catch {
+    return false
+  } finally {
+    clearTimeout(t)
+  }
+}
+
+function reachable(state: { isConnected: boolean | null; isInternetReachable?: boolean | null }): boolean {
+  return !!state.isConnected && state.isInternetReachable !== false
+}
+
+// Belt and braces: while anything is waiting, try again on a timer. Reachability
+// detection varies by phone, and a confirmed delivery should not depend on it.
+const RETRY_MS = 20_000
+let retryTimer: ReturnType<typeof setInterval> | null = null
+
 export function startAutoFlush(): () => void {
   if (netUnsub) return netUnsub
   netUnsub = NetInfo.addEventListener((state) => {
-    const connected = !!state.isConnected
+    const connected = reachable(state)
     if (connected && !wasConnected) flush().catch(() => {})
     wasConnected = connected
   })
+  retryTimer = setInterval(() => {
+    void readQueue().then((q) => { if (q.length > 0) flush().catch(() => {}) })
+  }, RETRY_MS)
   // Attempt an initial drain in case actions were left from a previous session.
   flush().catch(() => {})
-  return () => { netUnsub?.(); netUnsub = null }
+  return () => {
+    netUnsub?.(); netUnsub = null
+    if (retryTimer) { clearInterval(retryTimer); retryTimer = null }
+  }
 }
 
 /**

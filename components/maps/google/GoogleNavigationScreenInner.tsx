@@ -27,7 +27,7 @@ import {
 } from '../../../lib/tripProgress'
 import { buildNavPlan } from '../../../lib/navLegs'
 import { SosButton } from '../../reports/SosButton'
-import { fetchTripsWithCache, currentTrip, type Trip } from '../../../lib/trips'
+import { fetchTripsWithCache, currentTrip, recordLocalProgress, clearLocalProgress, type Trip } from '../../../lib/trips'
 import { saveStopOrder, syncStopOrder, loadStopOrder, clearStopOrders, moveEarlier } from '../../../lib/stopOrder'
 import { setNextStop } from '../../../lib/locationTracking'
 import { saveBookingCache, loadBookingCache, clearBookingCache } from '../../../lib/navCache'
@@ -54,7 +54,7 @@ import { GoogleTurnCard } from './GoogleTurnCard'
 import { StopProofModal } from '../shared/StopProofModal'
 import { PauseTripModal } from '../shared/PauseTripModal'
 import { PausedBanner } from '../shared/PausedBanner'
-import { currentPause, forgetPause, pauseTrip, resumeTrip, type TripPause } from '../../../lib/tripPause'
+import { currentPause, endPauseForProgress, pauseTrip, resumeTrip, type TripPause } from '../../../lib/tripPause'
 import { groupCargoByDestination, manifestFor } from '../../../lib/cargoManifest'
 import { legCoordinates } from '../../../lib/stopGeofence'
 import { GoogleNavSheet, SHEET_PEEK_H } from './GoogleNavSheet'
@@ -393,6 +393,9 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
   // delivered) but hasn't been marked completed yet — the driver re-opened the
   // map just to finish it off.
   const nothingToNavigateRef = useRef(false)
+  // The next run's route could not be built (no signal at the end of a run).
+  // The reconnect handler builds it as soon as the connection is back.
+  const nextRunPendingRef = useRef(false)
 
   // (Re)set the SDK's destinations from the CURRENT leg onward. We slice from
   // legIndexRef so the SDK's internal waypoint cursor (advanced by
@@ -543,6 +546,14 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
 
   useEffect(() => { void refreshPause() }, [refreshPause])
 
+  // While paused, look again every 30 s: the office can end the pause from the
+  // web, and the banner should not outlive it until the driver happens to reopen.
+  useEffect(() => {
+    if (!pause) return
+    const t = setInterval(() => { if (!offlineRef.current) void refreshPause() }, 30_000)
+    return () => clearInterval(t)
+  }, [pause, refreshPause])
+
   const confirmPause = useCallback(async (reason: Parameters<typeof pauseTrip>[1], note: string) => {
     const p = await pauseTrip(bookingId, reason, note)
     setPause(p)
@@ -579,6 +590,22 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
       applyDestinations()
         .then(() => captureRouteGeometry())
         .catch(() => { /* still flaky; keep coasting on the cached route */ })
+        .finally(() => {
+          applyingRef.current = false
+          setTimeout(() => setRerouting(false), 1500)
+        })
+    } else if (nextRunPendingRef.current && !applyingRef.current) {
+      // A run ended in a dead zone and the next run's route never got built.
+      // The plan (waypoints, legs) is already in place; only the route is missing.
+      applyingRef.current = true
+      setRerouting(true)
+      applyDestinations()
+        .then(() => {
+          nextRunPendingRef.current = false
+          guidingRef.current = true
+          captureRouteGeometry()
+        })
+        .catch(() => { /* still flaky; the next reconnect tries again */ })
         .finally(() => {
           applyingRef.current = false
           setTimeout(() => setRerouting(false), 1500)
@@ -665,14 +692,19 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
       processed: [],
     })
 
-    try {
-      await applyDestinations()
+    // Offline, setDestinations neither resolves nor rejects — it just hangs. A
+    // deadline keeps the screen (and the confirm button, which waits on this)
+    // from hanging with it; the reconnect handler then builds the route.
+    const built = await Promise.race([
+      applyDestinations().then(() => true, () => false),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), ROUTE_BUILD_TIMEOUT_MS)),
+    ])
+    if (built) {
       guidingRef.current = true
+      nextRunPendingRef.current = false
       captureRouteGeometry()
-    } catch {
-      // Offline, most likely: the SDK cannot build a route without network. The
-      // reconnect handler already re-applies destinations, and the driver can
-      // retry from the button.
+    } else {
+      nextRunPendingRef.current = true
     }
   }, [bookingId, applyDestinations, captureRouteGeometry])
 
@@ -705,13 +737,20 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
     // Where the driver is headed next, so live tracking can tighten its update
     // cadence as the truck closes on that stop. Null on the last leg.
     const nextStop = legCoordinates(legsRef.current[idx + 1])
-    const persist = leg.type === 'pickup'
-      ? confirmTripPickup(bookingId, leg.tripId, photoUri, earlyStartRef.current, proof, nextStop)
-      : confirmTripStop(leg.tripStopId, photoUri, proof, nextStop)
-    persist.catch(() => {})
-    // The server ends a pause when this confirmation lands; so does the phone.
-    void forgetPause(bookingId)
+    // Any pause ends here, queued ahead of the confirmation so it carries this
+    // moment rather than whenever the queue next reaches the server.
     setPause(null)
+    const persist = endPauseForProgress(bookingId).catch(() => {}).then(() =>
+      leg.type === 'pickup'
+        ? confirmTripPickup(bookingId, leg.tripId, photoUri, earlyStartRef.current, proof, nextStop)
+        : confirmTripStop(leg.tripStopId, photoUri, proof, nextStop),
+    )
+    persist.catch(() => {})
+    // Remembered after it has been sent, so a run that ends in a dead zone is
+    // rebuilt from what this phone actually did (see trips.recordLocalProgress).
+    void recordLocalProgress(bookingId, leg.type === 'pickup'
+      ? { loadedTripId: leg.tripId }
+      : { confirmedStopId: leg.tripStopId })
 
     legIndexRef.current = idx + 1
     setLegIndex(idx + 1)
@@ -859,6 +898,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
 
     clearBookingCache(bookingId)
     clearRouteGeometry(bookingId)
+    void clearLocalProgress(bookingId)
     clearStopOrders(tripsRef.current.map((t) => t.trip_id))
     endNavSession()
     guidingRef.current = false
@@ -1316,6 +1356,10 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
       // succeeded (no session marker → safe to clean up here). Not while a saved
       // session is still being checked: that guidance may be running, and
       // tearing it down here would lose it for good in a dead zone.
+      // Every stop on every run is done (the last bay auto-completes the
+      // booking) and the driver is leaving: nothing is left to resume, and the
+      // navigator would otherwise keep the GPS on until the app is killed.
+      if (nothingToNavigateRef.current && !nextRunPendingRef.current) endNavSession()
       if (!getActiveNavSession() && !holdBegin) {
         guidingRef.current = false
         navigationController.stopGuidance().catch(() => {})
@@ -1443,7 +1487,39 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
             setProofFor({ idx, auto: false })
           }}
         />
+
+        {/* Pause / resume work here too: a driver stuck in a dead zone after the
+            app was killed is exactly the driver most likely to need it. Both
+            queue offline like everything else on this screen. */}
+        {pause && (
+          <PausedBanner
+            pause={pause}
+            onResume={confirmResume}
+            style={{
+              position: 'absolute',
+              left:     14,
+              right:    MAP_BTN_RIGHT + MAP_BTN_SIZE + 12,
+              top:      insets.top + 96,
+              zIndex:   26,
+            }}
+          />
+        )}
+        <TouchableOpacity
+          onPress={() => (pause ? confirmResume() : setPauseOpen(true))}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel={pause ? 'Resume the delivery' : 'Pause the delivery'}
+          style={[MAP_BTN, { top: insets.top + 236, zIndex: 25, borderColor: C.orange }]}
+        >
+          <PauseCircle size={22} color={C.orange} strokeWidth={1.5} />
+        </TouchableOpacity>
+
         {proofModal}
+        <PauseTripModal
+          visible={pauseOpen}
+          onCancel={() => setPauseOpen(false)}
+          onConfirm={confirmPause}
+        />
       </View>
     )
   }

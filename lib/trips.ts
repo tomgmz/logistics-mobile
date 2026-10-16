@@ -85,6 +85,50 @@ export async function loadTripsCache(bookingId: string): Promise<Trip[] | null> 
   }
 }
 
+/* ── What this phone has confirmed ─────────────────────────────────────────── */
+
+/**
+ * Every pickup and drop-off confirmed on this phone, per booking — kept after the
+ * queue has sent it.
+ *
+ * The queue alone is not enough. A stop confirmed ONLINE leaves the queue within
+ * a second, but the trips cache still holds the answer from when the map opened,
+ * with that stop pending. Rebuild the route from cache + queue in a dead zone at
+ * the end of a run and the stop comes back to life: the driver is sent back to a
+ * bay they emptied an hour ago. This record closes that gap. It only ever moves a
+ * stop from pending to done, never the other way, so a stale entry cannot undo
+ * anything the server says.
+ */
+const progressKey = (bookingId: string) => `trip_progress_${bookingId}`
+
+interface LocalProgress { loadedTripIds: string[]; confirmedStopIds: string[] }
+
+export async function loadLocalProgress(bookingId: string): Promise<LocalProgress> {
+  try {
+    const raw = await AsyncStorage.getItem(progressKey(bookingId))
+    const p = raw ? (JSON.parse(raw) as Partial<LocalProgress>) : {}
+    return { loadedTripIds: p.loadedTripIds ?? [], confirmedStopIds: p.confirmedStopIds ?? [] }
+  } catch {
+    return { loadedTripIds: [], confirmedStopIds: [] }
+  }
+}
+
+export async function recordLocalProgress(
+  bookingId: string,
+  entry: { loadedTripId?: string; confirmedStopId?: string },
+): Promise<void> {
+  try {
+    const p = await loadLocalProgress(bookingId)
+    if (entry.loadedTripId && !p.loadedTripIds.includes(entry.loadedTripId)) p.loadedTripIds.push(entry.loadedTripId)
+    if (entry.confirmedStopId && !p.confirmedStopIds.includes(entry.confirmedStopId)) p.confirmedStopIds.push(entry.confirmedStopId)
+    await AsyncStorage.setItem(progressKey(bookingId), JSON.stringify(p))
+  } catch { /* the queue still carries it */ }
+}
+
+export async function clearLocalProgress(bookingId: string): Promise<void> {
+  try { await AsyncStorage.removeItem(progressKey(bookingId)) } catch { /* non-fatal */ }
+}
+
 /**
  * Fetch, caching on success and falling back to the cache on failure — then fold
  * in whatever the driver has confirmed that has not reached the server yet.
@@ -95,10 +139,18 @@ export async function loadTripsCache(bookingId: string): Promise<Trip[] | null> 
  * honestly about what it knows, and what it knows is behind the driver.
  */
 export async function fetchTripsWithCache(bookingId: string): Promise<{ trips: Trip[]; fromCache: boolean }> {
-  const overlay = async (trips: Trip[]) =>
-    applyPendingConfirmations(trips, await pendingConfirmations().catch(
+  // Two sources of "done on this phone": the queue (not sent yet) and the local
+  // progress record (sent, but possibly after the cache was last refreshed).
+  const overlay = async (trips: Trip[]) => {
+    const queued = await pendingConfirmations().catch(
       () => ({ loadedTripIds: [], confirmedStopIds: [] }),
-    ))
+    )
+    const local = await loadLocalProgress(bookingId)
+    return applyPendingConfirmations(trips, {
+      loadedTripIds:    [...queued.loadedTripIds,    ...local.loadedTripIds],
+      confirmedStopIds: [...queued.confirmedStopIds, ...local.confirmedStopIds],
+    })
+  }
 
   try {
     const trips = await fetchTrips(bookingId)

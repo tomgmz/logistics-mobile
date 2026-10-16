@@ -24,11 +24,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Bell, MessageCircle, ChevronLeft, LogOut } from 'lucide-react-native'
 
 import { useAuthStore } from '../../lib/store/auth.store'
-import { useAvailabilityStore } from '../../lib/store/availability.store'
 import { useMessagingStore } from '../../lib/store/messaging.store'
 import { useNotificationStore } from '../../lib/store/notification.store'
-import { logout } from '../../lib/api/auth.api'
-import { unregisterPushNotifications } from '../../lib/push'
+import { signOutDriver } from '../../lib/signOut'
 import { FONTS } from '../../lib/config/fonts'
 import ReusableModal from './ReusableModal'
 import { roleLabel } from '../../lib/roles'
@@ -76,7 +74,6 @@ export default function DriverTopBar() {
   const pathname = usePathname()
 
   const user         = useAuthStore((s) => s.user)
-  const clearUser    = useAuthStore((s) => s.clearUser)
   const totalUnread  = useMessagingStore((s) => s.totalUnread)
   const unreadNotifs = useNotificationStore((s) => s.unreadCount)
 
@@ -102,17 +99,10 @@ export default function DriverTopBar() {
   ).toUpperCase() || user?.username?.[0]?.toUpperCase() || '?'
 
   const handleLogout = async () => {
-    try {
-      await unregisterPushNotifications()
-      await logout()
-    } catch {
-    } finally {
-      clearUser()
-      // Availability is per driver — drop it so the next sign-in on this device
-      // doesn't show the previous driver's switch state.
-      useAvailabilityStore.getState().reset()
-      router.replace('/')
-    }
+    // Stops tracking, ends the nav session and clears the driver's local state
+    // too — see lib/signOut.
+    await signOutDriver()
+    router.replace('/')
   }
 
   return (

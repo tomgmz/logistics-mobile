@@ -11,6 +11,7 @@ import { getMe, setSessionExpiredHandler, TokenStore } from '../lib/api/auth.api
 import { APP_FONTS } from '../lib/config/fonts'
 import { syncServerTime } from '../lib/serverTime'
 import { registerForPushNotifications, initPushResponders } from '../lib/push'
+import { flush } from '../lib/offlineQueue'
 
 SplashScreen.preventAutoHideAsync()
 
@@ -64,6 +65,13 @@ export default function RootLayout() {
     const cleanup = initPushResponders()
     return cleanup
   }, [])
+
+  // A driver signing in may have work queued from an earlier session on this
+  // phone (entries are held for their owner across sign-outs); send it now.
+  useEffect(() => {
+    if (!authReady || !user) return
+    void flush().catch(() => {})
+  }, [authReady, user?.user_id])
 
   // Date-gated work (can this booking be started yet?) must not trust the
   // device clock, so learn the server's offset as soon as we're signed in.

@@ -41,6 +41,7 @@ import { FONTS } from '../../../lib/config/fonts'
 import { groupCargoByDestination, manifestFor } from '../../../lib/cargoManifest'
 import {
   fetchTripsWithCache,
+  recordLocalProgress,
   isMultiTrip,
   tripProgressCounts,
   type Trip,
@@ -61,7 +62,7 @@ import { captureProofPhoto, CameraPermissionError, photoTakenAt, uploadProofPhot
 import { readCurrentFix } from '../../../lib/stopGeofence'
 import { queuedIds, flush } from '../../../lib/offlineQueue'
 import { loadResumableNavSession, type NavSession } from '../../../lib/navSession'
-import { currentPause, forgetPause, pauseTrip, resumeTrip, type TripPause } from '../../../lib/tripPause'
+import { currentPause, endPauseForProgress, pauseTrip, resumeTrip, type TripPause } from '../../../lib/tripPause'
 import { PauseTripModal } from './PauseTripModal'
 import { PausedBanner } from './PausedBanner'
 
@@ -484,6 +485,17 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
     onStart(!!resumable?.earlyStart)
   }, [currentGate, resumable, onStart])
 
+  // While paused, look again every 30 s so an office resume clears the banner.
+  useEffect(() => {
+    if (!pause || offline) return
+    const t = setInterval(() => {
+      api.get(`/booking/${bookingId}`)
+        .then(async ({ data }) => setPause(await currentPause(bookingId, data.data)))
+        .catch(() => {})
+    }, 30_000)
+    return () => clearInterval(t)
+  }, [pause, offline, bookingId])
+
   const confirmPause = useCallback(async (reason: Parameters<typeof pauseTrip>[1], note: string) => {
     setPause(await pauseTrip(bookingId, reason, note))
     setPauseOpen(false)
@@ -569,12 +581,13 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
     // from the navigation map does, so a stop confirmed here with no signal is
     // still sent when one returns.
     setSendingStops((prev) => new Set(prev).add(target.stop.trip_stop_id))
-    confirmTripStop(target.stop.trip_stop_id, photoUri, proof, null)
+    // Any pause ends here, queued ahead of the confirmation (see endPauseForProgress).
+    setPause(null)
+    endPauseForProgress(bookingId).catch(() => {})
+      .then(() => confirmTripStop(target.stop.trip_stop_id, photoUri, proof, null))
       .catch(() => {})
       .finally(() => { void refreshQueued() })
-    // The server ends a pause when this confirmation lands; so does the phone.
-    void forgetPause(bookingId)
-    setPause(null)
+    void recordLocalProgress(bookingId, { confirmedStopId: target.stop.trip_stop_id })
 
     setTrips((prev) => prev.map((t) => ({
       ...t,
@@ -674,6 +687,11 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
 
   const shuttle = isMultiTrip(trips)
   const counts  = tripProgressCounts(trips)
+  // Completing is only on offer once every drop-off is done — counting the ones
+  // confirmed on this phone that have not synced yet (the trips are overlaid).
+  // Offered earlier, the server refuses it, and the refusal sits in the offline
+  // queue ahead of the stops the driver confirms next.
+  const allStopsDone = counts.total > 0 && counts.done >= counts.total
 
   // Every planned visit, keyed by the bay it serves. A bay whose load takes two
   // runs has two of them, and each carries its own photo — so this is a list per
@@ -1028,7 +1046,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
             <Warehouse size={20} color={D.violet} strokeWidth={2} />
             <Text style={[s.startText, { color: D.violet }]}>Arrived Back at the Fleet?</Text>
           </TouchableOpacity>
-        ) : inTransit ? (
+        ) : inTransit && allStopsDone ? (
           <TouchableOpacity
             activeOpacity={0.85}
             onPress={() => setDialog('complete')}
@@ -1039,7 +1057,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
             <PackageCheck size={20} color={D.green} strokeWidth={2} />
             <Text style={[s.startText, { color: D.green }]}>Complete Delivery?</Text>
           </TouchableOpacity>
-        ) : resumable ? (
+        ) : inTransit || resumable ? (
           // Started already (the pickup may not be confirmed yet, so the booking
           // still reads as assigned) — straight back to the map, no questions.
           <TouchableOpacity
@@ -1073,7 +1091,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
         {/* Resuming a run in progress. Separate from the completion button above
             so "get me back to the map" and "close this booking" can never be
             confused for one another. */}
-        {inTransit && (
+        {inTransit && allStopsDone && (
           <TouchableOpacity
             activeOpacity={0.75}
             onPress={() => (resumable ? handleResume() : startWithOfflineCheck(false))}
