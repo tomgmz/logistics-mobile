@@ -51,7 +51,6 @@ export default {
       ...androidGoogleServices,
       package: 'ph.logistics8338.mobile',
       versionCode: 1,
-      targetSdkVersion: 34,
       "ndkVersion": "27.1.12297006",
       softwareKeyboardLayoutMode: "resize",
       adaptiveIcon: {
