@@ -10,6 +10,7 @@ import {
   NavigationView,
   NavigationNightMode,
   useNavigation,
+  TaskRemovedBehavior,
   TravelMode,
   type ArrivalEvent,
   type Waypoint,
@@ -41,8 +42,10 @@ import {
 import {
   type Leg,
   type DisplayStop,
+  type NavSession,
   getActiveNavSession,
   isNavSessionActive,
+  loadResumableNavSession,
   startNavSession,
   updateNavSession,
   endNavSession,
@@ -211,7 +214,14 @@ const MAP_BTN = {
 
 export default function GoogleNavigationScreenInner({ bookingId, routeToken, earlyStart = false }: Props) {
   return (
-    <NavigationProvider termsAndConditionsDialogOptions={TOS_OPTIONS}>
+    // CONTINUE_SERVICE is the library's default, stated here so a library update
+    // can't quietly change it: swiping the app away must leave Google's guidance
+    // (voice + notification) running, since a driver in a dead zone has no way
+    // to build the route again.
+    <NavigationProvider
+      termsAndConditionsDialogOptions={TOS_OPTIONS}
+      taskRemovedBehavior={TaskRemovedBehavior.CONTINUE_SERVICE}
+    >
       <GoogleNavInner bookingId={bookingId} routeToken={routeToken} earlyStart={earlyStart} />
     </NavigationProvider>
   )
@@ -347,6 +357,9 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
   const stopsRef      = useRef<DisplayStop[]>([])
   // Read inside async callbacks so we always send the latest preference.
   const avoidHwyRef   = useRef(false)
+  // The early-start decision, from the booking screen on a fresh start or from
+  // the saved session on a resume (where the booking screen no longer asks).
+  const earlyStartRef = useRef(earlyStart)
   // Only recompute on toggle once guidance is actually running.
   const guidingRef    = useRef(false)
   // Serializes route recomputes so overlapping taps / reroutes can't interleave
@@ -649,7 +662,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
     // cadence as the truck closes on that stop. Null on the last leg.
     const nextStop = legCoordinates(legsRef.current[idx + 1])
     const persist = leg.type === 'pickup'
-      ? confirmTripPickup(bookingId, leg.tripId, photoUri, earlyStart, proof, nextStop)
+      ? confirmTripPickup(bookingId, leg.tripId, photoUri, earlyStartRef.current, proof, nextStop)
       : confirmTripStop(leg.tripStopId, photoUri, proof, nextStop)
     persist.catch(() => {})
 
@@ -872,23 +885,30 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
       })
     }
 
+    // Put the screen back exactly where the running session is: same stop, same
+    // route preference, same early-start decision. Shared by both resume paths.
+    const restoreFromSession = (s: NavSession) => {
+      waypointsRef.current  = s.waypoints
+      legsRef.current       = s.legs
+      legIndexRef.current   = s.legIndex
+      processedRef.current  = new Set(s.processed)
+      stopsRef.current      = s.stops
+      avoidHwyRef.current   = s.avoidHighways
+      earlyStartRef.current = earlyStart || !!s.earlyStart
+      useTokenRef.current   = false
+      guidingRef.current    = true
+      setStops(s.stops)
+      setLegIndex(s.legIndex)
+      setAvoidHighways(s.avoidHighways)
+    }
+
     // RESUME: a session for this booking is already guiding natively (the
     // driver left the screen and came back). Re-attach to the running session
     // instead of rebuilding the route — this is what lets nav survive even when
     // the signal dropped, since no network round-trip is needed.
     const existing = getActiveNavSession()
     if (existing && existing.bookingId === bookingId) {
-      waypointsRef.current = existing.waypoints
-      legsRef.current      = existing.legs
-      legIndexRef.current  = existing.legIndex
-      processedRef.current = new Set(existing.processed)
-      stopsRef.current     = existing.stops
-      avoidHwyRef.current  = existing.avoidHighways
-      useTokenRef.current  = false
-      guidingRef.current   = true
-      setStops(existing.stops)
-      setLegIndex(existing.legIndex)
-      setAvoidHighways(existing.avoidHighways)
+      restoreFromSession(existing)
 
       registerListeners()
       // Re-enable turn-by-turn forwarding so the turn card refills.
@@ -923,6 +943,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
         legIndex:      legIndexRef.current,
         processed:     [...processedRef.current],
         avoidHighways: avoidHwyRef.current,
+        earlyStart:    earlyStartRef.current,
       })
       offlineStartErrorRef.current = false
       // The SDK has just rebuilt its furniture; re-assert our padding over it.
@@ -978,11 +999,50 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
       setError(message)
     }
 
+    // Set while a saved session is being checked against the SDK, so neither the
+    // navigator-ready callback nor the booking load can start building a new
+    // route over guidance that may still be running.
+    let holdBegin  = false
+    // Set once that check finds the route still loaded: the screen now mirrors
+    // the saved session, and the booking load must not reset it to stop one.
+    let reattached = false
+
+    /**
+     * Re-attach after the app was swiped away (or its memory otherwise lost)
+     * while Google's guidance carried on in its foreground service.
+     *
+     * The navigator is one per process and `init()` hands back the running one,
+     * so if the process survived, its route is still loaded — and asking for the
+     * current segment needs no network. A segment means the saved session is
+     * real: restore it and keep guiding. None means the process died with the
+     * route in it, and the normal start (new route, or the offline preview)
+     * takes over.
+     */
+    const reattachIfStillGuiding = async (s: NavSession): Promise<boolean> => {
+      const segment = await navigationController.getCurrentRouteSegment().catch(() => null)
+      if (!segment || cancelled) return false
+
+      reattached    = true
+      startResolved = true
+      if (watchdog) clearTimeout(watchdog)
+      restoreFromSession(s)
+      // Back in memory, so leaving the screen again takes the fast resume path.
+      startNavSession({ ...s, earlyStart: earlyStartRef.current })
+      // A no-op when guidance never stopped; picks it up again if the SDK paused.
+      await navigationController.startGuidance().catch(() => {})
+      offlineStartErrorRef.current = false
+      bumpMapPadding()
+      setTimeout(() => { if (!cancelled) bumpMapPadding() }, 2000)
+      setOfflinePreview(null)
+      setStarting(false)
+      return true
+    }
+
     // Start guidance only once BOTH the navigator is ready and the booking's
     // waypoints have loaded. Calling setDestinations before the navigator is
     // ready throws "initialize the navigator before executing".
     const maybeBegin = async () => {
-      if (cancelled || started || !navReady || waypointsRef.current.length === 0) return
+      if (cancelled || started || holdBegin || reattached || !navReady || waypointsRef.current.length === 0) return
       started = true
 
       const attempt = applyDestinations()
@@ -1057,6 +1117,11 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
         // A choice made offline never reached the server; send it now.
         if (trip && savedOrder?.length) void syncStopOrder(trip.trip_id, savedOrder)
 
+        // Re-attached to guidance that was still running: the saved session
+        // already says which stop the driver is on, and this plan starts from
+        // stop one. Keep the cargo and trips above, leave the route alone.
+        if (reattached) return
+
         // Nothing left to drive to, but the booking is still open: every bay on
         // every run has been confirmed and only "Mark delivery as done" remains
         // (the driver left the screen before finishing, or the app restarted).
@@ -1116,6 +1181,12 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
         }
         if (cancelled) return
 
+        // A session saved before the app was swiped away. Hold the normal start
+        // until the SDK says whether that guidance is still running.
+        const saved = await loadResumableNavSession(bookingId)
+        if (cancelled) return
+        if (saved) holdBegin = true
+
         // Register listeners BEFORE init so onNavigationReady isn't missed.
         registerListeners()
         setOnNavigationReady(() => { navReady = true; maybeBegin() })
@@ -1161,6 +1232,10 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
         // no instruction/distance data.
         try { navigationController.setTurnByTurnLoggingEnabled(true) } catch {}
 
+        if (saved && await reattachIfStillGuiding(saved)) return
+        holdBegin = false
+        if (cancelled) return
+
         // Now wait for the (parallel) booking load, then start guidance.
         await loadBooking
         if (cancelled) return
@@ -1191,8 +1266,10 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
       // finished), KEEP the native guidance running so re-opening the booking
       // resumes it — even with no signal. We only tear the session down when
       // it's actually over (handled in completeDelivery) or when start never
-      // succeeded (no session marker → safe to clean up here).
-      if (!getActiveNavSession()) {
+      // succeeded (no session marker → safe to clean up here). Not while a saved
+      // session is still being checked: that guidance may be running, and
+      // tearing it down here would lose it for good in a dead zone.
+      if (!getActiveNavSession() && !holdBegin) {
         guidingRef.current = false
         navigationController.stopGuidance().catch(() => {})
         navigationController.cleanup().catch(() => {})

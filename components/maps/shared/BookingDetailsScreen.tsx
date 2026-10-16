@@ -59,6 +59,7 @@ import { useCoachTarget } from '../../../lib/coachMarks'
 import { captureProofPhoto, CameraPermissionError, photoTakenAt, uploadProofPhoto } from '../../../lib/proofPhoto'
 import { readCurrentFix } from '../../../lib/stopGeofence'
 import { queuedIds, flush } from '../../../lib/offlineQueue'
+import { loadResumableNavSession, type NavSession } from '../../../lib/navSession'
 
 /**
  * Assignment details — the screen a driver lands on from their booking list, and
@@ -362,6 +363,16 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
     return () => unsub()
   }, [])
 
+  // Navigation already started for this booking on this phone — in memory, or
+  // saved before the app was swiped away. Its guidance may still be running, so
+  // the button offers to resume it rather than start over.
+  const [resumable, setResumable] = useState<NavSession | null>(null)
+  useEffect(() => {
+    let alive = true
+    void loadResumableNavSession(bookingId).then((s) => { if (alive) setResumable(s) })
+    return () => { alive = false }
+  }, [bookingId])
+
   const gate = navigationGate(booking)
   const currentGate = gate
 
@@ -444,6 +455,23 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
 
     startWithOfflineCheck(false)
   }, [currentGate, offline, bookingId, startWithOfflineCheck])
+
+  /**
+   * Back to a navigation that is already under way on this phone.
+   *
+   * No "not scheduled yet" question (the driver answered it when they started;
+   * the answer rides along in the session) and no offline warning (guidance
+   * that is still running needs no connection). If it turns out the guidance
+   * died with the app, the map screen rebuilds the route or falls back to the
+   * offline preview, exactly as a fresh start would.
+   */
+  const handleResume = useCallback(() => {
+    if (currentGate.reason === 'cancelled') {
+      Alert.alert('Booking cancelled', 'This booking has been cancelled and can’t be delivered.')
+      return
+    }
+    onStart(!!resumable?.earlyStart)
+  }, [currentGate, resumable, onStart])
 
   /* ── Proof of delivery, supplied from here ──────────────────────────────
    *
@@ -912,7 +940,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
             the gate has nothing left to say — telling a driver who has already
             delivered that "navigation opens on the scheduled day" is noise
             sitting on top of the one button that still matters. */}
-        {gate.locked && !inTransit && !isDone && (
+        {gate.locked && !inTransit && !isDone && !resumable && (
           <View style={s.lockNote}>
             <Lock size={13} color={D.faint} />
             <Text style={s.lockText}>
@@ -983,6 +1011,19 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
             <PackageCheck size={20} color={D.green} strokeWidth={2} />
             <Text style={[s.startText, { color: D.green }]}>Complete Delivery?</Text>
           </TouchableOpacity>
+        ) : resumable ? (
+          // Started already (the pickup may not be confirmed yet, so the booking
+          // still reads as assigned) — straight back to the map, no questions.
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={handleResume}
+            accessibilityRole="button"
+            accessibilityLabel="Resume navigation for this delivery"
+            style={s.startBtn}
+          >
+            <Navigation size={20} color={D.cyan} strokeWidth={2} />
+            <Text style={s.startText}>Resume Navigation</Text>
+          </TouchableOpacity>
         ) : (
           <TouchableOpacity
             activeOpacity={0.85}
@@ -1007,7 +1048,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
         {inTransit && (
           <TouchableOpacity
             activeOpacity={0.75}
-            onPress={() => startWithOfflineCheck(false)}
+            onPress={() => (resumable ? handleResume() : startWithOfflineCheck(false))}
             accessibilityRole="button"
             accessibilityLabel="Resume navigation for this delivery"
             style={s.previewBtn}
