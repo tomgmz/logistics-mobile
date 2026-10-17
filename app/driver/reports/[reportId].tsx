@@ -22,6 +22,7 @@ import {
   type DriverReport,
 } from '../../../lib/api/reports.api'
 import { ReportForm } from '../../../components/reports/ReportForm'
+import { useLiveSignal } from '../../../hooks/useLiveSignal'
 
 /**
  * One report.
@@ -61,20 +62,28 @@ export default function ReportDetailScreen() {
   const [busy, setBusy]       = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  // quiet = a live re-read: no spinner (it would unmount a half-filled form) and
+  // a failed read keeps what is on screen instead of replacing it with an error.
+  const load = useCallback(async (quiet = false) => {
+    if (!quiet) setLoading(true)
     try {
       const { data } = await api.get(`/driver/reports/${reportId}`)
       setReport(data.data)
       setError(null)
     } catch (e: any) {
-      setError(e?.response?.data?.message ?? 'That report could not be loaded.')
+      if (!quiet) setError(e?.response?.data?.message ?? 'That report could not be loaded.')
     } finally {
-      setLoading(false)
+      if (!quiet) setLoading(false)
     }
   }, [reportId])
 
   useEffect(() => { load() }, [load])
+
+  // The status chip follows the desk live. An empty set is the app coming back
+  // to the foreground, when any signal could have been missed.
+  useLiveSignal('live:driver_reports', (ids) => {
+    if (ids.size === 0 || ids.has(reportId)) void load(true)
+  })
 
   const submit = async (values: CreateReportInput) => {
     setBusy(true)

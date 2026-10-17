@@ -21,6 +21,7 @@ import {
 } from '../../../lib/api/reports.api'
 import { ReportOptionModal } from '../../../components/reports/ReportOptionModal'
 import { sendQuickAlert } from '../../../lib/quickAlert'
+import { useLiveSignal } from '../../../hooks/useLiveSignal'
 
 /**
  * REPORTS — everything this driver has raised from the road.
@@ -92,6 +93,10 @@ export default function ReportsScreen() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // Status changes from the desk (acknowledged, resolved) show up without a
+  // pull-to-refresh. Quiet: no spinner replacing the list.
+  useLiveSignal('live:driver_reports', () => { void load(true) })
 
   const countFor = (f: FilterKey) =>
     f === 'All' ? reports.length : reports.filter((r) => r.status === FILTER_STATUS[f]).length
