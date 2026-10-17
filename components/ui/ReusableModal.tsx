@@ -16,7 +16,7 @@ import { Easing } from 'react-native-reanimated'
 const COLORS = {
   bg:          '#1a1a1a',
   surface:     '#424242',
-  cyan:        '#00e5ff',
+  cyan:        '#4df9ed',
   white:       '#ffffff',
   whiteMuted:  'rgba(255,255,255,0.75)',
   whiteFaint:  'rgba(255,255,255,0.10)',

@@ -14,7 +14,7 @@ import { Pressable, Text, TextInput, View } from 'react-native'
 export const CYAN    = '#4DF9ED'
 export const BG_MAIN = '#0a0a0a'
 export const BG_CARD = 'rgba(20,20,20,0.85)'
-export const ERROR   = '#f87171'
+export const ERROR   = '#f62626'
 export const MUTED   = 'rgba(255,255,255,0.35)'
 
 interface Requirement {
@@ -34,7 +34,7 @@ export function getStrength(password: string): number {
   return REQUIREMENTS.filter(r => r.test(password)).length
 }
 
-const STRENGTH_COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#4df9ed']
+const STRENGTH_COLORS = ['#f62626', '#ff7a30', '#ffea00', '#3af626', '#4df9ed']
 const STRENGTH_LABELS = ['', 'Weak', 'Fair', 'Good', 'Strong', 'Excellent']
 
 export function StrengthBar({ strength }: { strength: number }) {

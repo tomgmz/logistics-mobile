@@ -60,7 +60,7 @@ const COLORS = {
   menuBg:    '#141414',
   menuLine:  '#2a2a2a',
   faint:     '#818181',
-  danger:    '#f87171',
+  danger:    '#f62626',
 }
 
 /** Design geometry: 35px circles, 5px apart, sitting just under the status bar. */

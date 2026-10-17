@@ -56,7 +56,7 @@ const C = {
   faint:   '#818181',
   cyan:    '#4df9ed',
   cyanDim: 'rgba(77,249,237,0.19)',
-  error:   '#ff4d4d',
+  error:   '#f62626',
 }
 
 // Metro Manila, until the driver's own position is known.

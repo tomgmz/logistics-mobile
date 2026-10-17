@@ -20,7 +20,7 @@ const C = {
   cyan:     '#4df9ed',
   cyanText: '#0a0a0a',
   cyanSoft: 'rgba(77,249,237,0.10)',
-  red:      '#f87171',
+  red:      '#f62626',
   overlay:  'rgba(0,0,0,0.6)',
 }
 

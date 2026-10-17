@@ -177,7 +177,7 @@ function EmojiPicker({ visible, onClose, onPick, onDelete }: {
               onPress={() => { onDelete(); onClose() }}
               activeOpacity={0.7}
             >
-              <Trash2 size={16} color="#f87171" />
+              <Trash2 size={16} color="#f62626" />
               <Text style={epS.deleteText}>Remove message</Text>
             </TouchableOpacity>
           )}
@@ -193,8 +193,8 @@ const epS = StyleSheet.create({
   row:      { flexDirection: 'row', justifyContent: 'space-between' },
   emojiBtn: { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' },
   emoji:    { fontSize: 24 },
-  deleteRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 18, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(248,113,113,0.25)', backgroundColor: 'rgba(248,113,113,0.08)' },
-  deleteText: { color: '#f87171', fontFamily: FONTS.alegreyaSans.medium, fontSize: 14 },
+  deleteRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 18, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(246,38,38,0.25)', backgroundColor: 'rgba(246,38,38,0.08)' },
+  deleteText: { color: '#f62626', fontFamily: FONTS.alegreyaSans.medium, fontSize: 14 },
 })
 
 function Bubble({ msg, isMine, showSeen, participantName, currentUserId, onLongPress, onReact, onReply }: {
@@ -821,10 +821,10 @@ const styles = StyleSheet.create({
   headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   headerAvatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: C.raised, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', position: 'relative' },
   headerAvatarText: { color: C.white, fontFamily: FONTS.alegreyaSans.bold, fontSize: 14 },
-  onlineDot: { position: 'absolute', bottom: 0, right: 0, width: 11, height: 11, borderRadius: 6, backgroundColor: '#4ade80', borderWidth: 2, borderColor: C.bg },
+  onlineDot: { position: 'absolute', bottom: 0, right: 0, width: 11, height: 11, borderRadius: 6, backgroundColor: '#3af626', borderWidth: 2, borderColor: C.bg },
   headerName: { color: C.white, fontFamily: FONTS.alegreyaSans.medium, fontSize: 15 },
   headerStatus: { color: C.muted, fontFamily: FONTS.alegreyaSans.regular, fontSize: 11, marginTop: 1 },
-  headerStatusOnline: { color: '#4ade80' },
+  headerStatusOnline: { color: '#3af626' },
 
   listContent: { paddingHorizontal: 12, paddingVertical: 16, gap: 4 },
   center:      { flex: 1, alignItems: 'center', justifyContent: 'center' },

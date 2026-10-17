@@ -44,7 +44,7 @@ const COLORS = {
   selectBg: 'rgba(255,234,0,0.19)',
   white:    '#ffffff',
   overlay:  'rgba(0,0,0,0.55)',
-  error:    '#ff4d4d',
+  error:    '#f62626',
 }
 
 const WEEKDAYS = ['S', 'M', 'T', 'W', 'TH', 'F', 'S']

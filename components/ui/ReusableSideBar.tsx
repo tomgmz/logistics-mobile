@@ -18,15 +18,15 @@ import { roleLabel } from '../../lib/roles'
 const COLORS = {
   bg:         '#1a1a1a',
   surface:    '#242424',
-  cyan:       '#00e5ff',
+  cyan:       '#4df9ed',
   white:      '#ffffff',
   whiteFaint: 'rgba(255,255,255,0.06)',
   whiteDim:   'rgba(255,255,255,0.40)',
   border:     'rgba(255,255,255,0.07)',
   overlay:    'rgba(0,0,0,0.60)',
-  cyanBorder: 'rgba(0,229,255,0.20)',
-  cyanGlow:   'rgba(0,229,255,0.25)',
-  redHover:   '#f87171',
+  cyanBorder: 'rgba(77,249,237,0.20)',
+  cyanGlow:   'rgba(77,249,237,0.25)',
+  redHover:   '#f62626',
 }
 
 const SIDEBAR_WIDTH = 260

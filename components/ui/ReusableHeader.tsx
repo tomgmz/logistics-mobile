@@ -16,7 +16,7 @@ import { useNotificationStore } from '../../lib/store/notification.store'
 
 const COLORS = {
   bg:      '#1a1a1a',
-  cyan:    '#00e5ff',
+  cyan:    '#4df9ed',
   white:   '#ffffff',
   border:  'rgba(255,255,255,0.07)',
   glass:   'rgba(255,255,255,0.06)',

@@ -169,7 +169,7 @@ export default function ChangePasswordPage() {
     confirmPw.length > 0
       ? passwordsMatch
         ? 'rgba(77,249,237,0.3)'
-        : 'rgba(239,68,68,0.35)'
+        : 'rgba(246,38,38,0.35)'
       : undefined
 
   return (
@@ -294,7 +294,7 @@ export default function ChangePasswordPage() {
               {confirmPw.length > 0 && !passwordsMatch && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
                   <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: ERROR }} />
-                  <Text style={{ color: 'rgba(248,113,113,0.8)', fontSize: 10, letterSpacing: 0.2 }}>
+                  <Text style={{ color: 'rgba(246,38,38,0.8)', fontSize: 10, letterSpacing: 0.2 }}>
                     Passwords do not match
                   </Text>
                 </View>
@@ -346,7 +346,7 @@ export default function ChangePasswordPage() {
             {error && (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: ERROR }} />
-                <Text style={{ color: 'rgba(248,113,113,0.85)', fontSize: 11, flex: 1 }}>
+                <Text style={{ color: 'rgba(246,38,38,0.85)', fontSize: 11, flex: 1 }}>
                   {error}
                 </Text>
               </View>

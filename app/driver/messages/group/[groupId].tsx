@@ -35,7 +35,7 @@ const C = {
   white:    '#ffffff',
   muted:    '#818181',
   dimText:  'rgba(255,255,255,0.55)',
-  amber:    '#f59e0b',
+  amber:    '#ff7a30',
   overlay:  'rgba(0,0,0,0.6)',
 }
 
@@ -189,7 +189,7 @@ function EmojiPicker({ visible, onClose, onPick, onDelete }: {
           </View>
           {onDelete && (
             <TouchableOpacity style={epS.deleteRow} onPress={() => { onDelete(); onClose() }} activeOpacity={0.7}>
-              <Trash2 size={16} color="#f87171" />
+              <Trash2 size={16} color="#f62626" />
               <Text style={epS.deleteText}>Remove message</Text>
             </TouchableOpacity>
           )}
@@ -205,8 +205,8 @@ const epS = StyleSheet.create({
   row:      { flexDirection: 'row', justifyContent: 'space-between' },
   emojiBtn: { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(255,255,255,0.06)', alignItems: 'center', justifyContent: 'center' },
   emoji:    { fontSize: 24 },
-  deleteRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 18, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(248,113,113,0.25)', backgroundColor: 'rgba(248,113,113,0.08)' },
-  deleteText: { color: '#f87171', fontFamily: FONTS.alegreyaSans.medium, fontSize: 14 },
+  deleteRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 18, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(246,38,38,0.25)', backgroundColor: 'rgba(246,38,38,0.08)' },
+  deleteText: { color: '#f62626', fontFamily: FONTS.alegreyaSans.medium, fontSize: 14 },
 })
 
 function GroupBubble({ msg, isMine, senderName, currentUserId, seen, onLongPress, onReact, memberName, onReply }: {
@@ -387,7 +387,7 @@ function InviteBanner({ groupId, groupName, onResponded }: { groupId: string; gr
       </View>
       <View style={invS.btns}>
         <TouchableOpacity onPress={() => respond(false)} disabled={loading} style={[invS.btn, invS.decline]}>
-          <XIcon size={14} color="#f87171" />
+          <XIcon size={14} color="#f62626" />
         </TouchableOpacity>
         <TouchableOpacity onPress={() => respond(true)} disabled={loading} style={[invS.btn, invS.accept]}>
           {loading ? <ActivityIndicator size="small" color={C.cyanText} /> : <Check size={14} color={C.cyanText} />}
@@ -397,12 +397,12 @@ function InviteBanner({ groupId, groupName, onResponded }: { groupId: string; gr
   )
 }
 const invS = StyleSheet.create({
-  banner:  { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 12, marginBottom: 10, padding: 12, borderRadius: 14, backgroundColor: 'rgba(245,158,11,0.08)', borderWidth: 1, borderColor: 'rgba(245,158,11,0.25)' },
+  banner:  { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 12, marginBottom: 10, padding: 12, borderRadius: 14, backgroundColor: 'rgba(255,122,48,0.08)', borderWidth: 1, borderColor: 'rgba(255,122,48,0.25)' },
   title:   { color: C.amber, fontFamily: FONTS.alegreyaSans.bold, fontSize: 12 },
   sub:     { color: C.muted, fontFamily: FONTS.alegreyaSans.regular, fontSize: 11, marginTop: 1 },
   btns:    { flexDirection: 'row', gap: 6 },
   btn:     { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  decline: { backgroundColor: 'rgba(248,113,113,0.12)', borderWidth: 1, borderColor: 'rgba(248,113,113,0.25)' },
+  decline: { backgroundColor: 'rgba(246,38,38,0.12)', borderWidth: 1, borderColor: 'rgba(246,38,38,0.25)' },
   accept:  { backgroundColor: C.cyan },
 })
 

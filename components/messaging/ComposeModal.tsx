@@ -20,7 +20,7 @@ const C = {
   cyanDim:  'rgba(77,249,237,0.12)',
   white:    '#ffffff',
   muted:    '#818181',
-  danger:   '#f87171',
+  danger:   '#f62626',
 }
 
 type Mode = 'dm' | 'group'

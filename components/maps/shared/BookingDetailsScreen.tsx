@@ -187,14 +187,15 @@ const D = {
   red:      '#f62626',
   redDim:   'rgba(246,38,38,0.19)',
   divider:  'rgba(255,255,255,0.08)',
-  amber:    '#f59e0b',
+  amber:    '#ff7a30',
   amberBg:  '#1a1200',
 }
 
 /** The tag beside the booking ref, one per state of the job. */
 const STATUS_TAG: Record<string, { label: string; color: string; bg: string }> = {
   pending:    { label: 'PENDING',    color: D.yellow,  bg: D.yellowDim             },
-  assigned:   { label: 'ASSIGNED',   color: D.cyan,    bg: D.cyanDim               },
+  approved:   { label: 'APPROVED',   color: D.violet,  bg: D.violetDim             },
+  assigned:   { label: 'ASSIGNED',   color: D.orange,  bg: D.orangeDim             },
   in_transit: { label: 'IN TRANSIT', color: D.cyan,    bg: D.cyanDim               },
   delivered:  { label: 'DELIVERED',  color: D.green,   bg: D.greenDim              },
   completed:  { label: 'COMPLETED',  color: D.green,   bg: D.greenDim              },
@@ -1843,7 +1844,7 @@ const s = StyleSheet.create({
     borderRadius:      12,
     backgroundColor:   D.amberBg,
     borderWidth:       1,
-    borderColor:       'rgba(245,158,11,0.35)',
+    borderColor:       'rgba(255,122,48,0.35)',
   },
   offlineText: {
     color:      D.amber,

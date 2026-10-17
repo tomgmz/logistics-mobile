@@ -213,13 +213,13 @@ export default function ResetPasswordScreen() {
               showPassword={showConfirm}
               onToggleShow={() => setShowConfirm((v) => !v)}
               borderColor={
-                confirmPw.length > 0 && !passwordsMatch ? 'rgba(248,113,113,0.5)' : undefined
+                confirmPw.length > 0 && !passwordsMatch ? 'rgba(246,38,38,0.5)' : undefined
               }
             />
             {confirmPw.length > 0 && !passwordsMatch && (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
                 <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: ERROR }} />
-                <Text style={{ color: 'rgba(248,113,113,0.8)', fontSize: 10 }}>
+                <Text style={{ color: 'rgba(246,38,38,0.8)', fontSize: 10 }}>
                   Passwords do not match
                 </Text>
               </View>
@@ -235,8 +235,8 @@ export default function ResetPasswordScreen() {
           {!!error && (
             <View style={{
               paddingVertical: 9, paddingHorizontal: 12, borderRadius: 9,
-              backgroundColor: 'rgba(248,113,113,0.1)',
-              borderWidth: 1, borderColor: 'rgba(248,113,113,0.3)',
+              backgroundColor: 'rgba(246,38,38,0.1)',
+              borderWidth: 1, borderColor: 'rgba(246,38,38,0.3)',
             }}>
               <Text style={{ color: ERROR, fontSize: 11, lineHeight: 16 }}>{error}</Text>
             </View>

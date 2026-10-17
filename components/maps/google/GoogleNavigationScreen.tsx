@@ -49,10 +49,10 @@ export default function GoogleNavigationScreen({ bookingId, routeToken, earlySta
           onPress={() => Linking.openURL('https://developers.google.com/maps/documentation/navigation')}
           style={{
             marginTop: 8, paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12,
-            borderWidth: 1, borderColor: 'rgba(0,229,255,0.4)', alignSelf: 'center',
+            borderWidth: 1, borderColor: 'rgba(77,249,237,0.4)', alignSelf: 'center',
           }}
         >
-          <Text style={{ color: '#00e5ff', fontSize: 14, fontWeight: '700' }}>Open Nav SDK docs</Text>
+          <Text style={{ color: '#4df9ed', fontSize: 14, fontWeight: '700' }}>Open Nav SDK docs</Text>
         </Pressable>
       </View>
     )
@@ -61,7 +61,7 @@ export default function GoogleNavigationScreen({ bookingId, routeToken, earlySta
   if (!Inner) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0a0a0a' }}>
-        <ActivityIndicator size="large" color="#00e5ff" />
+        <ActivityIndicator size="large" color="#4df9ed" />
       </View>
     )
   }

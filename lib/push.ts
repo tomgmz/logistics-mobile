@@ -55,7 +55,7 @@ export async function registerForPushNotifications(): Promise<void> {
         name: 'Messages',
         importance: Notifications.AndroidImportance.HIGH,
         vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#00BCD4',
+        lightColor: '#4df9ed',
       })
     }
 

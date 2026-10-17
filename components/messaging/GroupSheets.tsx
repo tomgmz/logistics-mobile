@@ -18,8 +18,8 @@ const C = {
   cyanText: '#0a0a0a',
   white:    '#ffffff',
   muted:    '#818181',
-  amber:    '#f59e0b',
-  red:      '#f87171',
+  amber:    '#ff7a30',
+  red:      '#f62626',
   overlay:  'rgba(0,0,0,0.6)',
 }
 

@@ -261,7 +261,7 @@ function OfflineBanner({ savedAt, onRetry }: OfflineBannerProps) {
     <Animated.View style={{ opacity: fadeAnim }}>
       <View className="flex-row items-center justify-between mx-4 mb-3 px-3 py-2.5 rounded-xl bg-amber-950 border border-amber-900/60">
         <View className="flex-row items-center gap-2">
-          <WifiOff size={14} color="#fbbf24" />
+          <WifiOff size={14} color="#ffea00" />
           <Text className="text-xs font-semibold text-amber-400">
             Offline — cached {formatCacheAge(savedAt)}
           </Text>
@@ -456,7 +456,7 @@ export default function DriverBookingList() {
       ) : error ? (
         <View className="flex-1 items-center justify-center px-8">
           <View className="mb-3">
-            <TriangleAlert size={40} color="#ef4444" />
+            <TriangleAlert size={40} color="#f62626" />
           </View>
           <Text className="text-base font-bold text-ink-primary mb-1">Something went wrong</Text>
           <Text className="text-sm text-ink-faint text-center mb-4">{error}</Text>

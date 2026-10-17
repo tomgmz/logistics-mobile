@@ -1372,7 +1372,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
   if (error) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 14, backgroundColor: '#0a0a0a' }}>
-        <Text style={{ color: '#ef4444', fontSize: 14, textAlign: 'center', lineHeight: 21 }}>{error}</Text>
+        <Text style={{ color: '#f62626', fontSize: 14, textAlign: 'center', lineHeight: 21 }}>{error}</Text>
         <View style={{ flexDirection: 'row', gap: 10 }}>
           <TouchableOpacity
             onPress={() => { offlineStartErrorRef.current = false; setError(null); setStarting(true); setRetry((r) => r + 1) }}

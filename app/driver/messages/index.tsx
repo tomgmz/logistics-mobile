@@ -538,7 +538,7 @@ const styles = StyleSheet.create({
     width:           12,
     height:          12,
     borderRadius:    6,
-    backgroundColor: '#4ade80',
+    backgroundColor: '#3af626',
     borderWidth:     2,
     borderColor:     C.bg,
   },
@@ -557,7 +557,7 @@ const styles = StyleSheet.create({
     width:           12,
     height:          12,
     borderRadius:    6,
-    backgroundColor: '#f59e0b',
+    backgroundColor: '#ff7a30',
     borderWidth:     2,
     borderColor:     C.bg,
     zIndex:          1,
@@ -607,7 +607,7 @@ const styles = StyleSheet.create({
     color: 'rgba(77,249,237,0.5)',
   },
   pendingText: {
-    color: '#f59e0b',
+    color: '#ff7a30',
   },
   badge: {
     backgroundColor: C.cyan,

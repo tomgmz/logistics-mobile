@@ -209,26 +209,26 @@ function LockBanner({
         animate={{ opacity: 1, translateY: 0 }}
         className="rounded-2xl px-4 py-3.5 mt-4"
         style={{
-          backgroundColor: 'rgba(239,68,68,0.08)',
+          backgroundColor: 'rgba(246,38,38,0.08)',
           borderWidth:      1,
-          borderColor:      'rgba(239,68,68,0.25)',
+          borderColor:      'rgba(246,38,38,0.25)',
         }}
       >
         <View className="flex-row items-center gap-2 mb-1">
-          <MaterialIcons name="lock" size={14} color="#ef4444" />
-          <Text className="text-[12px] font-semibold tracking-wide uppercase" style={{ color: 'rgba(239,68,68,0.9)' }}>
+          <MaterialIcons name="lock" size={14} color="#f62626" />
+          <Text className="text-[12px] font-semibold tracking-wide uppercase" style={{ color: 'rgba(246,38,38,0.9)' }}>
             Account Permanently Locked
           </Text>
         </View>
 
         {resetState === 'sent' ? (
-          <Text className="text-[12px] leading-5" style={{ color: 'rgba(239,68,68,0.75)' }}>
+          <Text className="text-[12px] leading-5" style={{ color: 'rgba(246,38,38,0.75)' }}>
             Your {approverLabel(role)} has been notified. They will email you a reset link —
             open it to set a new password and unlock your account.
           </Text>
         ) : (
           <>
-            <Text className="text-[12px] leading-5 mb-3" style={{ color: 'rgba(239,68,68,0.75)' }}>
+            <Text className="text-[12px] leading-5 mb-3" style={{ color: 'rgba(246,38,38,0.75)' }}>
               Too many failed attempts. Request a reset and your {approverLabel(role)} will email
               you a link to set a new password.
             </Text>
@@ -237,18 +237,18 @@ function LockBanner({
               disabled={resetState === 'sending'}
               className="rounded-xl py-3 items-center flex-row justify-center gap-2"
               style={{
-                backgroundColor: 'rgba(239,68,68,0.16)',
+                backgroundColor: 'rgba(246,38,38,0.16)',
                 borderWidth:     1,
-                borderColor:     'rgba(239,68,68,0.35)',
+                borderColor:     'rgba(246,38,38,0.35)',
                 opacity:         resetState === 'sending' ? 0.6 : 1,
               }}
             >
               {resetState === 'sending' ? (
-                <ActivityIndicator size="small" color="#ef4444" />
+                <ActivityIndicator size="small" color="#f62626" />
               ) : (
                 <>
-                  <MaterialIcons name="mail-outline" size={14} color="rgba(239,68,68,0.95)" />
-                  <Text className="text-[12px] font-semibold" style={{ color: 'rgba(239,68,68,0.95)' }}>
+                  <MaterialIcons name="mail-outline" size={14} color="rgba(246,38,38,0.95)" />
+                  <Text className="text-[12px] font-semibold" style={{ color: 'rgba(246,38,38,0.95)' }}>
                     Request a password reset
                   </Text>
                 </>
@@ -266,20 +266,20 @@ function LockBanner({
       animate={{ opacity: 1, translateY: 0 }}
       className="rounded-2xl px-4 py-3.5 mt-4 flex-row items-center justify-between gap-4"
       style={{
-        backgroundColor: 'rgba(251,146,60,0.08)',
+        backgroundColor: 'rgba(255,122,48,0.08)',
         borderWidth:      1,
-        borderColor:      'rgba(251,146,60,0.25)',
+        borderColor:      'rgba(255,122,48,0.25)',
       }}
     >
       <View className="flex-row items-center gap-2 flex-1">
-        <MaterialIcons name="timer" size={14} color="rgba(251,146,60,0.9)" />
-        <Text className="text-[12px]" style={{ color: 'rgba(251,146,60,0.85)' }}>
+        <MaterialIcons name="timer" size={14} color="rgba(255,122,48,0.9)" />
+        <Text className="text-[12px]" style={{ color: 'rgba(255,122,48,0.85)' }}>
           Account locked. Try again in
         </Text>
       </View>
       <Text
         className="text-[15px] font-bold shrink-0"
-        style={{ color: 'rgba(251,146,60,1)', fontVariant: ['tabular-nums'] }}
+        style={{ color: 'rgba(255,122,48,1)', fontVariant: ['tabular-nums'] }}
       >
         {formatCountdown(lockRemaining)}
       </Text>

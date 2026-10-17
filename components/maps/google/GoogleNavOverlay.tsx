@@ -190,7 +190,7 @@ export default function GoogleNavOverlay({
 
           <View style={{
             width: 64, height: 64, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
-            backgroundColor: 'rgba(0,229,255,0.08)', borderWidth: 1.5, borderColor: 'rgba(0,229,255,0.25)', flexShrink: 0,
+            backgroundColor: 'rgba(77,249,237,0.08)', borderWidth: 1.5, borderColor: 'rgba(77,249,237,0.25)', flexShrink: 0,
           }}>
             <ManeuverIcon maneuver={maneuverKeyword(instruction ?? '')} />
           </View>

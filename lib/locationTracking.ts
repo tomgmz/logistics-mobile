@@ -295,7 +295,7 @@ export async function startTracking(
     foregroundService: {
       notificationTitle: 'Delivery in progress',
       notificationBody:  'Sharing your location with the customer while you deliver.',
-      notificationColor: '#0891b2',
+      notificationColor: '#4df9ed',
     },
     // iOS pauses updates when it decides the user has stopped moving, which is
     // exactly when the client most wants a heartbeat.
