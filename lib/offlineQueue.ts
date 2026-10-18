@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import NetInfo from '@react-native-community/netinfo'
-import { AppState, AppStateStatus } from 'react-native'
+import { Alert, AppState, AppStateStatus } from 'react-native'
 
 import api from './api/auth.api'
 import { useAuthStore } from './store/auth.store'
@@ -45,8 +45,10 @@ const MAX_CONFLICT_ATTEMPTS = 5
 
 export interface QueuedAction {
   id:        string                    // 'pickup:<bookingId>' | 'delivery:<stopId>' | 'complete:<bookingId>' | 'pause:<bookingId>:<ms>' | 'resume:<bookingId>:<ms>'
-  kind:      'pickup' | 'delivery' | 'complete' | 'pause' | 'resume'
+  kind:      'pickup' | 'delivery' | 'complete' | 'pause' | 'resume' | 'start'
   url:       string                    // '/driver/bookings/:id/pickup' | '.../destinations/:id/delivered' | '.../complete'
+  // PATCH unless said otherwise; Start Navigation ('start:<bookingId>') is a POST.
+  method?:   'patch' | 'post'
   body:      Record<string, unknown>   // { proof_photo_url } for stops; empty for completion
   // Local file URI of a proof photo that still needs uploading. Once uploaded,
   // its hosted URL is merged into `body` as proof_photo_url and this is cleared.
@@ -127,6 +129,7 @@ export function flush(): Promise<void> {
     const me = useAuthStore.getState().user?.user_id ?? null
     const remaining: QueuedAction[] = []
     let stop = false
+    let droppedReassigned = false
 
     for (const queued of queue) {
       if (stop) { remaining.push(queued); continue }
@@ -157,7 +160,8 @@ export function flush(): Promise<void> {
       }
 
       try {
-        await api.patch(item.url, item.body)
+        if (item.method === 'post') await api.post(item.url, item.body)
+        else await api.patch(item.url, item.body)
         // success → drop
       } catch (e: any) {
         const status: number | undefined = e?.response?.status
@@ -173,6 +177,13 @@ export function flush(): Promise<void> {
           // and try again on the next flush.
           stop = true
           remaining.push({ ...item, attempts: item.attempts + 1 })
+        } else if (status === 403 && /not assigned to this booking/i.test(e?.response?.data?.message ?? '')) {
+          // The office handed this booking to another driver (or vehicle) after
+          // this was queued. The server checks the crew on every write, so it will
+          // never apply for this driver — holding it would only block every later
+          // entry behind it, forever. Drop it and tell the driver once.
+          console.warn(`[offlineQueue] dropping ${item.id}: no longer assigned to the booking.`)
+          droppedReassigned = true
         } else if (status === 403) {
           // The signed-in driver isn't the one assigned to this booking (or the
           // route lost its 'driver' authorization). Never an applied update —
@@ -211,6 +222,14 @@ export function flush(): Promise<void> {
     }
 
     await writeQueue(remaining)
+
+    if (droppedReassigned) {
+      Alert.alert(
+        'Delivery handed to another driver',
+        'Some of your updates for a booking were not sent: the office assigned it to another driver or vehicle. ' +
+        'Pull down on your bookings to see your current work.',
+      )
+    }
   })
 }
 

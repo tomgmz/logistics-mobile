@@ -112,6 +112,11 @@ interface Props {
    */
   onRestingHeight?: (height: number, expanded: boolean) => void
   /**
+   * The step times and next-step button (arrived at parking, docked, started,
+   * departed) for the stop at `index` — see components/maps/shared/StopSteps.
+   */
+  renderSteps?: (index: number, state: 'done' | 'current' | 'upcoming') => React.ReactNode
+  /**
    * Slide the panel out of the way, for while the Navigation SDK shows a prompt
    * (traffic or flood alert) in the strip the panel normally covers.
    */
@@ -138,6 +143,7 @@ export function GoogleNavSheet({
   onConfirmStop,
   onChooseNext,
   onRestingHeight,
+  renderSteps,
   hidden = false,
 }: Props) {
   const insets = useSafeAreaInsets()
@@ -436,6 +442,7 @@ export function GoogleNavSheet({
                 index={stops.indexOf(pickup)}
                 legIndex={legIndex}
                 onConfirm={onConfirmStop}
+                renderSteps={renderSteps}
               />
             )}
           </View>
@@ -450,6 +457,7 @@ export function GoogleNavSheet({
                   index={index}
                   legIndex={legIndex}
                   onConfirm={onConfirmStop}
+                  renderSteps={renderSteps}
                   onChooseNext={onChooseNext && dropoffs.length > 1 && index > nextDropoffIdx
                     ? () => onChooseNext(index)
                     : undefined}
@@ -469,12 +477,13 @@ export function GoogleNavSheet({
  * one carries the action that confirms it.
  */
 function BoardStop({
-  stop, index, legIndex, onConfirm, onChooseNext,
+  stop, index, legIndex, onConfirm, onChooseNext, renderSteps,
 }: {
   stop:      SheetStop
   index:     number
   legIndex:  number
   onConfirm: (index: number) => void
+  renderSteps?: (index: number, state: 'done' | 'current' | 'upcoming') => React.ReactNode
   /** Set on a drop-off the driver may move to the front of the run. */
   onChooseNext?: () => void
 }) {
@@ -520,6 +529,12 @@ function BoardStop({
           <CornerUpRight size={11} color={D.cyan} />
           <Text style={[s.proofLink, { fontStyle: 'normal', fontWeight: '700' }]}>Go here next</Text>
         </TouchableOpacity>
+      )}
+
+      {renderSteps && (
+        <View style={s.proofIndent}>
+          {renderSteps(index, done ? 'done' : current ? 'current' : 'upcoming')}
+        </View>
       )}
 
       {done ? (

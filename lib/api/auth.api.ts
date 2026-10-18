@@ -122,6 +122,12 @@ async function doRefresh(): Promise<string> {
 }
 
 api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
+  // The phone's clock at the moment this goes out. The server compares it with
+  // its own to learn how far off this phone is right now, and corrects the
+  // times the phone recorded earlier (a tap queued offline, a pause, a photo)
+  // by the same amount — see backend lib/device-clock.
+  config.headers['X-Device-Time'] = new Date().toISOString()
+
   const url = config.url ?? ''
   const isExcluded =
     url.includes('/auth/refresh')     ||

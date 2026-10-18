@@ -197,9 +197,14 @@ async function considerFix(location: Location.LocationObject): Promise<void> {
       if (reason === 'booking_ended' || reason === 'not_lead') await stopTracking()
       return
     }
-  } catch {
-    // Dropped on purpose. Retrying would send a position that is already stale
-    // by the time it lands, and the next fix is seconds away.
+  } catch (e: any) {
+    // The office handed the booking to another crew: this phone is no longer
+    // the truck's position, and every further ping would be refused the same way.
+    if (e?.response?.status === 403 && /not assigned/i.test(e?.response?.data?.message ?? '')) {
+      await stopTracking()
+    }
+    // Otherwise dropped on purpose. Retrying would send a position that is
+    // already stale by the time it lands, and the next fix is seconds away.
     return
   }
 

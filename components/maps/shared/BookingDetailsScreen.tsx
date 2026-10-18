@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -17,6 +18,7 @@ import {
   Boxes,
   Camera,
   Check,
+  Clock,
   ChevronLeft,
   Eye,
   FileText,
@@ -25,6 +27,7 @@ import {
   Navigation,
   PackageCheck,
   PauseCircle,
+  Repeat,
   Road,
   Truck,
   User,
@@ -52,6 +55,7 @@ import {
   confirmTripStop,
   completeBooking,
   confirmFleetReturn,
+  confirmLoadTransfer,
   type StopProofContext,
 } from '../../../lib/tripProgress'
 import { attachStopProof } from '../../../lib/api/stopProof.api'
@@ -62,7 +66,11 @@ import { useCoachTarget } from '../../../lib/coachMarks'
 import { captureProofPhoto, CameraPermissionError, photoTakenAt, uploadProofPhoto } from '../../../lib/proofPhoto'
 import { readCurrentFix } from '../../../lib/stopGeofence'
 import { queuedIds, flush } from '../../../lib/offlineQueue'
-import { loadResumableNavSession, type NavSession } from '../../../lib/navSession'
+import { loadResumableNavSession, endNavSession, type NavSession } from '../../../lib/navSession'
+import { startDelivery, type StartOutcome } from '../../../lib/deliveryStart'
+import { useCrewWatch } from '../../../hooks/useCrewWatch'
+import { useStopSteps, markStepFinished } from '../../../lib/stopSteps'
+import { StopSteps } from './StopSteps'
 import { currentPause, endPauseForProgress, pauseTrip, resumeTrip, type TripPause } from '../../../lib/tripPause'
 import { PauseTripModal } from './PauseTripModal'
 import { PausedBanner } from './PausedBanner'
@@ -250,6 +258,15 @@ const DETAILS_TOUR: CoachStep[] = [
   },
 ]
 
+/** GET /driver/bookings/:id/load-transfer — what the transfer step needs. */
+interface LoadTransfer {
+  replacement_id:     string
+  trip_id:            string | null
+  old_vehicle_plate:  string | null
+  handover_latitude:  number | null
+  handover_longitude: number | null
+}
+
 export default function BookingDetailsScreen({ bookingId, onStart, onPreview, onBack }: Props) {
   const insets = useSafeAreaInsets()
 
@@ -292,6 +309,13 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
 
   // The pause in force (weather, breakdown, closed stop…), and whether the
   // "why are you stopping" pop-up is open.
+  // After the office replaced the vehicle on the road with the load on the old
+  // one: this driver moves it across and confirms it before any drop-off.
+  const [transfer, setTransfer] = useState<LoadTransfer | null>(null)
+  // Arrived at parking / docked / started / departed at each stop, and the
+  // total loaded per trip.
+  const stopSteps = useStopSteps(bookingId)
+  const [transferOpen, setTransferOpen] = useState(false)
   const [pause, setPause]         = useState<TripPause | null>(null)
   const [pauseOpen, setPauseOpen] = useState(false)
 
@@ -354,6 +378,13 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
       // drops before/at start.
       saveBookingCache(bookingId, data.data)
       setPause(await currentPause(bookingId, data.data))
+      if (data.data?.status === 'in_transit' && data.data?.my_crew_role !== 'second') {
+        api.get(`/driver/bookings/${bookingId}/load-transfer`)
+          .then(({ data: t }) => setTransfer(t.data ?? null))
+          .catch(() => {})
+      } else {
+        setTransfer(null)
+      }
     } catch (e: any) {
       // Network failed — fall back to the last cached copy if we have one, so
       // the driver still sees the job details instead of a dead end.
@@ -390,6 +421,54 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
   const gate = navigationGate(booking)
   const currentGate = gate
 
+  // Telling the server the delivery has started. The button waits on it: if the
+  // office re-assigned the booking a moment ago, the map must not open.
+  const [starting, setStarting] = useState(false)
+
+  /**
+   * The server is told first, then the map opens. A refusal is shown and the map
+   * stays shut: re-assigned (403) re-reads the booking, which then reads as not
+   * this driver's; anything else (cancelled, vehicle pulled) is the server's
+   * sentence. Offline the start is queued and the map opens as before.
+   */
+  const beginDelivery = useCallback(async (earlyStart: boolean, resuming = false) => {
+    if (starting) return
+    setStarting(true)
+    let outcome: StartOutcome
+    try {
+      outcome = await startDelivery(bookingId, earlyStart)
+    } finally {
+      setStarting(false)
+    }
+    if (typeof outcome === 'object') {
+      if (outcome.reassigned) {
+        // Guidance left over from before the hand-over must not resume either.
+        if (resuming) { endNavSession(); setResumable(null) }
+        Alert.alert(
+          'Delivery handed to another driver',
+          'The office assigned this booking to another driver or vehicle, so it can’t be started from this phone.',
+        )
+        void load()
+      } else {
+        Alert.alert('Can’t start this delivery', outcome.refused)
+      }
+      return
+    }
+    onStart(earlyStart)
+  }, [starting, bookingId, onStart, load])
+
+  // Handed to another driver while this screen is open: say so and leave, and
+  // drop any guidance saved for it so Resume can't reopen it.
+  useCrewWatch(bookingId, useCallback(() => {
+    endNavSession()
+    setResumable(null)
+    Alert.alert(
+      'Delivery handed to another driver',
+      'The office assigned this booking to another driver or vehicle. It’s no longer on your list.',
+      [{ text: 'OK', onPress: onBack }],
+    )
+  }, [onBack]))
+
   /** The offline caveat, asked last so it wraps whichever start we're doing. */
   const startWithOfflineCheck = useCallback((earlyStart: boolean) => {
     if (offline) {
@@ -399,13 +478,13 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
         'If this trip is already in progress, guidance will keep running on the route it already loaded.',
         [
           { text: 'Cancel', style: 'cancel' },
-          { text: 'Try anyway', style: 'default', onPress: () => onStart(earlyStart) },
+          { text: 'Try anyway', style: 'default', onPress: () => void beginDelivery(earlyStart) },
         ],
       )
       return
     }
-    onStart(earlyStart)
-  }, [offline, onStart])
+    void beginDelivery(earlyStart)
+  }, [offline, beginDelivery])
 
   const handleStart = useCallback(async () => {
     // The screen was loaded once, maybe long before this tap — and the Fleet
@@ -453,7 +532,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
     if (gate.reason === 'not_yet' && gate.scheduledFor) {
       Alert.alert(
         'Not scheduled until ' + formatGateDate(gate.scheduledFor),
-        'Starting now records a pickup ahead of the scheduled day, and that gets flagged on the booking. ' +
+        'Starting now puts the delivery in transit ahead of the scheduled day, and that gets flagged on the booking. ' +
         'Only do this if the job really has moved up.',
         [
           { text: 'Cancel', style: 'cancel' },
@@ -480,12 +559,22 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
    * offline preview, exactly as a fresh start would.
    */
   const handleResume = useCallback(() => {
+    if (transfer) {
+      Alert.alert(
+        'Move the load first',
+        'Confirm the load transfer onto your vehicle before continuing to the drop-offs. ' +
+        'Use “Open hand-over point” to get directions to where the old vehicle stopped.',
+      )
+      return
+    }
     if (currentGate.reason === 'cancelled') {
       Alert.alert('Booking cancelled', 'This booking has been cancelled and can’t be delivered.')
       return
     }
-    onStart(!!resumable?.earlyStart)
-  }, [currentGate, resumable, onStart])
+    // Through the server too: Resume is how a start that never reached it (made
+    // offline) gets there, and it is refused if the booking was handed over.
+    void beginDelivery(!!resumable?.earlyStart, true)
+  }, [currentGate, resumable, beginDelivery, transfer])
 
   // While paused, look again every 30 s so an office resume clears the banner.
   useEffect(() => {
@@ -573,6 +662,18 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
     }
   }, [])
 
+  /** The load is on this driver's vehicle now. Queued, like a pickup. */
+  const confirmTransfer = useCallback((photoUri: string, proof: StopProofContext) => {
+    const pending = transfer
+    setTransferOpen(false)
+    if (!pending) return
+    setTransfer(null)
+    // The server ends the pause with the transfer; mirror it here at once.
+    setPause(null)
+    endPauseForProgress(bookingId).catch(() => {})
+    void confirmLoadTransfer(bookingId, pending.trip_id ?? bookingId, photoUri, proof)
+  }, [transfer, bookingId])
+
   /** The full confirm-a-stop flow, from the modal. */
   const confirmStop = useCallback((photoUri: string, proof: StopProofContext) => {
     const target = proofFor
@@ -589,6 +690,8 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
       .then(() => confirmTripStop(target.stop.trip_stop_id, photoUri, proof, null))
       .catch(() => {})
       .finally(() => { void refreshQueued() })
+    // The confirmation is the stop's finish: Departed is the next step to tap.
+    void markStepFinished(bookingId, { tripId: target.stop.trip_id, tripStopId: target.stop.trip_stop_id })
     void recordLocalProgress(bookingId, { confirmedStopId: target.stop.trip_stop_id })
 
     setTrips((prev) => prev.map((t) => ({
@@ -942,6 +1045,56 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
           </Card>
         )}
 
+        {/* The times at the loading and each drop-off, per trip, and what went
+            on the truck. The same buttons as on the map's panel, for a stop
+            worked from here. */}
+        {(inTransit || isDone) && trips.length > 0 && (
+          <Card icon={<Clock size={16} color={D.cyan} />} title="STOP TIMES">
+            {trips.map((trip) => {
+              const canTap = !isSecondDriver && inTransit && trip.status !== 'completed'
+              const total  = stopSteps.totalFor(trip.trip_id)
+              const visits = [...(trip.booking_trip_stops ?? [])].sort((a, b) => a.sequence_order - b.sequence_order)
+              return (
+                <View key={trip.trip_id} style={{ gap: 10, marginBottom: 12 }}>
+                  <Text style={s.stepsTrip}>
+                    {shuttle ? `TRIP ${trip.trip_number} · ` : ''}
+                    {total
+                      ? `Total loaded: ${total.pieces.toLocaleString('en-PH')} pcs${total.weight_kg ? ` · ${total.weight_kg.toLocaleString('en-PH')} kg` : ''}`
+                      : 'Not loaded yet'}
+                  </Text>
+                  <View style={{ gap: 4 }}>
+                    <Text style={s.stepsWhere}>Loading · {booking.origin}</Text>
+                    <StopSteps
+                      kind="pickup"
+                      times={stopSteps.timesFor({ tripId: trip.trip_id })}
+                      showButton={canTap}
+                      onRecord={(stage) => { void stopSteps.record({ tripId: trip.trip_id }, stage) }}
+                    />
+                  </View>
+                  {visits.map((stop) => {
+                    const n = dropoffs.findIndex((d) => d.destination_id === stop.destination_id) + 1
+                    const target = { tripId: trip.trip_id, tripStopId: stop.trip_stop_id }
+                    return (
+                      <View key={stop.trip_stop_id} style={{ gap: 4 }}>
+                        <Text style={s.stepsWhere} numberOfLines={1}>
+                          Unloading · Drop-off {n || '?'}{stop.booking_destinations?.address ? ` · ${stop.booking_destinations.address}` : ''}
+                        </Text>
+                        <StopSteps
+                          kind="dropoff"
+                          times={stopSteps.timesFor(target)}
+                          // Loading first: a drop-off's steps start once the run is loaded.
+                          showButton={canTap && trip.status === 'in_transit'}
+                          onRecord={(stage) => { void stopSteps.record(target, stage) }}
+                        />
+                      </View>
+                    )
+                  })}
+                </View>
+              )
+            })}
+          </Card>
+        )}
+
         {/* Vehicle */}
         <Card icon={<Truck size={16} color={D.cyan} />} title="VEHICLE">
           <Text style={s.vehicle} numberOfLines={1}>
@@ -1070,9 +1223,10 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
           <TouchableOpacity
             activeOpacity={0.85}
             onPress={handleResume}
+            disabled={starting}
             accessibilityRole="button"
             accessibilityLabel="Resume navigation for this delivery"
-            style={s.startBtn}
+            style={[s.startBtn, starting && { opacity: 0.6 }]}
           >
             <Navigation size={20} color={D.cyan} strokeWidth={2} />
             <Text style={s.startText}>Resume Navigation</Text>
@@ -1081,12 +1235,13 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
           <TouchableOpacity
             activeOpacity={0.85}
             onPress={() => void handleStart()}
+            disabled={starting}
             accessibilityRole="button"
             accessibilityLabel={
               gate.reason === 'vehicle_out_of_service' ? 'Navigation locked, the vehicle is out of service'
               : gate.locked ? 'Navigation locked until the scheduled day' : 'Start navigation'
             }
-            style={[s.startBtn, gate.locked && s.startBtnLocked]}
+            style={[s.startBtn, gate.locked && s.startBtnLocked, starting && { opacity: 0.6 }]}
           >
             {gate.locked
               ? <Lock size={18} color={D.faint} strokeWidth={2} />
@@ -1109,6 +1264,46 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
             <Navigation size={16} color={D.white} strokeWidth={2} />
             <Text style={s.previewText}>Resume navigation</Text>
           </TouchableOpacity>
+        )}
+
+        {/* The vehicle was replaced with the load still on the old one. */}
+        {transfer && !isDone && (
+          <View style={[s.transferCard]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Repeat size={16} color={D.amber} strokeWidth={2} />
+              <Text style={s.transferTitle}>Move the load to your vehicle</Text>
+            </View>
+            <Text style={s.doneNoteText}>
+              {`The office replaced ${transfer.old_vehicle_plate ?? 'the vehicle'} on this delivery. ` +
+               'Go to where it stopped, move the load onto your vehicle, and confirm with a photo. ' +
+               'The drop-offs open after that.'}
+            </Text>
+            {transfer.handover_latitude != null && transfer.handover_longitude != null && (
+              <TouchableOpacity
+                activeOpacity={0.75}
+                onPress={() => {
+                  const url = `https://www.google.com/maps/dir/?api=1&destination=${transfer.handover_latitude},${transfer.handover_longitude}`
+                  Linking.openURL(url).catch(() => {})
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Open the hand-over point in Google Maps"
+                style={s.previewBtn}
+              >
+                <MapPin size={16} color={D.white} strokeWidth={2} />
+                <Text style={s.previewText}>Open hand-over point</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => setTransferOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Confirm the load transfer with a photo"
+              style={[s.previewBtn, { borderColor: D.amber }]}
+            >
+              <Camera size={16} color={D.amber} strokeWidth={2} />
+              <Text style={[s.previewText, { color: D.amber }]}>Confirm load transfer</Text>
+            </TouchableOpacity>
+          </View>
         )}
 
         {/* Pausing: once the job has started (moving, or navigation begun before
@@ -1174,6 +1369,23 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
         manifest={proofFor ? manifestForTripStop(grouped, proofFor.stop) : null}
         onConfirm={confirmStop}
         onCancel={() => setProofFor(null)}
+      />
+
+      {/* Load transfer after a vehicle replacement: same photo + position modal
+          as a pickup, measured against where the old vehicle stopped. */}
+      <StopProofModal
+        visible={transferOpen}
+        title="Load transfer"
+        address={transfer?.old_vehicle_plate ? `From ${transfer.old_vehicle_plate} to your vehicle` : undefined}
+        kind="pickup"
+        stopCoordinates={
+          transfer?.handover_latitude != null && transfer?.handover_longitude != null
+            ? { latitude: transfer.handover_latitude, longitude: transfer.handover_longitude }
+            : null
+        }
+        manifest={null}
+        onConfirm={confirmTransfer}
+        onCancel={() => setTransferOpen(false)}
       />
 
       <ConfirmDialog
@@ -1578,6 +1790,29 @@ const s = StyleSheet.create({
     borderWidth:     1,
     borderColor:     D.cardLine,
     backgroundColor: D.card,
+  },
+  stepsTrip: {
+    color:      D.white,
+    fontSize:   13,
+    fontWeight: '700',
+  },
+  stepsWhere: {
+    color:    D.faint,
+    fontSize: 12,
+  },
+  transferCard: {
+    gap:             8,
+    padding:         14,
+    marginTop:       8,
+    borderRadius:    10,
+    borderWidth:     1,
+    borderColor:     D.amber,
+    backgroundColor: D.card,
+  },
+  transferTitle: {
+    color:      D.white,
+    fontSize:   14,
+    fontWeight: '700',
   },
   doneNoteText: {
     color:      D.faint,

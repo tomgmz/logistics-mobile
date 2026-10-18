@@ -238,3 +238,26 @@ export function confirmFleetReturn(
     body: stopProofBody(proof),
   }).then(() => flush())
 }
+
+/**
+ * After the office replaced the vehicle on the road with the load still on the
+ * old one: the load is now on this driver's vehicle, with a photo taken there.
+ * The server refuses every drop-off until this lands, so it goes through the
+ * queue like a pickup — ahead of anything confirmed after it. The photo is
+ * stamped as the loading of the run being moved (`tripId`), with the new plate.
+ */
+export function confirmLoadTransfer(
+  bookingId: string,
+  tripId: string,
+  photoUri: string,
+  proof?: StopProofContext,
+): Promise<void> {
+  return queueStop(
+    `load-transfer:${bookingId}`,
+    'pickup',
+    `/driver/bookings/${bookingId}/load-transfer`,
+    photoUri,
+    { stop: 'trip_pickup', refId: tripId, takenAt: photoTakenAt(photoUri), fix: proof?.fix ?? null },
+    stopProofBody(proof),
+  )
+}

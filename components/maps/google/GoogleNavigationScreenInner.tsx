@@ -30,7 +30,10 @@ import { buildNavPlan } from '../../../lib/navLegs'
 import { SosButton } from '../../reports/SosButton'
 import { fetchTripsWithCache, currentTrip, recordLocalProgress, clearLocalProgress, type Trip } from '../../../lib/trips'
 import { saveStopOrder, syncStopOrder, loadStopOrder, clearStopOrders, moveEarlier } from '../../../lib/stopOrder'
-import { setNextStop } from '../../../lib/locationTracking'
+import { setNextStop, stopTracking } from '../../../lib/locationTracking'
+import { useCrewWatch } from '../../../hooks/useCrewWatch'
+import { useStopSteps, markStepFinished } from '../../../lib/stopSteps'
+import { StopSteps } from '../shared/StopSteps'
 import { saveBookingCache, loadBookingCache, clearBookingCache } from '../../../lib/navCache'
 import {
   saveRouteGeometry,
@@ -308,6 +311,8 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
   const [toggleError, setToggleError] = useState<string | null>(null)
   // The planned stops and which one is current. The trip sheet renders the list.
   const [stops, setStops]       = useState<DisplayStop[]>([])
+  // Arrived at parking / docked / started / departed at each stop.
+  const stopSteps = useStopSteps(bookingId)
   const [legIndex, setLegIndex] = useState(0)
   // Index of the stop whose arrival geofence we're inside, if any — a visual cue
   // on the confirm button for the case where the SDK saw the arrival but the
@@ -835,6 +840,10 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
         : confirmTripStop(leg.tripStopId, photoUri, proof, nextStop),
     )
     persist.catch(() => {})
+    // The confirmation is the stop's finish: Departed is the next step to tap.
+    void markStepFinished(bookingId, leg.type === 'pickup'
+      ? { tripId: leg.tripId }
+      : { tripId: leg.tripId, tripStopId: leg.tripStopId })
 
     // The driver loaded something other than the plan: move the rest onto the
     // next trips here too (the server does the same when this syncs), and drop
@@ -1034,6 +1043,22 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
     navigationController.stopGuidance().catch(() => {})
     navigationController.cleanup().catch(() => {})
   }, [bookingId, navigationController])
+
+  // The office handed this booking to another driver mid-route. Guidance, the
+  // saved session and live tracking all stop here: this phone must not keep
+  // reporting a truck that is no longer its driver's, nor resume it later.
+  useCrewWatch(bookingId, useCallback(() => {
+    endNavSession()
+    guidingRef.current = false
+    navigationController.stopGuidance().catch(() => {})
+    navigationController.cleanup().catch(() => {})
+    void stopTracking().catch(() => {})
+    Alert.alert(
+      'Delivery handed to another driver',
+      'The office assigned this booking to another driver or vehicle. Navigation has stopped.',
+      [{ text: 'OK', onPress: () => router.back() }],
+    )
+  }, [navigationController, router]))
 
   // The button: opens the same proof popup the arrival would have opened, or —
   // once every stop is confirmed — asks to close the booking out.
@@ -1869,6 +1894,25 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
           totalEtaSeconds={navInfo?.finalEtaS}
           onConfirmStop={(idx) => setProofFor({ idx, auto: false })}
           onChooseNext={confirming || rerouting ? undefined : chooseNextDropoff}
+          renderSteps={(idx, state) => {
+            const leg = legsRef.current[idx]
+            if (!leg) return null
+            const target = leg.type === 'pickup'
+              ? { tripId: leg.tripId }
+              : { tripId: leg.tripId, tripStopId: leg.tripStopId }
+            const times = stopSteps.timesFor(target)
+            if (state === 'upcoming' && Object.keys(times).length === 0) return null
+            return (
+              <StopSteps
+                compact
+                kind={leg.type === 'pickup' ? 'pickup' : 'dropoff'}
+                times={times}
+                // The stop being driven to, and a finished one still to depart.
+                showButton={state !== 'upcoming'}
+                onRecord={(stage) => { void stopSteps.record(target, stage) }}
+              />
+            )
+          }}
           hidden={sdkPromptVisible}
         />
       )}
