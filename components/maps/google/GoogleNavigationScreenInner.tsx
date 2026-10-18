@@ -393,6 +393,9 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
   // delivered) but hasn't been marked completed yet — the driver re-opened the
   // map just to finish it off.
   const nothingToNavigateRef = useRef(false)
+  // Guidance stopped because the delivery is paused (see the pause effect).
+  // Anything that rebuilds the route leaves it stopped while this is set.
+  const guidanceHeldRef = useRef(false)
   // The next run's route could not be built (no signal at the end of a run).
   // The reconnect handler builds it as soon as the connection is back.
   const nextRunPendingRef = useRef(false)
@@ -420,7 +423,8 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
         displayOptions,
       })
     }
-    await navigationController.startGuidance()
+    // A paused delivery keeps its route but not its voice.
+    if (!guidanceHeldRef.current) await navigationController.startGuidance()
   }, [navigationController, routeToken])
 
   /**
@@ -553,6 +557,26 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
     const t = setInterval(() => { if (!offlineRef.current) void refreshPause() }, 30_000)
     return () => clearInterval(t)
   }, [pause, refreshPause])
+
+  /**
+   * A paused delivery is not being driven, so Google's guidance pauses with it:
+   * no voice reading turns to a parked truck, no reroutes from a lay-by. It
+   * follows `pause` from every source — the driver's Pause, the office's Resume
+   * picked up by refreshPause, a stop confirmation clearing it, or a booking
+   * reopened while already paused — and waits for the route to exist
+   * (`starting` false) before acting. stopGuidance keeps the route loaded, so
+   * restarting needs no signal.
+   */
+  useEffect(() => {
+    if (starting || completed) return
+    if (pause && guidingRef.current && !guidanceHeldRef.current) {
+      guidanceHeldRef.current = true
+      void navigationController.stopGuidance().catch(() => {})
+    } else if (!pause && guidanceHeldRef.current) {
+      guidanceHeldRef.current = false
+      if (guidingRef.current) void navigationController.startGuidance().catch(() => {})
+    }
+  }, [pause, starting, completed, navigationController])
 
   const confirmPause = useCallback(async (reason: Parameters<typeof pauseTrip>[1], note: string) => {
     const p = await pauseTrip(bookingId, reason, note)
@@ -738,8 +762,10 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
     // cadence as the truck closes on that stop. Null on the last leg.
     const nextStop = legCoordinates(legsRef.current[idx + 1])
     // Any pause ends here, queued ahead of the confirmation so it carries this
-    // moment rather than whenever the queue next reaches the server.
+    // moment rather than whenever the queue next reaches the server. The truck
+    // is moving again, so guidance is no longer held either.
     setPause(null)
+    guidanceHeldRef.current = false
     const persist = endPauseForProgress(bookingId).catch(() => {}).then(() =>
       leg.type === 'pickup'
         ? confirmTripPickup(bookingId, leg.tripId, photoUri, earlyStartRef.current, proof, nextStop)
@@ -1116,7 +1142,8 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
       // Back in memory, so leaving the screen again takes the fast resume path.
       startNavSession({ ...s, earlyStart: earlyStartRef.current })
       // A no-op when guidance never stopped; picks it up again if the SDK paused.
-      await navigationController.startGuidance().catch(() => {})
+      // Not while the delivery is paused — the pause effect owns that.
+      if (!guidanceHeldRef.current) await navigationController.startGuidance().catch(() => {})
       offlineStartErrorRef.current = false
       bumpMapPadding()
       setTimeout(() => { if (!cancelled) bumpMapPadding() }, 2000)
