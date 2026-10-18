@@ -87,6 +87,9 @@ const HOME_TOUR: CoachStep[] = [
   },
 ]
 
+/** The same tour for a vendor's driver, who has no work-schedule calendar. */
+const VENDOR_HOME_TOUR: CoachStep[] = HOME_TOUR.filter((st) => st.target !== 'home.availability')
+
 export default function DriverHome() {
   const router      = useRouter()
   const insets      = useSafeAreaInsets()
@@ -179,7 +182,7 @@ export default function DriverHome() {
       <ScrollView
         className="flex-1"
         // Leave room for the docked switch so the last card never hides behind it.
-        contentContainerStyle={{ paddingBottom: insets.bottom + DOCK_HEIGHT + 24 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + (isVendorDriver ? 0 : DOCK_HEIGHT) + 24 }}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -266,20 +269,25 @@ export default function DriverHome() {
       </ScrollView>
 
       {/* Nothing reaches this driver unless they turn themselves on here, so it
-          sits under the thumb rather than inside the scroll. */}
-      <View
-        ref={availabilityTarget}
-        collapsable={false}
-        className="absolute inset-x-0 bottom-0 border-t border-white/[0.06] bg-black px-6 pt-3"
-        style={{ paddingBottom: insets.bottom + 12 }}
-      >
-        {/* A vendor's driver is crewed booking by booking and is not in the
-            company pool, so the calendar does not apply — it only ever read
-            "Inactive" for them. */}
-        {!isVendorDriver && <AvailabilityToggle />}
-      </View>
+          sits under the thumb rather than inside the scroll. A vendor's driver
+          is crewed booking by booking and is not in the company pool: no
+          calendar, no dock, and no tour step pointing at where it would be. */}
+      {!isVendorDriver && (
+        <View
+          ref={availabilityTarget}
+          collapsable={false}
+          className="absolute inset-x-0 bottom-0 border-t border-white/[0.06] bg-black px-6 pt-3"
+          style={{ paddingBottom: insets.bottom + 12 }}
+        >
+          <AvailabilityToggle />
+        </View>
+      )}
 
-      <CoachMarkTour tourId="home" steps={HOME_TOUR} ready={!loading} />
+      <CoachMarkTour
+        tourId="home"
+        steps={isVendorDriver ? VENDOR_HOME_TOUR : HOME_TOUR}
+        ready={!loading && hasHydrated}
+      />
     </View>
   )
 }
