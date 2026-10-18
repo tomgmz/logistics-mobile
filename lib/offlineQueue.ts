@@ -248,7 +248,12 @@ export async function pendingConfirmations(): Promise<{
   const confirmedStopIds: string[] = []
 
   for (const item of queue) {
-    const [kind, id] = item.id.split(':')
+    // Split on the FIRST colon only: a trip or stop the phone created offline
+    // has a local id with colons of its own (tripCargo.localTripId).
+    const cut  = item.id.indexOf(':')
+    if (cut === -1) continue
+    const kind = item.id.slice(0, cut)
+    const id   = item.id.slice(cut + 1)
     if (!id) continue
     if (kind === 'trip-pickup') loadedTripIds.push(id)
     if (kind === 'trip-stop')   confirmedStopIds.push(id)

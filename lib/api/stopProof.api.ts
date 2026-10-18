@@ -21,5 +21,10 @@ import api from './auth.api'
  * disappears into a queue.
  */
 export async function attachStopProof(tripStopId: string, proofPhotoUrl: string): Promise<void> {
+  // A stop this phone added offline (cargo rolled onto a later trip) has no
+  // server id until its trip's pickup syncs; the screen re-reads the plan then.
+  if (tripStopId.startsWith('local:')) {
+    throw new Error('This drop-off is still being sent. Try again once you have a signal.')
+  }
   await api.patch(`/driver/trip-stops/${tripStopId}/proof`, { proof_photo_url: proofPhotoUrl })
 }

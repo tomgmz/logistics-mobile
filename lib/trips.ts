@@ -2,6 +2,7 @@ import api from './api/auth.api'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 
 import { pendingConfirmations } from './offlineQueue'
+import { applyLocalLoads, localStopId, localTripId, type CargoLine } from './tripCargo'
 
 /**
  * The runs the truck makes for one booking.
@@ -40,6 +41,17 @@ export interface TripStop {
   proof_photo_url: string | null
   proof_at:        string | null
   booking_destinations: TripStopDestination | null
+  /** How much of each cargo line this stop unloads on this trip. Absent on older plans. */
+  booking_trip_cargo?: TripCargo[]
+}
+
+/** One cargo line's share of one trip. */
+export interface TripCargo {
+  trip_cargo_id: string
+  item_id:       string
+  planned_qty:   number
+  /** Null until the trip is loaded; what actually went on the truck. */
+  loaded_qty:    number | null
 }
 
 export interface Trip {
@@ -101,26 +113,42 @@ export async function loadTripsCache(bookingId: string): Promise<Trip[] | null> 
  */
 const progressKey = (bookingId: string) => `trip_progress_${bookingId}`
 
-interface LocalProgress { loadedTripIds: string[]; confirmedStopIds: string[] }
+/** What the driver loaded at a pickup, when it differed from the plan. */
+export interface LocalLoad {
+  tripNumber: number
+  loaded:     Array<{ item_id: string; quantity: number }>
+  /** The booking's cargo lines at the time, so the rest can be re-planned offline. */
+  lines:      CargoLine[]
+}
+
+interface LocalProgress {
+  loadedTripIds:    string[]
+  confirmedStopIds: string[]
+  loads:            LocalLoad[]
+}
 
 export async function loadLocalProgress(bookingId: string): Promise<LocalProgress> {
   try {
     const raw = await AsyncStorage.getItem(progressKey(bookingId))
     const p = raw ? (JSON.parse(raw) as Partial<LocalProgress>) : {}
-    return { loadedTripIds: p.loadedTripIds ?? [], confirmedStopIds: p.confirmedStopIds ?? [] }
+    return { loadedTripIds: p.loadedTripIds ?? [], confirmedStopIds: p.confirmedStopIds ?? [], loads: p.loads ?? [] }
   } catch {
-    return { loadedTripIds: [], confirmedStopIds: [] }
+    return { loadedTripIds: [], confirmedStopIds: [], loads: [] }
   }
 }
 
 export async function recordLocalProgress(
   bookingId: string,
-  entry: { loadedTripId?: string; confirmedStopId?: string },
+  entry: { loadedTripId?: string; confirmedStopId?: string; load?: LocalLoad },
 ): Promise<void> {
   try {
     const p = await loadLocalProgress(bookingId)
     if (entry.loadedTripId && !p.loadedTripIds.includes(entry.loadedTripId)) p.loadedTripIds.push(entry.loadedTripId)
     if (entry.confirmedStopId && !p.confirmedStopIds.includes(entry.confirmedStopId)) p.confirmedStopIds.push(entry.confirmedStopId)
+    if (entry.load) {
+      const load = entry.load
+      p.loads = [...p.loads.filter((l) => l.tripNumber !== load.tripNumber), load]
+    }
     await AsyncStorage.setItem(progressKey(bookingId), JSON.stringify(p))
   } catch { /* the queue still carries it */ }
 }
@@ -141,11 +169,18 @@ export async function clearLocalProgress(bookingId: string): Promise<void> {
 export async function fetchTripsWithCache(bookingId: string): Promise<{ trips: Trip[]; fromCache: boolean }> {
   // Two sources of "done on this phone": the queue (not sent yet) and the local
   // progress record (sent, but possibly after the cache was last refreshed).
-  const overlay = async (trips: Trip[]) => {
+  const overlay = async (served: Trip[]) => {
+    let trips = served
     const queued = await pendingConfirmations().catch(
       () => ({ loadedTripIds: [], confirmedStopIds: [] }),
     )
     const local = await loadLocalProgress(bookingId)
+    // Loads first: they can add the stops and trips the confirmations name.
+    if (local.loads.length > 0) {
+      const lines = local.loads[local.loads.length - 1].lines
+      const loads = Object.fromEntries(local.loads.map((l) => [String(l.tripNumber), l.loaded]))
+      trips = applyLocalLoads(trips, lines, loads)
+    }
     return applyPendingConfirmations(trips, {
       loadedTripIds:    [...queued.loadedTripIds,    ...local.loadedTripIds],
       confirmedStopIds: [...queued.confirmedStopIds, ...local.confirmedStopIds],
@@ -236,9 +271,14 @@ export function applyPendingConfirmations(
   const confirmed = new Set(pending.confirmedStopIds)
   if (loaded.size === 0 && confirmed.size === 0) return trips
 
+  // A trip or stop the phone created offline was confirmed under its local id
+  // (tripCargo.localTripId / localStopId); once synced it has a server id. Match
+  // it either way, or a synced roll-over stop would come back to life.
   return trips.map((trip) => {
     const stops = (trip.booking_trip_stops ?? []).map((stop) =>
-      stop.status === 'pending' && confirmed.has(stop.trip_stop_id)
+      stop.status === 'pending' &&
+      (confirmed.has(stop.trip_stop_id) ||
+       confirmed.has(localStopId(trip.booking_id, trip.trip_number, stop.destination_id)))
         ? { ...stop, status: 'delivered' as const }
         : stop,
     )
@@ -248,7 +288,8 @@ export function applyPendingConfirmations(
     )
 
     let status = trip.status
-    if (status === 'pending' && loaded.has(trip.trip_id)) status = 'in_transit'
+    if (status === 'pending' &&
+        (loaded.has(trip.trip_id) || loaded.has(localTripId(trip.booking_id, trip.trip_number)))) status = 'in_transit'
     if (status !== 'cancelled' && allDone)                status = 'completed'
 
     return { ...trip, status, booking_trip_stops: stops }

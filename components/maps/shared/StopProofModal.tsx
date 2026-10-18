@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
-import { Camera, CheckCircle2, MapPin, RefreshCw, X } from 'lucide-react-native'
+import { Camera, CheckCircle2, MapPin, Minus, Plus, RefreshCw, X } from 'lucide-react-native'
 
 import { captureProofPhoto, CameraPermissionError } from '../../../lib/proofPhoto'
 import { checkStopProximity, type Coordinates, type ProximityCheck } from '../../../lib/stopGeofence'
@@ -40,6 +40,21 @@ import { useKeyboardHeight } from '../../../hooks/useKeyboardHeight'
  * fifty metres and fix it.
  */
 
+/** One cargo line the driver loads at a pickup: the plan, and the most there is left. */
+export interface LoadLine {
+  item_id:   string
+  label:     string
+  /** e.g. "Drop-off 2" — which bay it goes to. */
+  dropoff:   string
+  unit:      string
+  planned:   number
+  max:       number
+  /** False for a line with no quantity: it goes whole or not at all. */
+  divisible: boolean
+}
+
+export type LoadedQuantities = Array<{ item_id: string; quantity: number }>
+
 interface Props {
   visible: boolean
   /** e.g. "Pickup" or "Drop-off 2 of 3" */
@@ -61,13 +76,20 @@ interface Props {
    * behaviour for a pickup and for older bookings whose cargo names no stop.
    */
   manifest?: StopManifest | null
-  onConfirm: (photoUri: string, proof: StopProofContext) => void
+  /**
+   * Pickup only: this trip's planned load, line by line. The driver can load
+   * less (it goes on the next trip) or more (it comes off the later ones).
+   */
+  loadPlan?: LoadLine[] | null
+  /** `loaded` is set only when the driver changed the plan. */
+  onConfirm: (photoUri: string, proof: StopProofContext, loaded?: LoadedQuantities | null) => void
   onCancel:  () => void
 }
 
 export function StopProofModal({
-  visible, title, address, kind, autoOpened, stopCoordinates, manifest, onConfirm, onCancel,
+  visible, title, address, kind, autoOpened, stopCoordinates, manifest, loadPlan, onConfirm, onCancel,
 }: Props) {
+  const [loads, setLoads] = useState<Record<string, number>>({})
   const [photoUri, setPhotoUri] = useState<string | null>(null)
   const [busy, setBusy]         = useState(false)
   const [error, setError]       = useState<string | null>(null)
@@ -89,7 +111,11 @@ export function StopProofModal({
       setBusy(false)
       setProximity(null)
       setReason('')
+      setLoads(Object.fromEntries((loadPlan ?? []).map((l) => [l.item_id, l.planned])))
     }
+    // Only on opening: a re-render with a fresh loadPlan array must not undo
+    // what the driver has already changed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible])
 
   // Depend on the numbers, never on the object holding them. The caller builds
@@ -148,7 +174,16 @@ export function StopProofModal({
   const measuring  = locating && proximity == null
   // Confirm needs an answer about where they are — but any answer will do, as
   // long as it is either close enough or accompanied by a reason.
-  const canConfirm = !!photoUri && proximity != null && (proximity.withinRadius || overriding)
+  const plan       = isPickup ? loadPlan ?? [] : []
+  const loadedSum  = plan.reduce((n, l) => n + (loads[l.item_id] ?? 0), 0)
+  const changed    = plan.some((l) => Math.abs((loads[l.item_id] ?? 0) - l.planned) > 1e-9)
+  const setLoad = (l: LoadLine, v: number) => {
+    const clean = Math.min(l.max, Math.max(0, Number.isFinite(v) ? v : 0))
+    setLoads((prev) => ({ ...prev, [l.item_id]: l.divisible ? clean : (clean >= 1 ? 1 : 0) }))
+  }
+  // A trip has to carry something; leaving everything is not a trip.
+  const loadOk     = plan.length === 0 || loadedSum > 0
+  const canConfirm = !!photoUri && proximity != null && (proximity.withinRadius || overriding) && loadOk
 
   // The override reason sits at the bottom, right above the buttons: keep both
   // above the keyboard (useKeyboardHeight), and let the card scroll on a short
@@ -222,6 +257,75 @@ export function StopProofModal({
                   {manifest.totalWeight > 0 ? ` · ${manifest.totalWeight} kg total` : ''}
                 </Text>
               )}
+            </View>
+          )}
+
+          {/* What goes on the truck this trip. Prefilled with the plan; whatever
+              the driver leaves goes on the next trip automatically. */}
+          {plan.length > 0 && (
+            <View
+              style={{
+                backgroundColor: C.surfaceHi,
+                borderRadius: 12,
+                borderWidth: 1, borderColor: C.border,
+                paddingHorizontal: 12, paddingVertical: 10, gap: 8,
+              }}
+            >
+              <Text style={{ color: C.dimWhite, fontSize: 11, fontWeight: '800', letterSpacing: 1 }}>
+                LOAD FOR THIS TRIP
+              </Text>
+              {plan.map((l) => {
+                const v = loads[l.item_id] ?? 0
+                const step = 1
+                return (
+                  <View key={l.item_id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={{ color: C.white, fontSize: 13 }} numberOfLines={2}>{l.label}</Text>
+                      <Text style={{ color: C.dimmer, fontSize: 11 }} numberOfLines={1}>
+                        {l.dropoff} · planned {fmtQty(l.planned)} {l.unit}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => setLoad(l, v - step)}
+                      disabled={v <= 0}
+                      hitSlop={6}
+                      accessibilityLabel={`Less ${l.label}`}
+                      style={[qtyBtn, v <= 0 && { opacity: 0.35 }]}
+                    >
+                      <Minus size={14} color={C.white} />
+                    </TouchableOpacity>
+                    <TextInput
+                      value={fmtQty(v)}
+                      onChangeText={(t) => setLoad(l, t.trim() === '' ? 0 : Number(t.replace(',', '.')))}
+                      keyboardType="decimal-pad"
+                      editable={l.divisible}
+                      selectTextOnFocus
+                      accessibilityLabel={`${l.label} loaded`}
+                      style={{
+                        width: 56, height: 34, borderRadius: 8, textAlign: 'center',
+                        color: C.white, fontSize: 14, fontWeight: '800',
+                        backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, paddingVertical: 0,
+                      }}
+                    />
+                    <TouchableOpacity
+                      onPress={() => setLoad(l, v + step)}
+                      disabled={v >= l.max}
+                      hitSlop={6}
+                      accessibilityLabel={`More ${l.label}`}
+                      style={[qtyBtn, v >= l.max && { opacity: 0.35 }]}
+                    >
+                      <Plus size={14} color={C.white} />
+                    </TouchableOpacity>
+                  </View>
+                )
+              })}
+              <Text style={{ color: loadOk ? C.dimmer : C.red, fontSize: 11.5, lineHeight: 16 }}>
+                {!loadOk
+                  ? 'Load at least one item for this trip.'
+                  : changed
+                    ? 'Changed from the plan. Anything left goes on the next trip; extra comes off the later ones.'
+                    : 'Change these if the truck can take more or less. Anything left goes on the next trip.'}
+              </Text>
             </View>
           )}
 
@@ -358,10 +462,11 @@ export function StopProofModal({
             <TouchableOpacity
               onPress={() => {
                 if (!canConfirm || !photoUri) return
-                onConfirm(photoUri, {
-                  fix: proximity?.fix ?? null,
-                  overrideReason: overriding ? reason.trim() : null,
-                })
+                onConfirm(
+                  photoUri,
+                  { fix: proximity?.fix ?? null, overrideReason: overriding ? reason.trim() : null },
+                  changed ? plan.map((l) => ({ item_id: l.item_id, quantity: loads[l.item_id] ?? 0 })) : null,
+                )
               }}
               disabled={!canConfirm}
               style={{
@@ -384,3 +489,11 @@ export function StopProofModal({
     </Modal>
   )
 }
+
+const qtyBtn = {
+  width: 34, height: 34, borderRadius: 8,
+  alignItems: 'center' as const, justifyContent: 'center' as const,
+  backgroundColor: C.surface, borderWidth: 1, borderColor: C.border,
+}
+
+const fmtQty = (n: number) => String(Math.round(n * 1000) / 1000)

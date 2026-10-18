@@ -39,7 +39,7 @@ import { bookingRef } from '../../../lib/driverBookings'
 import { navigationGate, formatGateDate } from '../../../lib/deliveryWindow'
 import { syncServerTime } from '../../../lib/serverTime'
 import { FONTS } from '../../../lib/config/fonts'
-import { groupCargoByDestination, manifestFor } from '../../../lib/cargoManifest'
+import { groupCargoByDestination, itemLine, manifestFor, manifestForTripStop } from '../../../lib/cargoManifest'
 import {
   fetchTripsWithCache,
   recordLocalProgress,
@@ -914,6 +914,11 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
                 {(inTransit || isDone) && (
                   <StopProofSection
                     visits={visitsByDestination.get(destination.destination_id) ?? []}
+                    loadOf={(stop) => {
+                      // This visit's share, when the plan splits the drop-off's goods.
+                      if (!stop.booking_trip_cargo?.length) return null
+                      return manifestForTripStop(grouped, stop).items.map(itemLine).join(', ') || null
+                    }}
                     shuttle={shuttle}
                     readOnly={isSecondDriver}
                     label={label}
@@ -1166,7 +1171,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
               }
             : null
         }
-        manifest={proofFor ? manifestFor(grouped, proofFor.stop.destination_id) : null}
+        manifest={proofFor ? manifestForTripStop(grouped, proofFor.stop) : null}
         onConfirm={confirmStop}
         onCancel={() => setProofFor(null)}
       />
@@ -1291,9 +1296,11 @@ function Stop({
  *   grey   nothing is owed; the row shows the document instead
  */
 function StopProofSection({
-  visits, shuttle, label, uploading, sending, onUpload, readOnly = false,
+  visits, shuttle, label, uploading, sending, onUpload, readOnly = false, loadOf,
 }: {
   visits:    Array<{ trip: Trip; stop: TripStop }>
+  /** What this visit carries, e.g. "10 x Cartons" — null when the plan has no quantities. */
+  loadOf?:   (stop: TripStop) => string | null
   shuttle:   boolean
   /** The second driver: show what is done, never the upload button. */
   readOnly?: boolean
@@ -1323,7 +1330,9 @@ function StopProofSection({
         return (
           <View key={stop.trip_stop_id} style={s.proofRow}>
             {shuttle && (
-              <Text style={s.proofTripTag}>TRIP {trip.trip_number}</Text>
+              <Text style={s.proofTripTag}>
+                TRIP {trip.trip_number}{loadOf?.(stop) ? ` · ${loadOf(stop)}` : ''}
+              </Text>
             )}
 
             {sending.has(stop.trip_stop_id) ? (

@@ -103,3 +103,41 @@ export function manifestFor(
   if (!destinationId) return emptyManifest()
   return grouped.byDestination.get(destinationId) ?? emptyManifest()
 }
+
+/**
+ * The manifest for one stop of one TRIP: this trip's share of each line.
+ *
+ * A drop-off whose goods are split over two trips used to show its whole
+ * manifest on both visits. With a quantity plan the stop says how much of each
+ * line is on this run (what was loaded, once loaded), and the weight is that
+ * share of the line's weight. A plan without quantities falls back to the whole
+ * drop-off, as before.
+ */
+export function manifestForTripStop(
+  grouped: ReturnType<typeof groupCargoByDestination>,
+  stop: {
+    destination_id: string
+    booking_trip_cargo?: Array<{ item_id: string; planned_qty: number; loaded_qty: number | null }> | null
+  } | null | undefined,
+): StopManifest {
+  if (!stop) return emptyManifest()
+  const whole = manifestFor(grouped, stop.destination_id)
+  const rows  = stop.booking_trip_cargo
+  if (!rows || rows.length === 0) return whole
+
+  const items = rows.flatMap((r) => {
+    const item = whole.items.find((i) => i.item_id === r.item_id)
+    if (!item) return []
+    const qty   = Number(r.loaded_qty ?? r.planned_qty)
+    const total = item.quantity != null && item.quantity > 0 ? item.quantity : 1
+    const share = qty / total
+    const round = (n: number) => Math.round(n * 100) / 100
+    return [{
+      ...item,
+      quantity:   item.quantity != null && item.quantity > 0 ? qty : item.quantity,
+      weight_kg:  item.weight_kg  != null ? round(item.weight_kg  * share) : item.weight_kg,
+      volume_cbm: item.volume_cbm != null ? round(item.volume_cbm * share) : item.volume_cbm,
+    }]
+  })
+  return summarise(items)
+}

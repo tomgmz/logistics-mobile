@@ -5,6 +5,23 @@ import { enqueue, flush } from './offlineQueue'
 import { uploadProofPhoto, photoTakenAt, type ProofStamp } from './proofPhoto'
 import { startTracking, stopTracking, setNextStop, explainTrackingDenied } from './locationTracking'
 import type { StopFix, Coordinates } from './stopGeofence'
+import { parseLocalId } from './tripCargo'
+
+/** The pickup URL — by trip number for a trip the phone created offline. */
+function pickupUrl(tripId: string): string {
+  const local = parseLocalId(tripId)
+  return local
+    ? `/driver/bookings/${local.bookingId}/trips/${local.tripNumber}/pickup`
+    : `/driver/trips/${tripId}/pickup`
+}
+
+/** The drop-off URL — by trip number + drop-off for a stop the phone created offline. */
+function stopUrl(tripStopId: string): string {
+  const local = parseLocalId(tripStopId)
+  return local?.destinationId
+    ? `/driver/bookings/${local.bookingId}/trips/${local.tripNumber}/destinations/${local.destinationId}/delivered`
+    : `/driver/trip-stops/${tripStopId}/delivered`
+}
 
 /**
  * Driver-confirmed trip progress.
@@ -109,6 +126,7 @@ export function confirmTripPickup(
   earlyStart = false,
   proof?: StopProofContext,
   firstDropoff?: Coordinates | null,
+  loaded?: Array<{ item_id: string; quantity: number }> | null,
 ): Promise<void> {
   // Started before the confirmation is queued, deliberately: if the driver is
   // in a dead zone the confirmation may not land for hours, and the customer
@@ -124,10 +142,16 @@ export function confirmTripPickup(
   return queueStop(
     `trip-pickup:${tripId}`,
     'pickup',
-    `/driver/trips/${tripId}/pickup`,
+    pickupUrl(tripId),
     photoUri,
     { stop: 'trip_pickup', refId: tripId, takenAt: photoTakenAt(photoUri), fix: proof?.fix ?? null },
-    { ...(earlyStart ? { early_start: true } : {}), ...stopProofBody(proof) },
+    {
+      ...(earlyStart ? { early_start: true } : {}),
+      ...stopProofBody(proof),
+      // What actually went on the truck, when it differs from the plan; the
+      // server moves the rest onto the next trips.
+      ...(loaded && loaded.length > 0 ? { loaded } : {}),
+    },
   )
 }
 
@@ -151,7 +175,7 @@ export function confirmTripStop(
   return queueStop(
     `trip-stop:${tripStopId}`,
     'delivery',
-    `/driver/trip-stops/${tripStopId}/delivered`,
+    stopUrl(tripStopId),
     photoUri,
     { stop: 'trip_stop', refId: tripStopId, takenAt: photoTakenAt(photoUri), fix: proof?.fix ?? null },
     stopProofBody(proof),

@@ -56,7 +56,9 @@ import { StopProofModal } from '../shared/StopProofModal'
 import { PauseTripModal } from '../shared/PauseTripModal'
 import { PausedBanner } from '../shared/PausedBanner'
 import { currentPause, endPauseForProgress, pauseTrip, resumeTrip, type TripPause } from '../../../lib/tripPause'
-import { groupCargoByDestination, manifestFor } from '../../../lib/cargoManifest'
+import { groupCargoByDestination, itemName, manifestFor, manifestForTripStop } from '../../../lib/cargoManifest'
+import { applyLocalLoads, lineTotal, planCoversCargo, type CargoLine } from '../../../lib/tripCargo'
+import type { LoadLine, LoadedQuantities } from '../shared/StopProofModal'
 import { legCoordinates } from '../../../lib/stopGeofence'
 import { GoogleNavSheet, SHEET_PEEK_H } from './GoogleNavSheet'
 import { OfflineRoutePreview } from './OfflineRoutePreview'
@@ -353,9 +355,64 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
   // back for the next one. Drives the "reload" card instead of the completion one.
   const [reloading, setReloading] = useState(false)
 
-  /** The manifest for the drop-off a leg ends at; empty for the pickup leg. */
-  const manifestForLeg = (leg: Leg | undefined) =>
-    leg && leg.type === 'dropoff' ? manifestFor(cargoRef.current, leg.destinationId) : null
+  /**
+   * The manifest for the drop-off a leg ends at — THIS trip's share of it when
+   * the plan has quantities; empty for the pickup leg.
+   */
+  const manifestForLeg = (leg: Leg | undefined) => {
+    if (!leg || leg.type !== 'dropoff') return null
+    const stop = tripsRef.current
+      .flatMap((t) => t.booking_trip_stops ?? [])
+      .find((s) => s.trip_stop_id === leg.tripStopId)
+    return stop ? manifestForTripStop(cargoRef.current, stop) : manifestFor(cargoRef.current, leg.destinationId)
+  }
+
+  /** The booking's cargo lines as the split rules see them. */
+  const cargoLines = (): CargoLine[] =>
+    ((bookingRef.current?.booking_cargo_items ?? []) as any[])
+      .filter((c) => c.destination_id)
+      .map((c) => ({
+        item_id:        c.item_id,
+        destination_id: c.destination_id,
+        total:          lineTotal(c.quantity == null ? null : Number(c.quantity)),
+      }))
+
+  /**
+   * What the pickup popup offers to load on this trip: the plan, line by line,
+   * and the most of each that is left. Null on a plan without quantities.
+   */
+  const loadPlanForLeg = (leg: Leg | undefined): LoadLine[] | null => {
+    if (!leg || leg.type !== 'pickup') return null
+    const trips = tripsRef.current
+    const lines = cargoLines()
+    const trip  = trips.find((t) => t.trip_id === leg.tripId)
+    if (!trip || !planCoversCargo(trips, lines)) return null
+
+    const items = (bookingRef.current?.booking_cargo_items ?? []) as any[]
+    const taken = (itemId: string) => trips
+      .filter((t) => t.trip_id !== trip.trip_id && (t.status === 'in_transit' || t.status === 'completed'))
+      .flatMap((t) => t.booking_trip_stops ?? [])
+      .flatMap((s) => s.booking_trip_cargo ?? [])
+      .filter((c) => c.item_id === itemId)
+      .reduce((n, c) => n + Number(c.loaded_qty ?? c.planned_qty), 0)
+
+    return (trip.booking_trip_stops ?? [])
+      .slice()
+      .sort((a, b) => (a.booking_destinations?.sequence_order ?? 0) - (b.booking_destinations?.sequence_order ?? 0))
+      .flatMap((stop) => (stop.booking_trip_cargo ?? []).map((c): LoadLine => {
+        const item = items.find((i) => i.item_id === c.item_id)
+        const line = lines.find((l) => l.item_id === c.item_id)
+        return {
+          item_id:   c.item_id,
+          label:     item ? itemName(item) : 'Cargo',
+          dropoff:   `Drop-off ${stop.booking_destinations?.sequence_order ?? ''}`.trim(),
+          unit:      item?.products?.unit ?? (item?.quantity > 0 ? 'pcs' : 'lot'),
+          planned:   Number(c.planned_qty),
+          max:       Math.max(Number(c.planned_qty), (line?.total ?? 0) - taken(c.item_id)),
+          divisible: Number(item?.quantity) > 0,
+        }
+      }))
+  }
 
   const legIndexRef   = useRef(0)
   const processedRef  = useRef<Set<number>>(new Set())
@@ -742,7 +799,12 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
    * After the last drop-off guidance stops and the button turns into "Mark
    * delivery as done" (completeDelivery).
    */
-  const advanceStop = useCallback(async (idx: number, photoUri: string, proof: StopProofContext) => {
+  const advanceStop = useCallback(async (
+    idx: number,
+    photoUri: string,
+    proof: StopProofContext,
+    loaded?: LoadedQuantities | null,
+  ) => {
     if (confirmingRef.current) return
     const legs = legsRef.current
     const leg  = legs[idx]
@@ -769,14 +831,44 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
     guidanceHeldRef.current = false
     const persist = endPauseForProgress(bookingId).catch(() => {}).then(() =>
       leg.type === 'pickup'
-        ? confirmTripPickup(bookingId, leg.tripId, photoUri, earlyStartRef.current, proof, nextStop)
+        ? confirmTripPickup(bookingId, leg.tripId, photoUri, earlyStartRef.current, proof, nextStop, loaded)
         : confirmTripStop(leg.tripStopId, photoUri, proof, nextStop),
     )
     persist.catch(() => {})
+
+    // The driver loaded something other than the plan: move the rest onto the
+    // next trips here too (the server does the same when this syncs), and drop
+    // any drop-off of THIS run that now has nothing on the truck for it.
+    let rerouteNeeded = false
+    const loadedTrip  = leg.type === 'pickup' ? tripsRef.current.find((t) => t.trip_id === leg.tripId) : undefined
+    const load = loaded && loadedTrip
+      ? { tripNumber: loadedTrip.trip_number, loaded, lines: cargoLines() }
+      : undefined
+    if (load) {
+      tripsRef.current = applyLocalLoads(tripsRef.current, load.lines, { [String(load.tripNumber)]: load.loaded })
+      const kept = new Set(
+        (tripsRef.current.find((t) => t.trip_number === load.tripNumber)?.booking_trip_stops ?? [])
+          .map((s) => s.trip_stop_id),
+      )
+      const drop = new Set(
+        legsRef.current
+          .map((l, i) => (i > idx && l.type === 'dropoff' && !kept.has(l.tripStopId) ? i : -1))
+          .filter((i) => i !== -1),
+      )
+      if (drop.size > 0) {
+        rerouteNeeded = true
+        legsRef.current      = legsRef.current.filter((_, i) => !drop.has(i))
+        waypointsRef.current = waypointsRef.current.filter((_, i) => !drop.has(i))
+        stopsRef.current     = stopsRef.current.filter((_, i) => !drop.has(i))
+        setStops(stopsRef.current)
+        updateNavSession({ waypoints: waypointsRef.current, legs: legsRef.current, stops: stopsRef.current })
+      }
+    }
+
     // Remembered after it has been sent, so a run that ends in a dead zone is
     // rebuilt from what this phone actually did (see trips.recordLocalProgress).
     void recordLocalProgress(bookingId, leg.type === 'pickup'
-      ? { loadedTripId: leg.tripId }
+      ? { loadedTripId: leg.tripId, ...(load ? { load } : {}) }
       : { confirmedStopId: leg.tripStopId })
 
     legIndexRef.current = idx + 1
@@ -787,7 +879,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
     updateNavSession({ legIndex: idx + 1, processed: [...processedRef.current] })
 
     try {
-      if (idx + 1 >= legs.length) {
+      if (idx + 1 >= legsRef.current.length) {
         // Last stop of THIS RUN confirmed. On a shuttle that is not the end of
         // the job — the truck drives back to the origin, loads again, and runs
         // a new route. Stop guidance either way, then see whether another run
@@ -800,6 +892,16 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
         // the driver straight back to it.
         await persist.catch(() => {})
         await startNextTripIfAny()
+      } else if (rerouteNeeded) {
+        // A drop-off came off this run: the SDK's route still has it, so give it
+        // the shortened one. Offline setDestinations never settles; the deadline
+        // keeps the screen moving and the reconnect handler rebuilds it.
+        useTokenRef.current = false
+        await Promise.race([
+          applyDestinations().catch(() => {}),
+          new Promise<void>((resolve) => setTimeout(resolve, ROUTE_BUILD_TIMEOUT_MS)),
+        ])
+        captureRouteGeometry()
       } else {
         // Move to the next waypoint. startGuidance is a no-op when guidance is
         // already running; it covers the case where the SDK paused on arrival.
@@ -813,7 +915,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
       confirmingRef.current = false
       setConfirming(false)
     }
-  }, [bookingId, navigationController, startNextTripIfAny, captureRouteGeometry])
+  }, [bookingId, navigationController, startNextTripIfAny, captureRouteGeometry, applyDestinations])
 
   // The SDK detected the arrival — the normal case, and still what drives the
   // flow: it opens the proof popup for this stop hands-free, so the driver only
@@ -1471,11 +1573,12 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
       autoOpened={proofFor.auto}
       stopCoordinates={stopCoordinatesFor(proofFor.idx)}
       manifest={manifestForLeg(legsRef.current[proofFor.idx])}
+      loadPlan={loadPlanForLeg(legsRef.current[proofFor.idx])}
       onCancel={() => setProofFor(null)}
-      onConfirm={(photoUri, proof) => {
+      onConfirm={(photoUri, proof, loaded) => {
         const idx = proofFor.idx
         setProofFor(null)
-        advanceStop(idx, photoUri, proof)
+        advanceStop(idx, photoUri, proof, loaded)
       }}
     />
   ) : null
