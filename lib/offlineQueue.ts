@@ -4,6 +4,7 @@ import { AppState, AppStateStatus } from 'react-native'
 
 import api from './api/auth.api'
 import { useAuthStore } from './store/auth.store'
+import { isOnline, serverReachable } from './network'
 import { uploadProofPhoto, type ProofStamp } from './proofPhoto'
 
 /**
@@ -112,7 +113,7 @@ export function enqueue(action: Omit<QueuedAction, 'createdAt' | 'attempts' | 'u
 export function flush(): Promise<void> {
   return runExclusive(async () => {
     const net = await NetInfo.fetch()
-    if (!reachable(net)) return
+    if (!isOnline(net)) return
 
     // The radio says online; make sure the server actually answers before
     // sending anything heavy. Right after signal returns the network is "up"
@@ -260,46 +261,19 @@ let netUnsub:   (() => void) | null = null
 let appSub:     { remove: () => void } | null = null
 let wasConnected = true
 
-/**
- * Install a single connectivity listener that flushes on the offline→online
- * edge. Call once from a long-lived layout. Returns an unsubscribe.
- */
-/**
- * Online means the internet is reachable, not merely that some network is up.
- * Many phones keep a Wi-Fi-calling or carrier IMS link "connected" with no data
- * at all; judged by isConnected alone, losing and regaining signal never showed
- * as a reconnection, and queued deliveries waited until the app happened to be
- * reopened. `isInternetReachable` is null while unknown, which counts as online.
- */
-/** A 5-second look at the API's health endpoint: is there a working path right now? */
-async function serverReachable(): Promise<boolean> {
-  const base = (process.env.EXPO_PUBLIC_API_URL ?? '').replace(/\/$/, '')
-  if (!base) return true
-  const ctrl = new AbortController()
-  const t = setTimeout(() => ctrl.abort(), 5_000)
-  try {
-    const res = await fetch(`${base}/health`, { signal: ctrl.signal })
-    return res.ok
-  } catch {
-    return false
-  } finally {
-    clearTimeout(t)
-  }
-}
-
-function reachable(state: { isConnected: boolean | null; isInternetReachable?: boolean | null }): boolean {
-  return !!state.isConnected && state.isInternetReachable !== false
-}
-
 // Belt and braces: while anything is waiting, try again on a timer. Reachability
 // detection varies by phone, and a confirmed delivery should not depend on it.
 const RETRY_MS = 20_000
 let retryTimer: ReturnType<typeof setInterval> | null = null
 
+/**
+ * Install a single connectivity listener that flushes on the offline→online
+ * edge. Call once from a long-lived layout. Returns an unsubscribe.
+ */
 export function startAutoFlush(): () => void {
   if (netUnsub) return netUnsub
   netUnsub = NetInfo.addEventListener((state) => {
-    const connected = reachable(state)
+    const connected = isOnline(state)
     if (connected && !wasConnected) flush().catch(() => {})
     wasConnected = connected
   })

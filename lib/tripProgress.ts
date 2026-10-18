@@ -1,4 +1,5 @@
 import NetInfo from '@react-native-community/netinfo'
+import { isOnline } from './network'
 
 import { enqueue, flush } from './offlineQueue'
 import { uploadProofPhoto, photoTakenAt, type ProofStamp } from './proofPhoto'
@@ -71,7 +72,7 @@ async function queueStop(
   let uploadedUrl: string | null = null
 
   const net = await NetInfo.fetch().catch(() => null)
-  if (net?.isConnected) {
+  if (isOnline(net)) {
     // Best effort: a failure here just means the queue uploads it later.
     uploadedUrl = await uploadProofPhoto(photoUri, stamp).catch(() => null)
   }

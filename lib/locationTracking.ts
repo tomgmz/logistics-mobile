@@ -2,6 +2,7 @@ import * as Location from 'expo-location'
 import * as TaskManager from 'expo-task-manager'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import NetInfo from '@react-native-community/netinfo'
+import { isOnline } from './network'
 import { Alert, AppState, Linking } from 'react-native'
 
 import api from './api/auth.api'
@@ -175,7 +176,7 @@ async function considerFix(location: Location.LocationObject): Promise<void> {
   // fixes every few seconds, and without this each one would burn a radio wake
   // and an HTTP timeout.
   const net = await NetInfo.fetch().catch(() => null)
-  if (!net?.isConnected) return
+  if (!isOnline(net)) return
 
   try {
     const res = await api.post(`/driver/bookings/${context.bookingId}/location`, body)

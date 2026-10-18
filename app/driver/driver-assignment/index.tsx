@@ -12,6 +12,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import NetInfo from '@react-native-community/netinfo'
+import { isOnline } from '../../../lib/network'
 import { useDriverId, useAuthHydrated, useAuthStore } from '../../../lib/store/auth.store'
 import { getMe } from '../../../lib/api/auth.api'
 import { useAvailabilityStore } from '../../../lib/store/availability.store'
@@ -371,7 +372,7 @@ export default function DriverBookingList() {
 
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener((state) => {
-      if (state.isConnected && state.isInternetReachable !== false && offlineMeta) {
+      if (isOnline(state) && offlineMeta) {
         loadCacheThenFetch(true)
       }
     })

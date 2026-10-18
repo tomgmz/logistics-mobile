@@ -11,6 +11,7 @@ import {
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import NetInfo from '@react-native-community/netinfo'
+import { isOnline } from '../../../lib/network'
 import {
   AlertCircle,
   Boxes,
@@ -372,7 +373,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
-    const unsub = NetInfo.addEventListener((s) => setOffline(!s.isConnected))
+    const unsub = NetInfo.addEventListener((s) => setOffline(!isOnline(s)))
     return () => unsub()
   }, [])
 

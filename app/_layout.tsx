@@ -12,8 +12,11 @@ import { APP_FONTS } from '../lib/config/fonts'
 import { syncServerTime } from '../lib/serverTime'
 import { registerForPushNotifications, initPushResponders } from '../lib/push'
 import { flush } from '../lib/offlineQueue'
+import { configureNetwork } from '../lib/network'
 
 SplashScreen.preventAutoHideAsync()
+// Online = our server answers, on Wi-Fi or mobile data alike (lib/network).
+configureNetwork()
 
 export default function RootLayout() {
   const authReady = useAuthHydrated()

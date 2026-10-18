@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Signpost, CheckCircle2, PackageCheck, PauseCircle, WifiOff } from 'lucide-react-native'
 import NetInfo from '@react-native-community/netinfo'
+import { isOnline } from '../../../lib/network'
 import * as Location from 'expo-location'
 import {
   NavigationProvider,
@@ -649,9 +650,9 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
   // Track connectivity for honest offline messaging (and the offline banner),
   // and resume full navigation the moment the connection returns.
   useEffect(() => {
-    NetInfo.fetch().then((s) => { offlineRef.current = !s.isConnected; setOffline(!s.isConnected) })
+    NetInfo.fetch().then((s) => { offlineRef.current = !isOnline(s); setOffline(!isOnline(s)) })
     const unsub = NetInfo.addEventListener((s) => {
-      const nowOffline = !s.isConnected
+      const nowOffline = !isOnline(s)
       const cameBackOnline = offlineRef.current && !nowOffline
       offlineRef.current = nowOffline
       setOffline(nowOffline)
