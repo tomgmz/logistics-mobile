@@ -10,6 +10,7 @@ import { messagingApi } from '../../lib/api/messaging.api'
 import type { MessagableUser } from '../../types/messaging.types'
 import { roleLabel, matchesPersonSearch } from '../../lib/roles'
 import { FONTS } from '../../lib/config/fonts'
+import { useKeyboardHeight } from '../../hooks/useKeyboardHeight'
 
 const C = {
   bg:       '#0a0a0a',
@@ -101,9 +102,13 @@ export default function ComposeModal({
     }
   }
 
+  // iOS: the KeyboardAvoidingView below handles it. Android: a Modal never sees
+  // the screen resize, so the sheet is lifted by the keyboard's height.
+  const androidKeyboardH = useKeyboardHeight({ androidOnly: true })
+
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.backdrop}>
+      <View style={[styles.backdrop, { paddingBottom: androidKeyboardH }]}>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={[styles.sheet, { paddingBottom: insets.bottom + 8 }]}

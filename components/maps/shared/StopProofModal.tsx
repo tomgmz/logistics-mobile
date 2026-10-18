@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Image,
   Linking,
   Modal,
+  ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
@@ -16,6 +17,7 @@ import { checkStopProximity, type Coordinates, type ProximityCheck } from '../..
 import type { StopProofContext } from '../../../lib/tripProgress'
 import { itemLine, type StopManifest } from '../../../lib/cargoManifest'
 import { C } from '../../../theme/navigation.theme'
+import { useKeyboardHeight } from '../../../hooks/useKeyboardHeight'
 
 /**
  * The stop confirmation popup: "is this actually done?", with the proof photo
@@ -148,12 +150,24 @@ export function StopProofModal({
   // long as it is either close enough or accompanied by a reason.
   const canConfirm = !!photoUri && proximity != null && (proximity.withinRadius || overriding)
 
+  // The override reason sits at the bottom, right above the buttons: keep both
+  // above the keyboard (useKeyboardHeight), and let the card scroll on a short
+  // screen with the photo, the manifest and the keyboard all showing.
+  const keyboardH = useKeyboardHeight()
+  const scrollRef = useRef<ScrollView>(null)
+  useEffect(() => {
+    if (keyboardH > 0) requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }))
+  }, [keyboardH])
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-      <View
-        style={{
-          flex: 1, backgroundColor: 'rgba(0,0,0,0.75)',
-          alignItems: 'center', justifyContent: 'center', paddingHorizontal: 22,
+      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', paddingBottom: keyboardH }}>
+      <ScrollView
+        ref={scrollRef}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{
+          flexGrow: 1, alignItems: 'center', justifyContent: 'center',
+          paddingHorizontal: 22, paddingVertical: 24,
         }}
       >
         <View
@@ -365,6 +379,7 @@ export function StopProofModal({
             </TouchableOpacity>
           </View>
         </View>
+      </ScrollView>
       </View>
     </Modal>
   )

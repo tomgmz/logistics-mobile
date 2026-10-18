@@ -7,6 +7,7 @@ import { Users, UserPlus, Pencil, Inbox, UserMinus, Check, X, Search } from 'luc
 import { messagingApi } from '../../lib/api/messaging.api'
 import { roleLabel, matchesPersonSearch } from '../../lib/roles'
 import { FONTS } from '../../lib/config/fonts'
+import { useKeyboardHeight } from '../../hooks/useKeyboardHeight'
 import type { GroupMemberRequest, MessagableUser } from '../../types/messaging.types'
 
 const C = {
@@ -43,9 +44,12 @@ function errorText(err: unknown, fallback: string): string {
 function Sheet({ title, icon, onClose, children }: {
   title: string; icon: React.ReactNode; onClose: () => void; children: React.ReactNode
 }) {
+  // iOS: KeyboardAvoidingView handles it. Android: lift by the keyboard height,
+  // since a Modal never sees the screen resize.
+  const androidKeyboardH = useKeyboardHeight({ androidOnly: true })
   return (
     <Modal transparent visible animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={{ flex: 1, paddingBottom: androidKeyboardH }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <TouchableOpacity style={s.backdrop} activeOpacity={1} onPress={onClose} />
         <View style={s.sheet}>
           <View style={s.head}>

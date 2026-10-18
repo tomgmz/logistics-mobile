@@ -1,9 +1,8 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
   Modal,
-  Platform,
+  ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
@@ -13,6 +12,7 @@ import { PauseCircle, X } from 'lucide-react-native'
 
 import { PAUSE_REASONS, type PauseReason } from '../../../lib/tripPause'
 import { C } from '../../../theme/navigation.theme'
+import { useKeyboardHeight } from '../../../hooks/useKeyboardHeight'
 
 /**
  * "Why are you stopping?" — the reason the office and the client see, and a
@@ -44,6 +44,13 @@ export function PauseTripModal({ visible, onCancel, onConfirm }: Props) {
 
   const canPause = !!reason && note.trim().length >= NOTE_MIN && !busy
 
+  // The note and the button stay above the keyboard (see useKeyboardHeight).
+  const keyboardH = useKeyboardHeight()
+  const scrollRef = useRef<ScrollView>(null)
+  useEffect(() => {
+    if (keyboardH > 0) requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }))
+  }, [keyboardH])
+
   const submit = async () => {
     if (!canPause || !reason) return
     setBusy(true)
@@ -56,11 +63,13 @@ export function PauseTripModal({ visible, onCancel, onConfirm }: Props) {
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{
-          flex: 1, backgroundColor: 'rgba(0,0,0,0.75)',
-          alignItems: 'center', justifyContent: 'center', paddingHorizontal: 22,
+      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', paddingBottom: keyboardH }}>
+      <ScrollView
+        ref={scrollRef}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{
+          flexGrow: 1, alignItems: 'center', justifyContent: 'center',
+          paddingHorizontal: 22, paddingVertical: 24,
         }}
       >
         <View
@@ -153,7 +162,8 @@ export function PauseTripModal({ visible, onCancel, onConfirm }: Props) {
             </TouchableOpacity>
           </View>
         </View>
-      </KeyboardAvoidingView>
+      </ScrollView>
+      </View>
     </Modal>
   )
 }

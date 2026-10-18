@@ -2,7 +2,6 @@ import React, { useCallback, useState } from 'react'
 import {
   ActivityIndicator,
   Image,
-  ScrollView,
   Switch,
   Text,
   TextInput,
@@ -10,6 +9,7 @@ import {
   View,
 } from 'react-native'
 import * as ImagePicker from 'expo-image-picker'
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller'
 import { Check, Image as ImageIcon, SendHorizontal, Video, X } from 'lucide-react-native'
 
 import { FONTS } from '../../lib/config/fonts'
@@ -198,7 +198,10 @@ export function ReportForm({
   }
 
   return (
-    <ScrollView
+    // Keyboard-aware: the description box is near the bottom of a long form, and
+    // a plain ScrollView left it under the keyboard on Android.
+    <KeyboardAwareScrollView
+      bottomOffset={24}
       contentContainerStyle={{ padding: 16, paddingBottom: 40, gap: 18 }}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
@@ -445,7 +448,7 @@ export function ReportForm({
           {busy ? 'Sending…' : submitLabel}
         </Text>
       </TouchableOpacity>
-    </ScrollView>
+    </KeyboardAwareScrollView>
   )
 }
 

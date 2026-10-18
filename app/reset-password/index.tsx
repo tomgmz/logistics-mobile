@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
-  ScrollView,
   Text,
   View,
 } from 'react-native'
 import { router, useLocalSearchParams } from 'expo-router'
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller'
 
 import {
   BG_CARD, BG_MAIN, CYAN, ERROR, MUTED,
@@ -164,14 +162,15 @@ export default function ResetPasswordScreen() {
 
   /* The form */
   return (
-    <KeyboardAvoidingView
+    // Keyboard-aware on both platforms: with Android edge-to-edge, a
+    // KeyboardAvoidingView with no behavior did nothing and the password fields
+    // went under the keyboard.
+    <KeyboardAwareScrollView
       style={{ flex: 1, backgroundColor: BG_MAIN }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      bottomOffset={24}
+      contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 24, gap: 18 }}
+      keyboardShouldPersistTaps="handled"
     >
-      <ScrollView
-        contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 24, gap: 18 }}
-        keyboardShouldPersistTaps="handled"
-      >
         <View style={{ gap: 6 }}>
           <Text style={{ color: '#fff', fontSize: 22, fontWeight: '800', letterSpacing: 2.5, textTransform: 'uppercase' }}>
             Set a new password
@@ -268,7 +267,6 @@ export default function ResetPasswordScreen() {
             )}
           </Pressable>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+    </KeyboardAwareScrollView>
   )
 }
