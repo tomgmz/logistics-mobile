@@ -98,6 +98,8 @@ export default {
       ],
       // Mandatory Android core-library desugaring for the Navigation SDK.
       "./plugins/with-google-nav",
+      // Passkey site link (asset_statements). Must match the backend's WEBAUTHN_RP_ID.
+      ["./plugins/with-passkey-asset-links", { domain: "8338logistics.delivery" }],
       // Push notifications for messages.
       [
         "expo-notifications",
