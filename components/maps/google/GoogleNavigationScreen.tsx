@@ -17,6 +17,8 @@ interface Props {
   routeToken?: string | null
   /** The driver chose to run this ahead of its scheduled day. */
   earlyStart?: boolean
+  /** Where the map's back arrow goes; defaults to router.back(). */
+  onBack?:     () => void
 }
 
 const SETUP_HINT =
@@ -24,7 +26,7 @@ const SETUP_HINT =
   '`npx expo run:android` (or EAS Build for iOS) with the SDK configured, and make sure ' +
   'Navigation SDK access is enabled on your Google key. See docs/google-nav-sdk-migration.md.'
 
-export default function GoogleNavigationScreen({ bookingId, routeToken, earlyStart = false }: Props) {
+export default function GoogleNavigationScreen({ bookingId, routeToken, earlyStart = false, onBack }: Props) {
   const [Inner, setInner] = useState<React.ComponentType<Props> | null>(null)
   const [loadErr, setLoadErr] = useState<string | null>(null)
 
@@ -66,5 +68,5 @@ export default function GoogleNavigationScreen({ bookingId, routeToken, earlySta
     )
   }
 
-  return <Inner bookingId={bookingId} routeToken={routeToken} earlyStart={earlyStart} />
+  return <Inner bookingId={bookingId} routeToken={routeToken} earlyStart={earlyStart} onBack={onBack} />
 }

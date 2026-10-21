@@ -103,6 +103,12 @@ interface Props {
   routeToken?: string | null
   /** The driver chose to run this ahead of its scheduled day. */
   earlyStart?: boolean
+  /**
+   * Where the map's back arrow goes. The booking page passes its details stage
+   * (same route, so router.back() would skip past it to Home); falls back to
+   * router.back() when the screen is used on its own.
+   */
+  onBack?:     () => void
 }
 
 const TOS_OPTIONS = {
@@ -221,7 +227,7 @@ const MAP_BTN = {
   elevation:       8,
 }
 
-export default function GoogleNavigationScreenInner({ bookingId, routeToken, earlyStart = false }: Props) {
+export default function GoogleNavigationScreenInner({ bookingId, routeToken, earlyStart = false, onBack }: Props) {
   return (
     // CONTINUE_SERVICE is the library's default, stated here so a library update
     // can't quietly change it: swiping the app away must leave Google's guidance
@@ -231,13 +237,14 @@ export default function GoogleNavigationScreenInner({ bookingId, routeToken, ear
       termsAndConditionsDialogOptions={TOS_OPTIONS}
       taskRemovedBehavior={TaskRemovedBehavior.CONTINUE_SERVICE}
     >
-      <GoogleNavInner bookingId={bookingId} routeToken={routeToken} earlyStart={earlyStart} />
+      <GoogleNavInner bookingId={bookingId} routeToken={routeToken} earlyStart={earlyStart} onBack={onBack} />
     </NavigationProvider>
   )
 }
 
-function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
+function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: Props) {
   const router = useRouter()
+  const goBack = useCallback(() => { if (onBack) onBack(); else router.back() }, [onBack, router])
   const insets = useSafeAreaInsets()
 
 
@@ -1627,7 +1634,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
             setStarting(true)
             setRetry((r) => r + 1)
           }}
-          onBack={() => router.back()}
+          onBack={goBack}
           onConfirmStop={(idx) => {
             // A stop can only be recorded against the leg that names its trip
             // stop. Without the legs there is nothing to confirm AGAINST, and a
@@ -1717,7 +1724,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false }: Props) {
           stepDistanceM={navInfo?.stepDistanceM}
           steps={navInfo?.steps}
           isRerouting={rerouting}
-          onBack={() => router.back()}
+          onBack={goBack}
           // The leg being driven: from the stop just cleared to the one ahead.
           // Before the pickup there is no previous stop, so the driver's own
           // position is the start.

@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { BackHandler } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import GoogleNavigationScreen from '../../../../components/maps/google/GoogleNavigationScreen'
 import BookingDetailsScreen from '../../../../components/maps/shared/BookingDetailsScreen'
@@ -21,6 +22,18 @@ export default function MapsPage() {
   // doesn't declare itself.
   const [earlyStart, setEarlyStart] = useState(false)
 
+  // The three stages share one route, so both the on-screen arrow and Android's
+  // back button have to step map/preview → details here; left to the router,
+  // back skipped the details screen and landed on Home.
+  useEffect(() => {
+    if (stage === 'details') return
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setStage('details')
+      return true
+    })
+    return () => sub.remove()
+  }, [stage])
+
   if (stage === 'preview') {
     return (
       <RoutePreviewScreen
@@ -41,5 +54,11 @@ export default function MapsPage() {
     )
   }
 
-  return <GoogleNavigationScreen bookingId={bookingId} earlyStart={earlyStart} />
+  return (
+    <GoogleNavigationScreen
+      bookingId={bookingId}
+      earlyStart={earlyStart}
+      onBack={() => setStage('details')}
+    />
+  )
 }
