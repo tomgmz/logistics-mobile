@@ -6,6 +6,7 @@ import {
   View,
 } from 'react-native'
 import { router, useLocalSearchParams } from 'expo-router'
+import { MaterialIcons } from '@expo/vector-icons'
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller'
 
 import {
@@ -14,6 +15,7 @@ import {
   getStrength, meetsRequirements,
 } from '../../components/auth/password-fields'
 import { completePasswordReset, verifyResetToken } from '../../lib/api/auth.api'
+import { FONTS } from '../../lib/config/fonts'
 
 /**
  * The screen a driver's emailed reset link opens.
@@ -114,12 +116,12 @@ export default function ResetPasswordScreen() {
         </Text>
         <Pressable
           onPress={() => router.replace('/sign-in')}
-          style={({ pressed }) => ({
-            marginTop: 8, paddingVertical: 12, paddingHorizontal: 28, borderRadius: 10,
-            borderWidth: 1, borderColor: 'rgba(77,249,237,0.4)', opacity: pressed ? 0.7 : 1,
-          })}
+          accessibilityRole="button"
+          className="flex-row items-center justify-center self-stretch h-12 mt-2 rounded-full border border-cyan-border bg-black"
+          style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
         >
-          <Text style={{ color: CYAN, fontSize: 13, fontWeight: '700', letterSpacing: 1 }}>
+          <MaterialIcons name="arrow-back" size={18} color={CYAN} style={{ marginRight: 8 }} />
+          <Text className="text-[15px] text-cyan" style={{ fontFamily: FONTS.spartan.semiBold }}>
             Back to sign in
           </Text>
         </Pressable>
@@ -145,17 +147,7 @@ export default function ResetPasswordScreen() {
         <Text style={{ color: MUTED, fontSize: 13, textAlign: 'center', lineHeight: 19 }}>
           Sign in with your new password.
         </Text>
-        <Pressable
-          onPress={() => router.replace('/sign-in')}
-          style={({ pressed }) => ({
-            marginTop: 4, paddingVertical: 13, paddingHorizontal: 34, borderRadius: 10,
-            backgroundColor: CYAN, opacity: pressed ? 0.8 : 1,
-          })}
-        >
-          <Text style={{ color: '#062b28', fontSize: 13, fontWeight: '800', letterSpacing: 1.5 }}>
-            SIGN IN
-          </Text>
-        </Pressable>
+        <PrimaryButton label="Sign in" icon="arrow-forward" onPress={() => router.replace('/sign-in')} />
       </View>
     )
   }
@@ -241,32 +233,70 @@ export default function ResetPasswordScreen() {
             </View>
           )}
 
-          <Pressable
+          <PrimaryButton
+            label="Reset password"
+            icon="lock-reset"
             onPress={submit}
-            disabled={!canSubmit}
-            accessibilityRole="button"
-            accessibilityLabel="Set your new password"
-            style={({ pressed }) => ({
-              paddingVertical: 14,
-              borderRadius: 10,
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: canSubmit ? CYAN : 'rgba(255,255,255,0.08)',
-              opacity: pressed && canSubmit ? 0.85 : 1,
-            })}
-          >
-            {submitting ? (
-              <ActivityIndicator size="small" color="#062b28" />
-            ) : (
-              <Text style={{
-                color: canSubmit ? '#062b28' : 'rgba(255,255,255,0.3)',
-                fontSize: 13, fontWeight: '800', letterSpacing: 1.5,
-              }}>
-                RESET PASSWORD
-              </Text>
-            )}
-          </Pressable>
+            loading={submitting}
+            disabled={!allMet || !passwordsMatch}
+          />
         </View>
     </KeyboardAwareScrollView>
+  )
+}
+
+/**
+ * The sign-in screen's main button, so the reset flow looks like the screen it
+ * came from: full-width cyan pill, Spartan type, an icon after the label.
+ * Stays cyan while sending so the spinner is visible; only an unready form
+ * greys it out.
+ */
+function PrimaryButton({
+  label,
+  icon,
+  onPress,
+  loading,
+  disabled,
+}: {
+  label:     string
+  icon:      keyof typeof MaterialIcons.glyphMap
+  onPress:   () => void
+  loading?:  boolean
+  disabled?: boolean
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={loading || disabled}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: !!(loading || disabled), busy: !!loading }}
+      className={`flex-row items-center justify-center self-stretch gap-2 rounded-full h-12 ${
+        disabled ? 'bg-[#1b1b1b] border border-[#424242]' : 'bg-cyan'
+      }`}
+      style={({ pressed }) => ({
+        opacity: loading ? 0.7 : pressed ? 0.85 : 1,
+        ...(disabled ? null : {
+          shadowColor:   CYAN,
+          shadowOpacity: 0.25,
+          shadowRadius:  10,
+          shadowOffset:  { width: 0, height: 4 },
+          elevation:     4,
+        }),
+      })}
+    >
+      {loading ? (
+        <ActivityIndicator size="small" color="#080808" />
+      ) : (
+        <>
+          <Text
+            className={`text-[15px] ${disabled ? 'text-ink-faint' : 'text-black'}`}
+            style={{ fontFamily: FONTS.spartan.bold }}
+          >
+            {label}
+          </Text>
+          <MaterialIcons name={icon} size={18} color={disabled ? '#555555' : '#080808'} />
+        </>
+      )}
+    </Pressable>
   )
 }
