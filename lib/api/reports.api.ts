@@ -3,8 +3,8 @@ import api from './auth.api'
 /**
  * The driver's Reports module — what used to be the (empty) Maintenance tab.
  *
- * Two ways in, one record. The QUICK ALERT is the SOS: one tap, a countdown, and
- * it goes with whatever it has — location, vehicle and driver are already known,
+ * Two ways in, one record. The QUICK ALERT is the SOS: one tap, a Yes to confirm,
+ * then a call to Operations, and it goes with whatever it has — location, vehicle and driver are already known,
  * so a useful alert can be sent without the driver typing anything. The DETAILED
  * REPORT is the same row with the fields they had time to fill in.
  *
@@ -73,6 +73,7 @@ export interface CreateReportInput {
   longitude?:         number | null
   accuracy_m?:        number | null
   address?:           string | null
+  speed_kmh?:         number | null
   blowbagets_items?:  BlowbagetsItems | null
   trip_can_continue?: boolean | null
 }
@@ -82,9 +83,24 @@ export async function listMyReports(): Promise<DriverReport[]> {
   return data.data ?? []
 }
 
-export async function createReport(input: CreateReportInput): Promise<DriverReport> {
+/** Who the quick alert phones. Only a role and a number — never a staff name. */
+export interface EmergencyContact {
+  role:  'operations_manager' | 'admin' | string
+  phone: string
+}
+
+export async function createReport(
+  input: CreateReportInput,
+): Promise<DriverReport & { call_contact?: EmergencyContact | null }> {
   const { data } = await api.post('/driver/reports', input)
-  return data.data
+  // A quick alert's response also carries the number to call, beside the report.
+  return { ...data.data, call_contact: data.call_contact }
+}
+
+/** The Operations Manager on duty, else the Company Administrator. Null when nobody has a number. */
+export async function getEmergencyContact(): Promise<EmergencyContact | null> {
+  const { data } = await api.get('/driver/emergency-contact')
+  return data.data ?? null
 }
 
 /**

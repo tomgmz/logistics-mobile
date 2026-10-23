@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router'
 
 import { FONTS } from '../../lib/config/fonts'
 import { ReportOptionModal } from './ReportOptionModal'
-import { sendQuickAlert } from '../../lib/quickAlert'
+import { QuickAlertConfirm } from './QuickAlertConfirm'
 
 /**
  * SOS, on the navigation map.
@@ -47,6 +47,7 @@ export function SosButton({
 }: Props) {
   const router = useRouter()
   const [optionsOpen, setOptionsOpen] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
   const detailHref = {
     pathname: '/driver/reports/new' as const,
@@ -94,13 +95,19 @@ export function SosButton({
         visible={optionsOpen}
         contextRef={contextRef}
         contextDate={contextDate}
-        // Straight out, with no countdown and no panel. The driver stays on the
-        // map: the alert is away and somebody is already moving, so taking them
-        // off navigation mid-incident would be the wrong thing to do with the
-        // next ten seconds. The report is in their list when they are ready.
-        onQuickAlert={() => { setOptionsOpen(false); void sendQuickAlert({ bookingId }) }}
+        // One Yes/No, then straight out, with no countdown and no panel. The
+        // driver stays on the map: taking them off navigation mid-incident would
+        // be the wrong thing to do with the next ten seconds. The report is in
+        // their list when they are ready.
+        onQuickAlert={() => { setOptionsOpen(false); setConfirmOpen(true) }}
         onDetailed={() => { setOptionsOpen(false); router.push(detailHref) }}
         onClose={() => setOptionsOpen(false)}
+      />
+
+      <QuickAlertConfirm
+        visible={confirmOpen}
+        bookingId={bookingId}
+        onClose={() => setConfirmOpen(false)}
       />
     </>
   )

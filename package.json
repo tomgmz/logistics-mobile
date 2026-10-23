@@ -11,10 +11,14 @@
     "web": "expo start --web"
   },
   "dependencies": {
+    "@config-plugins/react-native-webrtc": "13.0.0",
     "@emoji-mart/data": "^1.2.1",
     "@expo/vector-icons": "^15.1.1",
     "@googlemaps/react-native-navigation-sdk": "^0.16.1",
     "@gorhom/bottom-sheet": "^5.2.9",
+    "@livekit/react-native": "3.0.0",
+    "@livekit/react-native-expo-plugin": "1.0.3",
+    "@livekit/react-native-webrtc": "144.2.0",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/netinfo": "11.4.1",
     "@supabase/supabase-js": "^2.106.2",
@@ -36,6 +40,7 @@
     "expo-updates": "~29.0.18",
     "framer-motion": "^12.38.0",
     "jwt-decode": "^4.0.0",
+    "livekit-client": "2.22.3",
     "lucide-react-native": "^1.8.0",
     "moti": "^0.30.0",
     "nativewind": "^4.2.2",

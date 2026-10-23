@@ -11,6 +11,7 @@ import { useSessionRevokedRealtime } from '../../hooks/useSessionRevokedRealtime
 import { useTrackingResume } from '../../hooks/useTrackingResume'
 import { useDriverId } from '../../lib/store/auth.store'
 import { startAutoFlush, flushOnAppForeground } from '../../lib/offlineQueue'
+import { prefetchEmergencyContact } from '../../lib/emergencyCall'
 // Imported for its side effect: defining the background location task at module
 // scope. The OS can invoke that task before any screen has mounted — including
 // in a fresh JS context after the app was evicted — so the definition has to be
@@ -59,6 +60,12 @@ export default function DriverLayout() {
 
   // Drain any queued offline status updates (arrivals confirmed in a dead zone)
   // on reconnect and on app foreground, even after the nav screen has unmounted.
+  // Cache the quick alert's call number while there is data, so the SOS call
+  // still works later in a spot with signal but no data.
+  useEffect(() => {
+    if (signedIn && role === 'driver') void prefetchEmergencyContact()
+  }, [signedIn, role])
+
   useEffect(() => {
     const stopNet = startAutoFlush()
     const stopApp = flushOnAppForeground()

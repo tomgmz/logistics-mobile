@@ -1,16 +1,18 @@
 import { Alert } from 'react-native'
 import * as Location from 'expo-location'
 
-import { createReport } from './api/reports.api'
+import { createReport, type EmergencyContact } from './api/reports.api'
+import { cacheEmergencyContact } from './emergencyCall'
 import { readCurrentFix } from './stopGeofence'
 
 /**
- * The SOS quick alert: raised the moment the driver asks for it.
+ * The SOS quick alert: raised the moment the driver says Yes.
  *
  * There is no countdown and no screen. The old flow opened a panel, ran twenty
- * seconds down and asked for a swipe, which buys a chance to cancel a false
- * alarm — but it also stands between a driver in trouble and the only thing they
- * need from this app. Tapping QUICK ALERT is now the whole interaction.
+ * seconds down and asked for a swipe, which stood between a driver in trouble
+ * and the only thing they need from this app. A single Yes/No question
+ * (QuickAlertConfirm) is the guard against a false alarm now. After Yes, the
+ * alert goes out and the phone dials the Operations Manager on duty.
  *
  * Sending is deliberately NOT blocked on the position. Coordinates are the most
  * valuable thing the alert carries, so they are worth a moment's wait, but only
@@ -42,15 +44,21 @@ async function fixWithinDeadline() {
   ])
 }
 
+export interface QuickAlertResult {
+  /** The new report's id, or null when the alert could not be sent. */
+  reportId:    string | null
+  /** Who to phone, as the server named them with this alert. */
+  callContact: EmergencyContact | null
+}
+
 /**
- * Raise the alert. Resolves with the new report's id, or null when it could not
- * be sent.
+ * Raise the alert.
  *
  * Success is silent by design — the driver asked for one tap and got it. Failure
  * is NOT: an alert nobody received, that the driver believes is on its way, is
  * the worst outcome this module can produce, so that one case speaks up.
  */
-export async function sendQuickAlert({ bookingId }: QuickAlertInput = {}): Promise<string | null> {
+export async function sendQuickAlert({ bookingId }: QuickAlertInput = {}): Promise<QuickAlertResult> {
   const fix = await fixWithinDeadline()
 
   // Best-effort street address, and only from a fix we already have. Given its
@@ -81,15 +89,18 @@ export async function sendQuickAlert({ bookingId }: QuickAlertInput = {}): Promi
       latitude:      fix?.latitude ?? null,
       longitude:     fix?.longitude ?? null,
       accuracy_m:    fix?.accuracy_m ?? null,
+      // Was the truck still moving? Ops read a rollover at speed differently from a stop at the kerb.
+      speed_kmh:     fix?.speed_mps != null ? Math.round(fix.speed_mps * 3.6 * 10) / 10 : null,
       address,
     })
-    return report.report_id
+    void cacheEmergencyContact(report.call_contact)
+    return { reportId: report.report_id, callContact: report.call_contact ?? null }
   } catch (e: any) {
     Alert.alert(
       'Alert not sent',
       e?.response?.data?.message ??
-        'The emergency alert could not be sent — check your signal and tap SOS again.',
+        'The emergency alert could not be sent. Call Operations directly, and tap SOS again when you have signal.',
     )
-    return null
+    return { reportId: null, callContact: null }
   }
 }

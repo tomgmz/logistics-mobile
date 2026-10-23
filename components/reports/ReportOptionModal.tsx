@@ -1,8 +1,9 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import { Modal, Pressable, Text, TouchableOpacity, View } from 'react-native'
 import { X } from 'lucide-react-native'
 
 import { FONTS } from '../../lib/config/fonts'
+import { prefetchEmergencyContact } from '../../lib/emergencyCall'
 
 /**
  * "REPORT A CASE" — the fork between the two ways of raising something.
@@ -41,6 +42,10 @@ interface Props {
 export function ReportOptionModal({
   visible, contextRef, contextDate, onQuickAlert, onDetailed, onClose,
 }: Props) {
+  // Freshen the number the quick alert will call while the driver is still
+  // choosing, so it is current if they pick QUICK ALERT.
+  useEffect(() => { if (visible) void prefetchEmergencyContact() }, [visible])
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable

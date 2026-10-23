@@ -40,6 +40,8 @@ export interface StopFix {
   latitude:   number
   longitude:  number
   accuracy_m: number | null
+  /** GPS speed in m/s; null when the phone didn't report one (it reports -1 for "unknown"). */
+  speed_mps?: number | null
 }
 
 /**
@@ -73,6 +75,7 @@ export async function readCurrentFix(): Promise<StopFix | null> {
       latitude:   position.coords.latitude,
       longitude:  position.coords.longitude,
       accuracy_m: position.coords.accuracy ?? null,
+      speed_mps:  position.coords.speed != null && position.coords.speed >= 0 ? position.coords.speed : null,
     }
   } catch {
     return null

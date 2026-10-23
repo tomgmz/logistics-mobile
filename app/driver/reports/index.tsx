@@ -20,7 +20,7 @@ import {
   type ReportStatus,
 } from '../../../lib/api/reports.api'
 import { ReportOptionModal } from '../../../components/reports/ReportOptionModal'
-import { sendQuickAlert } from '../../../lib/quickAlert'
+import { QuickAlertConfirm } from '../../../components/reports/QuickAlertConfirm'
 import { useLiveSignal } from '../../../hooks/useLiveSignal'
 
 /**
@@ -78,6 +78,7 @@ export default function ReportsScreen() {
   const [filter, setFilter]     = useState<FilterKey>('All')
 
   const [optionsOpen, setOptionsOpen] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
   const load = useCallback(async (isRefresh = false) => {
     if (!isRefresh) setLoading(true)
@@ -245,7 +246,8 @@ export default function ReportsScreen() {
       <ReportOptionModal
         visible={optionsOpen}
         /*
-          Sent on the tap, with no countdown and no panel in between.
+          Sent after one Yes/No, with no countdown and no panel in between, and
+          followed by a call to the Operations Manager on duty.
 
           Sending is the END of the quick path, not the start of a form. It used
           to push straight into the report so the driver could describe it while
@@ -258,14 +260,16 @@ export default function ReportsScreen() {
           report when the situation allows, the same way they add a proof photo
           once signal returns.
         */
-        onQuickAlert={() => {
-          setOptionsOpen(false)
-          void sendQuickAlert({ bookingId: activeBookingId }).then((id) => {
-            if (id) load(true)
-          })
-        }}
+        onQuickAlert={() => { setOptionsOpen(false); setConfirmOpen(true) }}
         onDetailed={() => { setOptionsOpen(false); router.push('/driver/reports/new') }}
         onClose={() => setOptionsOpen(false)}
+      />
+
+      <QuickAlertConfirm
+        visible={confirmOpen}
+        bookingId={activeBookingId}
+        onClose={() => setConfirmOpen(false)}
+        onSent={() => load(true)}
       />
     </View>
   )
