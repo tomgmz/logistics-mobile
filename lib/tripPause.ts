@@ -1,23 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 
-import { enqueue, flush, queuedIds } from './offlineQueue'
-import { readCurrentFix } from './stopGeofence'
-
 /**
- * The driver pauses a delivery — weather, a breakdown, a closed pickup or
- * drop-off — and says why. The web shows it on the booking until they resume;
- * the client is told the reason, never the note.
+ * A pause on the delivery: weather, a breakdown, a closed pickup or drop-off.
+ * Only the office (Operations or the Company Administrator) pauses and resumes
+ * a delivery; the driver sees it here and waits. The office's note reaches the
+ * driver in the "paused by the office" notification.
  *
- * Both actions go through the offline queue, like a stop confirmation: a driver
- * sitting out a typhoon is exactly the driver with no signal, and a pause that
- * only exists on their phone tells the office nothing. The queue is FIFO, so a
- * pause, its resume and the stops around them reach the server in the order they
- * happened.
- *
- * Because the server may not hear about it for hours, the phone keeps its own
- * record of the pause in force. That record is what the screens show while
- * anything about this booking's pause is still queued; once the queue is clear,
- * the server's copy (bookings.paused_at / pause_reason) is the truth again.
+ * The phone keeps the last pause it saw, so the banner stays up in a dead zone;
+ * whenever the booking can be read, the server's copy (bookings.paused_at /
+ * pause_reason) is the truth.
  */
 
 export const PAUSE_REASONS = [
@@ -37,7 +28,7 @@ export function pauseReasonLabel(reason: string | null | undefined): string {
 
 export interface TripPause {
   reason:   PauseReason
-  /** The driver's own note. Present only on this phone's copy; the server never sends it back. */
+  /** Not sent by the server (staff-only); kept for pauses saved by older builds. */
   note?:    string | null
   pausedAt: string
 }
@@ -57,94 +48,27 @@ async function writeLocal(bookingId: string, pause: TripPause | null): Promise<v
   try {
     if (pause) await AsyncStorage.setItem(storageKey(bookingId), JSON.stringify(pause))
     else await AsyncStorage.removeItem(storageKey(bookingId))
-  } catch { /* the queue still carries it; only the banner is at stake */ }
-}
-
-/** Anything about this booking's pause still waiting for signal. */
-async function pauseChangeQueued(bookingId: string): Promise<boolean> {
-  const ids = await queuedIds()
-  return ids.some((id) => id.startsWith(`pause:${bookingId}:`) || id.startsWith(`resume:${bookingId}:`))
+  } catch { /* only the offline banner is at stake */ }
 }
 
 /**
- * Pause the delivery. Resolves as soon as it is durably queued — the driver never
- * waits on the network. Where they are is read now, because by the time a queued
- * pause reaches the server the truck may have been towed.
- */
-export async function pauseTrip(bookingId: string, reason: PauseReason, note: string): Promise<TripPause> {
-  const pausedAt = new Date().toISOString()
-  const pause: TripPause = { reason, note: note.trim(), pausedAt }
-  await writeLocal(bookingId, pause)
-
-  const fix = await readCurrentFix().catch(() => null)
-  await enqueue({
-    id:   `pause:${bookingId}:${Date.parse(pausedAt)}`,
-    kind: 'pause',
-    url:  `/driver/bookings/${bookingId}/pause`,
-    body: {
-      reason,
-      note:      pause.note,
-      paused_at: pausedAt,
-      ...(fix ? { latitude: fix.latitude, longitude: fix.longitude, accuracy_m: fix.accuracy_m } : {}),
-    },
-  })
-  void flush()
-  return pause
-}
-
-/** The driver pressed Resume. */
-export async function resumeTrip(bookingId: string): Promise<void> {
-  const resumedAt = new Date().toISOString()
-  await writeLocal(bookingId, null)
-  await enqueue({
-    id:   `resume:${bookingId}:${Date.parse(resumedAt)}`,
-    kind: 'resume',
-    url:  `/driver/bookings/${bookingId}/resume`,
-    body: { resumed_at: resumedAt },
-  })
-  void flush()
-}
-
-/**
- * A pickup or drop-off is being confirmed: the truck is plainly moving, so any
- * pause this phone holds ends now.
- *
- * Sent as a real resume, queued BEFORE the confirmation, rather than left to the
- * server's automatic end. The queue drains in order, so the resume lands first
- * and carries the moment the driver confirmed; left to the server, a pause ended
- * in a dead zone would be stamped with whenever the phone found signal again,
- * hours later. The server's automatic end stays as the backstop for a pause this
- * phone did not know about.
- */
-export async function endPauseForProgress(bookingId: string): Promise<void> {
-  if (!(await readLocal(bookingId))) return
-  await resumeTrip(bookingId)
-}
-
-/**
- * The pause in force, as this phone should show it.
- *
- * While a pause or resume is still queued, the phone's own record wins — the
- * server hasn't heard yet. Otherwise the server's booking row is the truth, and
- * the phone's copy is brought in line with it (an office resume from the web,
- * or a pause that ended when a stop was confirmed).
+ * The pause in force, as this phone should show it: the server's booking row
+ * when there is one (the phone's copy is brought in line with it), otherwise the
+ * last pause this phone saw.
  */
 export async function currentPause(
   bookingId: string,
   serverBooking?: { paused_at?: string | null; pause_reason?: string | null } | null,
 ): Promise<TripPause | null> {
-  const local = await readLocal(bookingId)
-  if (!serverBooking || await pauseChangeQueued(bookingId)) return local
+  if (!serverBooking) return readLocal(bookingId)
 
   if (!serverBooking.paused_at) {
-    if (local) await writeLocal(bookingId, null)
+    await writeLocal(bookingId, null)
     return null
   }
 
   const server: TripPause = {
     reason:   (serverBooking.pause_reason ?? 'other') as PauseReason,
-    // The server never sends the note back; keep the one this phone typed.
-    note:     local?.note ?? null,
     pausedAt: serverBooking.paused_at,
   }
   await writeLocal(bookingId, server)

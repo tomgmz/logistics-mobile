@@ -44,7 +44,7 @@ import { uploadProofPhoto, type ProofStamp } from './proofPhoto'
 const MAX_CONFLICT_ATTEMPTS = 5
 
 export interface QueuedAction {
-  id:        string                    // 'pickup:<bookingId>' | 'delivery:<stopId>' | 'complete:<bookingId>' | 'pause:<bookingId>:<ms>' | 'resume:<bookingId>:<ms>'
+  id:        string                    // 'pickup:<bookingId>' | 'delivery:<stopId>' | 'complete:<bookingId>' | 'pause:/resume:<bookingId>:<ms>' (older builds only)
   kind:      'pickup' | 'delivery' | 'complete' | 'pause' | 'resume' | 'start'
   url:       string                    // '/driver/bookings/:id/pickup' | '.../destinations/:id/delivered' | '.../complete'
   // PATCH unless said otherwise; Start Navigation ('start:<bookingId>') is a POST.

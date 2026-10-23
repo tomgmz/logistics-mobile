@@ -1,14 +1,15 @@
 import React from 'react'
-import { Text, TouchableOpacity, View, type ViewStyle } from 'react-native'
-import { PauseCircle, Play } from 'lucide-react-native'
+import { Text, View, type ViewStyle } from 'react-native'
+import { PauseCircle } from 'lucide-react-native'
 
 import { pauseReasonLabel, type TripPause } from '../../../lib/tripPause'
 import { C } from '../../../theme/navigation.theme'
 
 /**
- * "Delivery paused" with the reason, the driver's note and when it started,
- * and the one thing to do about it: Resume. Shown on the navigation map and on
- * the booking screen, so a paused driver can't miss it in either place.
+ * "Delivery paused" with the reason and when it started. Read-only: only the
+ * office (Operations or the Company Administrator) pauses and resumes a
+ * delivery. Shown on the navigation map and on the booking screen, so a paused
+ * driver can't miss it in either place.
  */
 
 function sinceLabel(iso: string): string {
@@ -19,11 +20,9 @@ function sinceLabel(iso: string): string {
 }
 
 export function PausedBanner({
-  pause, onResume, style,
+  pause, style,
 }: {
   pause:    TripPause
-  /** Omitted for a read-only view (the second driver). */
-  onResume?: () => void
   style?:   ViewStyle
 }) {
   const since = sinceLabel(pause.pausedAt)
@@ -44,23 +43,10 @@ export function PausedBanner({
         {!!pause.note && (
           <Text style={{ color: C.dimWhite, fontSize: 12, lineHeight: 17 }} numberOfLines={2}>{pause.note}</Text>
         )}
-        {!!since && <Text style={{ color: C.dimmer, fontSize: 11 }}>Since {since}</Text>}
+        <Text style={{ color: C.dimmer, fontSize: 11 }}>
+          {since ? `Since ${since} · ` : ''}Paused by the office. Wait until they resume it.
+        </Text>
       </View>
-      {onResume && (
-        <TouchableOpacity
-          onPress={onResume}
-          accessibilityRole="button"
-          accessibilityLabel="Resume the delivery"
-          style={{
-            flexDirection: 'row', alignItems: 'center', gap: 6,
-            paddingVertical: 9, paddingHorizontal: 12, borderRadius: 12,
-            backgroundColor: C.green,
-          }}
-        >
-          <Play size={14} color="#000" fill="#000" />
-          <Text style={{ color: '#000', fontSize: 13, fontWeight: '800' }}>Resume</Text>
-        </TouchableOpacity>
-      )}
     </View>
   )
 }

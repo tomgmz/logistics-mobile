@@ -15,6 +15,7 @@ import NetInfo from '@react-native-community/netinfo'
 import { isOnline } from '../../../lib/network'
 import { useDriverId, useAuthHydrated, useAuthStore } from '../../../lib/store/auth.store'
 import { getMe } from '../../../lib/api/auth.api'
+import { useLiveSignal } from '../../../hooks/useLiveSignal'
 import { useAvailabilityStore } from '../../../lib/store/availability.store'
 import { FONTS } from '../../../lib/config/fonts'
 import { Package, Search, Truck, TriangleAlert, WifiOff } from 'lucide-react-native'
@@ -369,6 +370,14 @@ export default function DriverBookingList() {
     }
     loadCacheThenFetch()
   }, [hasHydrated, driverId])
+
+  // Live, like Home: a booking assigned to or taken off this driver appears or
+  // disappears without a pull-to-refresh. Signals carry only an id; the list is
+  // re-read from the API, which scopes it to this driver.
+  useLiveSignal('live:bookings', () => { void loadCacheThenFetch(true) }, {
+    enabled: hasHydrated && !!driverId,
+    debounceMs: 1000,
+  })
 
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener((state) => {

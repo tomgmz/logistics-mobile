@@ -7,7 +7,7 @@
  * beyond that lives in My Assignments — the card opens it on the Active tab,
  * "See All" opens it on All.
  */
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useState } from 'react'
 import {
   View,
   Text,
@@ -22,6 +22,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ChevronsRight, ChevronRight, PackageOpen } from 'lucide-react-native'
 
 import { useDriverId, useAuthHydrated, useAuthStore } from '../../../lib/store/auth.store'
+import { useLiveSignal } from '../../../hooks/useLiveSignal'
 import { useAvailabilityStore } from '../../../lib/store/availability.store'
 import AvailabilityToggle from '../../../components/ui/AvailabilityToggle'
 import CoachMarkTour, { CoachStep } from '../../../components/CoachMarkTour'
@@ -108,12 +109,6 @@ export default function DriverHome() {
   const routesTarget       = useCoachTarget('home.routes')
   const quickTarget        = useCoachTarget('home.quick')
 
-  // Back from starting a trip, the pill has to move from "Assigned" to "On
-  // delivery" without a pull-to-refresh, so re-read it whenever home is shown.
-  useFocusEffect(useCallback(() => {
-    if (hasHydrated && driverId) void refreshAvailability()
-  }, [hasHydrated, driverId, refreshAvailability]))
-
   const load = useCallback(async (isRefresh = false) => {
     if (!hasHydrated || !driverId) return
 
@@ -144,11 +139,24 @@ export default function DriverHome() {
     }
   }, [driverId, hasHydrated, refreshAvailability])
 
-  useEffect(() => {
+  // Re-read whenever home is shown (first open included): back from starting a
+  // trip, the pill has to move from "Assigned" to "On delivery", and a booking
+  // assigned while the driver was on another screen has to be on the card.
+  useFocusEffect(useCallback(() => {
     if (!hasHydrated) return
     if (!driverId) { setLoading(false); return }
-    load()
-  }, [hasHydrated, driverId])
+    void load()
+  }, [hasHydrated, driverId, load]))
+
+  // Live: a booking assigned to this driver (or taken off them) shows up on the
+  // card without a pull-to-refresh. Assigning writes the booking and delivery
+  // rows, which fire `live:bookings`; the signal carries only an id, so the list
+  // is re-read from the API, which scopes it to this driver. Also re-read when
+  // the app returns to the foreground (signals sent in the background are lost).
+  useLiveSignal('live:bookings', () => { void load(true) }, {
+    enabled: hasHydrated && !!driverId,
+    debounceMs: 1000,
+  })
 
   const onRefresh = useCallback(() => {
     setRefreshing(true)

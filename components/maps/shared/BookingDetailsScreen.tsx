@@ -26,7 +26,6 @@ import {
   MapPin,
   Navigation,
   PackageCheck,
-  PauseCircle,
   Repeat,
   Road,
   Truck,
@@ -71,8 +70,7 @@ import { startDelivery, type StartOutcome } from '../../../lib/deliveryStart'
 import { useCrewWatch } from '../../../hooks/useCrewWatch'
 import { useStopSteps, markStepFinished } from '../../../lib/stopSteps'
 import { StopSteps } from './StopSteps'
-import { currentPause, endPauseForProgress, pauseTrip, resumeTrip, type TripPause } from '../../../lib/tripPause'
-import { PauseTripModal } from './PauseTripModal'
+import { currentPause, type TripPause } from '../../../lib/tripPause'
 import { PausedBanner } from './PausedBanner'
 
 /**
@@ -307,8 +305,6 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
   // immediately instead of waiting on a refetch that may be offline.
   const [returned, setReturned] = useState(false)
 
-  // The pause in force (weather, breakdown, closed stop…), and whether the
-  // "why are you stopping" pop-up is open.
   // After the office replaced the vehicle on the road with the load on the old
   // one: this driver moves it across and confirms it before any drop-off.
   const [transfer, setTransfer] = useState<LoadTransfer | null>(null)
@@ -316,8 +312,9 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
   // total loaded per trip.
   const stopSteps = useStopSteps(bookingId)
   const [transferOpen, setTransferOpen] = useState(false)
+  // The pause the office put on the delivery (weather, breakdown, closed stop…).
+  // The driver can't pause or resume; only the office can.
   const [pause, setPause]         = useState<TripPause | null>(null)
-  const [pauseOpen, setPauseOpen] = useState(false)
 
   const headerTarget  = useCoachTarget('booking.header')
   const routeTarget   = useCoachTarget('booking.route')
@@ -587,18 +584,6 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
     return () => clearInterval(t)
   }, [pause, offline, bookingId])
 
-  const confirmPause = useCallback(async (reason: Parameters<typeof pauseTrip>[1], note: string) => {
-    setPause(await pauseTrip(bookingId, reason, note))
-    setPauseOpen(false)
-  }, [bookingId])
-
-  const confirmResume = useCallback(() => {
-    Alert.alert('Resume the delivery?', 'The office and the client will see that you are moving again.', [
-      { text: 'Not yet', style: 'cancel' },
-      { text: 'Resume', onPress: () => { setPause(null); void resumeTrip(bookingId) } },
-    ])
-  }, [bookingId])
-
   /* ── Proof of delivery, supplied from here ──────────────────────────────
    *
    * Two different things behind one button, because to the driver they are one
@@ -668,9 +653,6 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
     setTransferOpen(false)
     if (!pending) return
     setTransfer(null)
-    // The server ends the pause with the transfer; mirror it here at once.
-    setPause(null)
-    endPauseForProgress(bookingId).catch(() => {})
     void confirmLoadTransfer(bookingId, pending.trip_id ?? bookingId, photoUri, proof)
   }, [transfer, bookingId])
 
@@ -684,10 +666,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
     // from the navigation map does, so a stop confirmed here with no signal is
     // still sent when one returns.
     setSendingStops((prev) => new Set(prev).add(target.stop.trip_stop_id))
-    // Any pause ends here, queued ahead of the confirmation (see endPauseForProgress).
-    setPause(null)
-    endPauseForProgress(bookingId).catch(() => {})
-      .then(() => confirmTripStop(target.stop.trip_stop_id, photoUri, proof, null))
+    confirmTripStop(target.stop.trip_stop_id, photoUri, proof, null)
       .catch(() => {})
       .finally(() => { void refreshQueued() })
     // The confirmation is the stop's finish: Departed is the next step to tap.
@@ -1173,7 +1152,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
                 {`You are the second driver on this booking. ${leadName || 'The main driver'} confirms the pickup, stops and proof photos in the app.`}
               </Text>
             </View>
-            {/* The main driver pauses and resumes; the second driver just sees it. */}
+            {/* Only the office pauses and resumes; both drivers just see it. */}
             {pause && !isDone && <PausedBanner pause={pause} />}
             {onPreview && (
               <TouchableOpacity
@@ -1306,25 +1285,9 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
           </View>
         )}
 
-        {/* Pausing: once the job has started (moving, or navigation begun before
-            the pickup — a closed pickup point is one of the reasons), and until
-            every drop-off is done. */}
-        {(inTransit || resumable) && !isDone && (
-          pause ? (
-            <PausedBanner pause={pause} onResume={confirmResume} />
-          ) : (
-            <TouchableOpacity
-              activeOpacity={0.75}
-              onPress={() => setPauseOpen(true)}
-              accessibilityRole="button"
-              accessibilityLabel="Pause this delivery and say why"
-              style={[s.previewBtn, { borderColor: D.amber }]}
-            >
-              <PauseCircle size={16} color={D.amber} strokeWidth={2} />
-              <Text style={[s.previewText, { color: D.amber }]}>Pause Delivery</Text>
-            </TouchableOpacity>
-          )
-        )}
+        {/* The office paused the delivery. Read-only: only Operations or the
+            Company Administrator can resume it. */}
+        {pause && !isDone && <PausedBanner pause={pause} />}
 
         {/* Always available: seeing the run is never gated, only running it. */}
         {onPreview && !isDone && !inTransit && (
@@ -1342,12 +1305,6 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
         </>
         )}
       </View>
-
-      <PauseTripModal
-        visible={pauseOpen}
-        onCancel={() => setPauseOpen(false)}
-        onConfirm={confirmPause}
-      />
 
       {/* Confirming a stop from here rather than from the map: same modal, so a
           stop confirmed in the yard carries the same photo AND position as one
