@@ -485,4 +485,40 @@ export async function passkeyAuthVerify(credential: any): Promise<AuthResponse> 
   return auth
 }
 
+// ---------------------------------------------------------------------------
+// Signed-in passkey setup — for 8338's own drivers, who already have a session.
+//
+// These carry the Bearer token like any other signed-in call; '/auth/passkey/register'
+// is deliberately NOT in the interceptor's exclusion list above.
+
+export interface MyPasskey {
+  credential_pk: string
+  device_label:  string | null
+  backed_up:     boolean
+  last_used_at:  string | null
+  created_at:    string
+}
+
+export async function passkeyRegisterOptions(): Promise<any> {
+  const { data } = await api.post<{ status: string; data: any }>(
+    '/auth/passkey/register/options',
+    {},
+  )
+  return data.data
+}
+
+/** No session comes back: the driver is already signed in. */
+export async function passkeyRegisterVerify(credential: any, label?: string): Promise<void> {
+  await api.post('/auth/passkey/register/verify', { credential, device_label: label })
+}
+
+export async function listMyPasskeys(): Promise<MyPasskey[]> {
+  const { data } = await api.get<{ status: string; data: MyPasskey[] }>('/auth/passkey/credentials')
+  return data.data ?? []
+}
+
+export async function removeMyPasskey(credentialPk: string): Promise<void> {
+  await api.delete(`/auth/passkey/credentials/${encodeURIComponent(credentialPk)}`)
+}
+
 export default api

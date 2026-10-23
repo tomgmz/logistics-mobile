@@ -831,6 +831,13 @@ export default function SignInScreen() {
       // driver block the app routes on, so nothing is stored until it is in hand.
       const me = await getMe()
       setUser(me)
+      // A company driver can sign in by passkey too, and an administrator may
+      // have flagged their password for a change; honour it as the other paths do.
+      if (me.must_change_password) {
+        navigated = true
+        router.replace('/change-password')
+        return
+      }
       const route = getMobileRoute(me.role)
       if (route === '/') {
         setError(`Role "${me.role}" has no mobile access.`)
@@ -1003,17 +1010,18 @@ export default function SignInScreen() {
                 {error && <ErrorRow message={error} />}
 
                 <SubmitButton
-                  label="Continue"
+                  label="Sign in"
                   icon="arrow-forward"
                   onPress={handleEmailSubmit}
                   loading={loading}
                 />
 
                 {/*
-                  Passkey sign-in, for drivers from outside vendors who have no
-                  password at all. Shown only when this phone can actually use
-                  one, so it is never a button that leads to a refusal. It skips
-                  the email field entirely — the OS picks the account.
+                  Passkey sign-in: the only way in for vendor drivers, and an
+                  option for 8338 drivers who set one up from the account menu.
+                  Shown only when this phone can actually use one, so it is
+                  never a button that leads to a refusal. It skips the email
+                  field entirely — the OS picks the account.
                 */}
                 {passkeySupported && (
                   <>

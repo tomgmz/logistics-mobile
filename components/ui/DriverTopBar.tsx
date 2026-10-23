@@ -6,7 +6,7 @@
  * There is no sidebar behind it, so this bar carries the whole chrome: the
  * wordmark is the way home, screens below home get a back chevron, and the
  * profile circle opens the menu that used to live in the drawer (account,
- * change password, sign out).
+ * passkey sign-in, sign out).
  */
 import React, { useState } from 'react'
 import {
@@ -21,7 +21,7 @@ import {
 import { MotiView } from 'moti'
 import { useRouter, usePathname } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { Bell, MessageCircle, ChevronLeft, LogOut } from 'lucide-react-native'
+import { Bell, MessageCircle, ChevronLeft, LogOut, KeyRound } from 'lucide-react-native'
 
 import { useAuthStore } from '../../lib/store/auth.store'
 import { useMessagingStore } from '../../lib/store/messaging.store'
@@ -47,6 +47,7 @@ const TITLES: Record<string, string> = {
   // mid-route is an accident, a hold-up or a colleague who has collapsed, and
   // filing those under maintenance told them the screen was not for them.
   '/driver/reports':           'Reports',
+  '/driver/passkeys':          'Passkey Sign-in',
 }
 
 const COLORS = {
@@ -203,6 +204,15 @@ export default function DriverTopBar() {
             </View>
 
             <View style={styles.menuLine} />
+
+            <MenuRow
+              icon={<KeyRound size={16} color={COLORS.cyan} />}
+              label="Passkey sign-in"
+              onPress={() => {
+                setMenuOpen(false)
+                router.push('/driver/passkeys')
+              }}
+            />
 
             <MenuRow
               icon={<LogOut size={16} color={COLORS.danger} />}
