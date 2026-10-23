@@ -11,6 +11,15 @@ loadEnv({ path: path.resolve(__dirname, '.env') })
 const googleServicesFile = process.env.GOOGLE_SERVICES_JSON ?? path.resolve(__dirname, 'google-services.json')
 const androidGoogleServices = existsSync(googleServicesFile) ? { googleServicesFile } : {}
 
+// Passkey RP ID — must match the backend's WEBAUTHN_RP_ID.
+const PASSKEY_DOMAIN = '8338logistics.delivery'
+
+// iPhone passkeys need the Associated Domains entitlement, which Apple grants only
+// on a PAID Developer Program membership; declaring it on a free profile fails the
+// build. So it is switched on per build with EXPO_PUBLIC_IOS_PASSKEYS=1, and the
+// same variable tells lib/passkeys.ts to offer passkeys on iPhone.
+const iosPasskeys = process.env.EXPO_PUBLIC_IOS_PASSKEYS === '1'
+
 export default {
   expo: {
     scheme: 'logistics-mobile',
@@ -32,20 +41,20 @@ export default {
       supportsTablet: true,
       bundleIdentifier: 'ph.logistics8338.mobile',
       buildNumber: '1',
-      // NOTE: passkeys on iOS would need
-      //   associatedDomains: ['webcredentials:<WEBAUTHN_RP_ID>']
-      // here, plus /.well-known/apple-app-site-association on that host (the file
-      // and its Content-Type header are already prepared in logistics-frontend).
-      // It is deliberately NOT set: Associated Domains is unavailable on a free
-      // provisioning profile, so declaring it fails the build outright. The app
-      // runs fine on iOS without it — vendor-driver passkey sign-in is simply
-      // Android-only, which checkPasskeySupport() in lib/passkeys.ts says plainly.
+      // Passkeys on iPhone: only with EXPO_PUBLIC_IOS_PASSKEYS=1 (see iosPasskeys
+      // above). Also needs /.well-known/apple-app-site-association on the domain
+      // with the real Team ID (logistics-frontend/public/.well-known).
+      ...(iosPasskeys && { associatedDomains: [`webcredentials:${PASSKEY_DOMAIN}`] }),
       config: {
         googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
       },
-      "infoPlist": {
-      "ITSAppUsesNonExemptEncryption": false
-    }
+      infoPlist: {
+        ITSAppUsesNonExemptEncryption: false,
+        // `location`: live tracking with the screen locked (expo-location adds it
+        // too). `audio`: keeps the emergency call's microphone and speaker open
+        // when the driver leaves the app mid-call, as Android's call does.
+        UIBackgroundModes: ['location', 'audio'],
+      },
     },
     android: {
       ...androidGoogleServices,
@@ -99,7 +108,7 @@ export default {
       // Mandatory Android core-library desugaring for the Navigation SDK.
       "./plugins/with-google-nav",
       // Passkey site link (asset_statements). Must match the backend's WEBAUTHN_RP_ID.
-      ["./plugins/with-passkey-asset-links", { domain: "8338logistics.delivery" }],
+      ["./plugins/with-passkey-asset-links", { domain: PASSKEY_DOMAIN }],
       // Push notifications for messages.
       [
         "expo-notifications",
@@ -137,6 +146,9 @@ export default {
             "8338 Logistics shares your location with the customer while a delivery is in progress, so they can see the truck approaching. It stops when the delivery is completed.",
           isAndroidBackgroundLocationEnabled: true,
           isAndroidForegroundServiceEnabled: true,
+          // The iPhone half of the same thing: adds the `location` background
+          // mode, without which iOS suspends tracking once the screen locks.
+          isIosBackgroundLocationEnabled: true,
         },
       ],
       // In-app emergency voice call (LiveKit) after a quick alert. Voice only, but

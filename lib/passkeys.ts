@@ -25,20 +25,19 @@ import * as Passkeys from 'react-native-passkeys'
 const MIN_ANDROID_API = 28
 
 /**
- * iOS cannot enrol a passkey in this app, and that is a provisioning fact
- * rather than a code one.
+ * iPhone passkeys are a build switch, not a code gap.
  *
  * A passkey ceremony on iOS requires the Associated Domains entitlement
  * (`webcredentials:<rp id>`), which Apple only grants on a PAID Developer
  * Program membership — a free provisioning profile cannot carry it, and a build
- * that declares it fails. The rest of the app runs on iOS perfectly well, so
- * the app is not blocked; only this one feature is.
+ * that declares it fails. So app.config.ts adds the entitlement only when the
+ * build sets EXPO_PUBLIC_IOS_PASSKEYS=1, and this reads the same variable: a
+ * build without the entitlement must not offer a button that can only fail.
  *
- * It is refused up front, in the same spirit as Android 8: say so at the button
- * rather than at the biometric prompt. The OS version is not the issue (iOS 16
- * would be the bar if it were), so there is no version check here to soften.
+ * The OS version is not the issue: the app's iOS deployment target is 16.0,
+ * the first iOS with passkeys, so there is no version check here.
  */
-const IOS_PASSKEYS_UNAVAILABLE = true
+const IOS_PASSKEYS_UNAVAILABLE = process.env.EXPO_PUBLIC_IOS_PASSKEYS !== '1'
 
 export type PasskeySupport =
   | { supported: true }
@@ -82,8 +81,7 @@ export function checkPasskeySupport(): PasskeySupport {
       supported: false,
       reason:    'wrong-platform',
       message:
-        'Passkey setup is not available on iPhone. Vendor drivers need an Android ' +
-        'phone, or ask your dispatcher to assign a company driver.',
+        'Passkey setup is not available on this iPhone build yet. Ask your dispatcher for help.',
     }
   }
 
