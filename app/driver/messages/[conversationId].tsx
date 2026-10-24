@@ -6,7 +6,7 @@ import {
 } from 'react-native'
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { ArrowLeft, Send, CornerUpLeft, X, Smile, Trash2, ImagePlus } from 'lucide-react-native'
+import { ArrowLeft, Send, CornerUpLeft, X, Smile, Trash2, ImagePlus, Phone } from 'lucide-react-native'
 import Reanimated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated'
 import { useKeyboardHandler } from 'react-native-keyboard-controller'
 import { GestureDetector, Gesture } from 'react-native-gesture-handler'
@@ -24,6 +24,7 @@ import ReadTicks, { chooseMessageRemoval, type DeleteScope } from '../../../comp
 import type { MessageRow, ReactionTogglePayload } from '../../../types/messaging.types'
 import { FONTS } from '../../../lib/config/fonts'
 import { roleLabel } from '../../../lib/roles'
+import { useChatCallStore } from '../../../lib/chatCall'
 
 const C = {
   bg:       '#0a0a0a',
@@ -646,6 +647,12 @@ export default function DmChatScreen() {
 
   const name = participantName ?? 'Chat'
 
+  // Calls are for staff and drivers only. A chat opened from a push may not
+  // know the role; the server refuses a client call either way.
+  const placeCall = useChatCallStore(s => s.placeCall)
+  const inCall    = useChatCallStore(s => s.inCall)
+  const canCall   = !isDraft && !!activeConvId && !!placeCall && participantRole !== 'client'
+
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       {/* Header */}
@@ -667,6 +674,18 @@ export default function DmChatScreen() {
             </Text>
           </View>
         </View>
+        {canCall && (
+          <TouchableOpacity
+            onPress={() => placeCall!({ conversationId: activeConvId, peerName: name, peerRole: participantRole ?? '' })}
+            disabled={inCall}
+            activeOpacity={0.7}
+            style={[styles.backBtn, inCall && { opacity: 0.4 }]}
+            accessibilityRole="button"
+            accessibilityLabel={`Call ${name}`}
+          >
+            <Phone size={20} color={C.cyan} />
+          </TouchableOpacity>
+        )}
       </View>
 
         {loading ? (

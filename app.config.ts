@@ -151,15 +151,16 @@ export default {
           isIosBackgroundLocationEnabled: true,
         },
       ],
-      // In-app emergency voice call (LiveKit) after a quick alert. Voice only, but
-      // the WebRTC plugin always declares the camera too, so its camera text
-      // repeats the image picker's rather than replacing it with something vaguer.
+      // In-app voice calls (LiveKit): the emergency call after a quick alert and
+      // calls from Messages. Voice only, but the WebRTC plugin always declares
+      // the camera too, so its camera text repeats the image picker's rather
+      // than replacing it with something vaguer.
       "@livekit/react-native-expo-plugin",
       [
         "@config-plugins/react-native-webrtc",
         {
           microphonePermission:
-            "8338 Logistics needs the microphone so you can talk to Operations during an emergency call.",
+            "8338 Logistics needs the microphone for voice calls: the emergency call to Operations and calls from Messages.",
           cameraPermission:
             "8338 Logistics needs the camera to take proof-of-pickup and proof-of-delivery photos at each stop.",
         },

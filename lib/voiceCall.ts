@@ -62,12 +62,14 @@ export async function dataGoodForVoice(): Promise<boolean> {
   }
 }
 
-export async function microphoneAllowed(): Promise<boolean> {
+export async function microphoneAllowed(
+  message = 'Allow the microphone so you can talk to Operations during an emergency call.',
+): Promise<boolean> {
   if (Platform.OS !== 'android') return true // iOS asks on first use of the mic
   try {
     const result = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO, {
       title:          'Microphone',
-      message:        'Allow the microphone so you can talk to Operations during an emergency call.',
+      message,
       buttonPositive: 'Allow',
     })
     return result === PermissionsAndroid.RESULTS.GRANTED
