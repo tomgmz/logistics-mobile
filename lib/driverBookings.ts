@@ -63,6 +63,8 @@ export interface BookingWithRelations {
   truck_type_needed:   string
   schedule_date:       string
   call_time:           string
+  /** When operations wants the driver at the pickup point; null = call_time. */
+  driver_call_time?:   string | null
   // 'delivered': every drop-off done, waiting on the client to confirm completion.
   status:              'pending' | 'assigned' | 'in_transit' | 'delivered' | 'completed' | 'cancelled'
   /** Set once the driver confirmed the vehicle was back in the company lot.

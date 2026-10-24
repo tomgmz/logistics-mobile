@@ -153,6 +153,8 @@ interface Booking {
   fleet_return_at?:  string | null
   schedule_date:     string
   call_time:         string
+  /** Set by operations; the driver follows it over the client's call_time. */
+  driver_call_time?: string | null
   truck_type_needed: string
   clients?: {
     company_name?: string | null
@@ -829,7 +831,9 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
           </Text>
           <Text style={s.schedule} numberOfLines={1}>
             {fmtDate(booking.schedule_date)}
-            {booking.call_time ? ` · ${fmtTime(booking.call_time)}` : ''}
+            {(booking.driver_call_time || booking.call_time)
+              ? ` · ${fmtTime(booking.driver_call_time || booking.call_time)}`
+              : ''}
           </Text>
 
           <View style={[s.tag, { backgroundColor: tag.bg, borderColor: tag.color }]}>

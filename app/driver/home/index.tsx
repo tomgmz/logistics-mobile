@@ -424,7 +424,7 @@ function ActiveOrderCard({
           style={{ backgroundColor: CARD_INK }}
         >
           <Text className="text-xs font-medium text-[#d9d9d9]">
-            {formatTime(booking.call_time)}
+            {formatTime(booking.driver_call_time || booking.call_time)}
           </Text>
         </View>
       </View>

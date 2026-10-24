@@ -143,7 +143,7 @@ function BookingCard({ booking, onPress, index }: BookingCardProps) {
 
           <View className="bg-surface-elevated rounded-lg px-2 py-1">
             <Text className="text-[11px] font-semibold text-ink-muted">
-              {formatTime(booking.call_time)}
+              {formatTime(booking.driver_call_time || booking.call_time)}
             </Text>
           </View>
         </View>
