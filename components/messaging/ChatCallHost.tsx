@@ -58,6 +58,7 @@ type Phase = 'placing' | 'ringing' | 'connecting' | 'live' | 'ended'
 
 interface ActiveCall {
   direction: 'out' | 'in'
+  conversationId: string
   peerName:  string
   peerRole:  string
   phase:     Phase
@@ -101,7 +102,10 @@ export function ChatCallHost({ userId }: { userId: string }) {
   // afterwards knows its call is no longer wanted.
   const attemptRef = useRef(0)
 
+  const ringingRef = useRef<ChatCallView[]>([])
+
   useEffect(() => { activeRef.current = active }, [active])
+  useEffect(() => { ringingRef.current = ringing }, [ringing])
 
   const dropRinging = useCallback((callId: string) => {
     setRinging((list) => list.filter((c) => c.call_id !== callId))
@@ -187,13 +191,20 @@ export function ChatCallHost({ userId }: { userId: string }) {
   /* ── Calling out ─────────────────────────────────────────────────────── */
 
   const placeCall = useCallback(async ({ conversationId, peerName, peerRole }: CallRequest) => {
-    if (activeRef.current && activeRef.current.phase !== 'ended') return
+    const current = activeRef.current && activeRef.current.phase !== 'ended' ? activeRef.current : null
+    const ringIn  = ringingRef.current
+    // Already on a call with them (or they are ringing us): never a second call.
+    if (current?.conversationId === conversationId || ringIn.some((c) => c.conversation_id === conversationId)) return
+    if (current || ringIn.length > 0) {
+      Alert.alert('On a call', `You can't call ${peerName} because you are currently on a call.`)
+      return
+    }
     if (!(await canTalk())) return
 
     const attempt = ++attemptRef.current
     callIdRef.current = null
     const draft: ActiveCall = {
-      direction: 'out', peerName, peerRole, phase: 'placing',
+      direction: 'out', conversationId, peerName, peerRole, phase: 'placing',
       muted: false, startedAt: null, ringLeft: null, note: null,
     }
     activeRef.current = draft
@@ -220,6 +231,14 @@ export function ChatCallHost({ userId }: { userId: string }) {
       if (callId) {
         console.warn('[chat call] failed at', e?.message)
         void endChatCall(callId, 'failed', e?.message)
+      }
+      // Busy (either end already on a call): say so and drop the call screen.
+      if (!callId && e?.response?.status === 409) {
+        attemptRef.current += 1
+        activeRef.current = null
+        setActive(null)
+        Alert.alert('Busy', errorMessage(e, `${peerName} is currently on a call with someone else.`))
+        return
       }
       finishLocal(callId ? 'The call could not connect. Check your signal and try again.' : errorMessage(e, 'The call could not be placed.'))
     }
@@ -254,7 +273,7 @@ export function ChatCallHost({ userId }: { userId: string }) {
         dropRinging(call.call_id)
         callIdRef.current = call.call_id
         setActive({
-          direction: 'in', peerName: fresh?.caller_name ?? call.caller_name, peerRole: fresh?.caller_role ?? call.caller_role,
+          direction: 'in', conversationId: call.conversation_id, peerName: fresh?.caller_name ?? call.caller_name, peerRole: fresh?.caller_role ?? call.caller_role,
           phase: 'connecting', muted: false, startedAt: null, ringLeft: null, note: null,
         })
 
@@ -268,7 +287,7 @@ export function ChatCallHost({ userId }: { userId: string }) {
         attemptRef.current += 1
         teardown()
         setActive({
-          direction: 'in', peerName: call.caller_name, peerRole: call.caller_role,
+          direction: 'in', conversationId: call.conversation_id, peerName: call.caller_name, peerRole: call.caller_role,
           phase: 'ended', muted: false, startedAt: null, ringLeft: null,
           note: joined ? 'The call could not connect. Check your signal.' : errorMessage(e, 'The call could not be answered.'),
         })
@@ -384,7 +403,8 @@ export function ChatCallHost({ userId }: { userId: string }) {
   const busy       = !!active && active.phase !== 'ended'
   const ringingNow = !busy ? ringing[0] ?? null : null
 
-  useEffect(() => { setInCall(busy || ringing.length > 0) }, [busy, ringing.length, setInCall])
+  const callConversationId = busy ? active.conversationId : ringing[0]?.conversation_id ?? null
+  useEffect(() => { setInCall(busy || ringing.length > 0, callConversationId) }, [busy, ringing.length, callConversationId, setInCall])
 
   // Vibrate while a call rings in: there is no ringtone file in the app.
   useEffect(() => {

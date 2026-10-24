@@ -83,13 +83,16 @@ interface ChatCallStore {
   placeCall:    ((req: CallRequest) => void) | null
   /** True while the phone is ringing out, ringing in, or on a call. */
   inCall:       boolean
+  /** The conversation that call is with, so its own button doesn't call again. */
+  callConversationId: string | null
   setPlaceCall: (fn: ((req: CallRequest) => void) | null) => void
-  setInCall:    (v: boolean) => void
+  setInCall:    (v: boolean, conversationId?: string | null) => void
 }
 
 export const useChatCallStore = create<ChatCallStore>((set) => ({
   placeCall:    null,
   inCall:       false,
+  callConversationId: null,
   setPlaceCall: (placeCall) => set({ placeCall }),
-  setInCall:    (inCall) => set({ inCall }),
+  setInCall:    (inCall, conversationId = null) => set({ inCall, callConversationId: inCall ? conversationId : null }),
 }))

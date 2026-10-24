@@ -651,7 +651,11 @@ export default function DmChatScreen() {
   // know the role; the server refuses a client call either way.
   const placeCall = useChatCallStore(s => s.placeCall)
   const inCall    = useChatCallStore(s => s.inCall)
+  const callConv  = useChatCallStore(s => s.callConversationId)
   const canCall   = !isDraft && !!activeConvId && !!placeCall && participantRole !== 'client'
+  // On a call with this person: the button does nothing. On a call with someone
+  // else it stays live, so pressing it says why it can't call.
+  const withThem  = inCall && callConv === activeConvId
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
@@ -677,9 +681,9 @@ export default function DmChatScreen() {
         {canCall && (
           <TouchableOpacity
             onPress={() => placeCall!({ conversationId: activeConvId, peerName: name, peerRole: participantRole ?? '' })}
-            disabled={inCall}
+            disabled={withThem}
             activeOpacity={0.7}
-            style={[styles.backBtn, inCall && { opacity: 0.4 }]}
+            style={[styles.backBtn, withThem && { opacity: 0.4 }]}
             accessibilityRole="button"
             accessibilityLabel={`Call ${name}`}
           >
