@@ -2,14 +2,13 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   View, Text, FlatList, TouchableOpacity, TextInput,
   StyleSheet, ActivityIndicator,
-  Animated, Modal, Keyboard,
+  Modal, Keyboard,
 } from 'react-native'
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { ArrowLeft, Send, CornerUpLeft, X, Smile, Trash2, ImagePlus, Phone } from 'lucide-react-native'
-import Reanimated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated'
+import { ArrowLeft, Trash2 } from 'lucide-react-native'
+import Reanimated, { useSharedValue, useAnimatedStyle, runOnJS } from 'react-native-reanimated'
 import { useKeyboardHandler } from 'react-native-keyboard-controller'
-import { GestureDetector, Gesture } from 'react-native-gesture-handler'
 import { useAuthStore } from '../../../lib/store/auth.store'
 import { useMessagingStore } from '../../../lib/store/messaging.store'
 import { messagingApi } from '../../../lib/api/messaging.api'
@@ -18,13 +17,13 @@ import { useStickToEnd } from '../../../hooks/useStickToEnd'
 import { setActiveChat } from '../../../lib/push'
 import EmojiSheet from '../../../components/messaging/EmojiSheet'
 import ChatPhotoSheet from '../../../components/messaging/ChatPhotoSheet'
-import ChatPhotoBubble from '../../../components/messaging/ChatPhotoBubble'
+import { MessageItem, MessageDateDivider, TypingMessage, MessageComposer, QUICK_EMOJIS, initialsOf } from '../../../components/messaging/MessageItem'
+import { useBookingMentionPicker } from '../../../components/messaging/BookingMention'
 import { PHOTO_PLACEHOLDER } from '../../../lib/chatPhoto'
-import ReadTicks, { chooseMessageRemoval, type DeleteScope } from '../../../components/messaging/ReadTicks'
+import { chooseMessageRemoval, type DeleteScope } from '../../../components/messaging/ReadTicks'
 import type { MessageRow, ReactionTogglePayload } from '../../../types/messaging.types'
 import { FONTS } from '../../../lib/config/fonts'
 import { roleLabel } from '../../../lib/roles'
-import { useChatCallStore } from '../../../lib/chatCall'
 
 const C = {
   bg:       '#0a0a0a',
@@ -32,14 +31,11 @@ const C = {
   elevated: '#1e1e1e',
   border:   '#2a2a2a',
   cyan:     '#4df9ed',
-  cyanText: '#0a0a0a',
   white:    '#ffffff',
   muted:    '#818181',
-  dimText:  'rgba(255,255,255,0.55)',
   overlay:  'rgba(0,0,0,0.6)',
 }
 
-const QUICK_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '😡']
 const PHT = 'Asia/Manila'
 
 function parsePHT(iso: string): Date {
@@ -68,17 +64,6 @@ function dayKey(iso: string): string {
   return parsePHT(iso).toLocaleDateString('en-CA', { timeZone: PHT })
 }
 
-interface ReactionGroup { emoji: string; count: number; reacted: boolean }
-
-function groupReactions(reactions: { emoji: string; user_id: string }[], userId: string): ReactionGroup[] {
-  const map = new Map<string, { count: number; reacted: boolean }>()
-  for (const r of reactions) {
-    const cur = map.get(r.emoji) ?? { count: 0, reacted: false }
-    map.set(r.emoji, { count: cur.count + 1, reacted: cur.reacted || r.user_id === userId })
-  }
-  return [...map.entries()].map(([emoji, v]) => ({ emoji, ...v }))
-}
-
 interface MsgItem {
   id:              string
   conversation_id: string
@@ -90,64 +75,6 @@ interface MsgItem {
   attachment_url?:     string | null
   attachment_stamped?: boolean
 }
-
-function TypingDots() {
-  const anim = useRef([new Animated.Value(0), new Animated.Value(0), new Animated.Value(0)]).current
-  useEffect(() => {
-    const loop = Animated.loop(Animated.stagger(150, anim.map(a =>
-      Animated.sequence([
-        Animated.timing(a, { toValue: -4, duration: 300, useNativeDriver: true }),
-        Animated.timing(a, { toValue:  0, duration: 300, useNativeDriver: true }),
-      ])
-    )))
-    loop.start()
-    return () => loop.stop()
-  }, [])
-  return (
-    <View style={tdS.wrap}>
-      {anim.map((a, i) => <Animated.View key={i} style={[tdS.dot, { transform: [{ translateY: a }] }]} />)}
-    </View>
-  )
-}
-const tdS = StyleSheet.create({
-  wrap: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingVertical: 2 },
-  dot:  { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(77,249,237,0.5)' },
-})
-
-function ReactionStrip({ reactions, currentUserId, isMine, onToggle }: {
-  reactions: { emoji: string; user_id: string }[]
-  currentUserId: string
-  isMine: boolean
-  onToggle: (emoji: string) => void
-}) {
-  const grouped = groupReactions(reactions, currentUserId)
-  if (!grouped.length) return null
-  return (
-    <View style={[rS.wrap, isMine ? rS.wrapMine : rS.wrapTheirs]}>
-      {grouped.map(r => (
-        <TouchableOpacity
-          key={r.emoji}
-          onPress={() => onToggle(r.emoji)}
-          activeOpacity={0.75}
-          style={[rS.badge, r.reacted && rS.badgeActive]}
-        >
-          <Text style={rS.emoji}>{r.emoji}</Text>
-          {r.count > 1 && <Text style={[rS.count, r.reacted && rS.countActive]}>{r.count}</Text>}
-        </TouchableOpacity>
-      ))}
-    </View>
-  )
-}
-const rS = StyleSheet.create({
-  wrap:        { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 4 },
-  wrapMine:    { justifyContent: 'flex-end' },
-  wrapTheirs:  { justifyContent: 'flex-start' },
-  badge:       { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-  badgeActive: { backgroundColor: 'rgba(77,249,237,0.12)', borderColor: 'rgba(77,249,237,0.35)' },
-  emoji:       { fontSize: 14 },
-  count:       { color: C.muted, fontFamily: FONTS.alegreyaSans.medium, fontSize: 11 },
-  countActive: { color: C.cyan },
-})
 
 function EmojiPicker({ visible, onClose, onPick, onDelete }: {
   visible:   boolean
@@ -198,156 +125,6 @@ const epS = StyleSheet.create({
   deleteText: { color: '#f62626', fontFamily: FONTS.alegreyaSans.medium, fontSize: 14 },
 })
 
-function Bubble({ msg, isMine, showSeen, participantName, currentUserId, onLongPress, onReact, onReply }: {
-  msg:             MsgItem
-  isMine:          boolean
-  showSeen:        boolean
-  participantName: string
-  currentUserId:   string
-  onLongPress:     (id: string) => void
-  onReact:         (id: string, emoji: string) => void
-  onReply:         (m: MsgItem) => void
-}) {
-  const hasReply   = !!(msg.reply_to?.message_id)
-  const translateX = useSharedValue(0)
-  const triggered  = useSharedValue(false)
-  const THRESHOLD  = 65
-
-  const onTrigger = () => onReply(msg)
-
-  const panGesture = Gesture.Pan()
-    .activeOffsetX(isMine ? [-10, 999] : [-999, 10])
-    .failOffsetY([-8, 8])
-    .onUpdate((e) => {
-      if (isMine && e.translationX < 0) {
-        translateX.value = Math.max(e.translationX, -THRESHOLD)
-        if (translateX.value <= -THRESHOLD && !triggered.value) {
-          triggered.value = true
-          runOnJS(onTrigger)()
-        }
-      } else if (!isMine && e.translationX > 0) {
-        translateX.value = Math.min(e.translationX, THRESHOLD)
-        if (translateX.value >= THRESHOLD && !triggered.value) {
-          triggered.value = true
-          runOnJS(onTrigger)()
-        }
-      }
-    })
-    .onEnd(() => {
-      triggered.value = false
-      translateX.value = withSpring(0, { damping: 20, stiffness: 300 })
-    })
-
-  const bubbleAnim = useAnimatedStyle(() => ({
-    transform: [{ translateX: translateX.value }],
-  }))
-
-  const iconAnim = useAnimatedStyle(() => {
-    const progress = isMine
-      ? Math.min(Math.abs(translateX.value) / THRESHOLD, 1)
-      : Math.min(translateX.value / THRESHOLD, 1)
-    return {
-      opacity: progress,
-      transform: [{ scale: 0.6 + 0.4 * progress }],
-    }
-  })
-
-  return (
-    <GestureDetector gesture={panGesture}>
-      <View style={[bS.msgRow, isMine ? bS.msgRowMine : bS.msgRowTheirs]}>
-        {isMine && (
-          <Reanimated.View style={[bS.swipeIcon, iconAnim]}>
-            <CornerUpLeft size={16} color="rgba(255,255,255,0.5)" />
-          </Reanimated.View>
-        )}
-
-        <Reanimated.View style={[bS.wrap, isMine ? bS.wrapMine : bS.wrapTheirs, bubbleAnim]}>
-
-          {hasReply && (
-            <>
-              <View style={[bS.attribution, isMine ? bS.attributionMine : bS.attributionTheirs]}>
-                <CornerUpLeft size={11} color="rgba(255,255,255,0.35)" />
-                <Text style={bS.attributionText}>
-                  {isMine
-                    ? `You replied to ${msg.reply_to!.sender_id === currentUserId ? 'yourself' : participantName}`
-                    : `${participantName} replied to ${msg.reply_to!.sender_id === currentUserId ? 'you' : 'themselves'}`}
-                </Text>
-              </View>
-
-              <View style={[bS.quoteCard, isMine ? bS.quoteCardMine : bS.quoteCardTheirs]}>
-                <Text style={bS.quoteText} numberOfLines={3}>{msg.reply_to!.content}</Text>
-              </View>
-            </>
-          )}
-
-          {/* Actual message bubble */}
-          <TouchableOpacity
-            onLongPress={() => onLongPress(msg.id)}
-            onPress={() => {}}
-            activeOpacity={0.85}
-            delayLongPress={350}
-            style={[bS.bubble, isMine ? bS.bubbleMine : bS.bubbleTheirs]}
-          >
-            {msg.attachment_url
-              ? <ChatPhotoBubble url={msg.attachment_url} stamped={msg.attachment_stamped} caption={msg.content}
-                  textStyle={isMine ? bS.textMine : bS.textTheirs} onLongPress={() => onLongPress(msg.id)} />
-              : <Text style={isMine ? bS.textMine : bS.textTheirs}>{msg.content}</Text>}
-          </TouchableOpacity>
-
-          <ReactionStrip
-            reactions={msg.reactions}
-            currentUserId={currentUserId}
-            isMine={isMine}
-            onToggle={(emoji) => onReact(msg.id, emoji)}
-          />
-
-          <View style={[bS.meta, isMine && { alignSelf: 'flex-end' }]}>
-            <Text style={bS.time}>{formatMsgTime(msg.sent_at)}</Text>
-            {isMine && <ReadTicks seen={showSeen} size={11} />}
-          </View>
-        </Reanimated.View>
-
-        {!isMine && (
-          <Reanimated.View style={[bS.swipeIcon, iconAnim]}>
-            <CornerUpLeft size={16} color="rgba(255,255,255,0.5)" />
-          </Reanimated.View>
-        )}
-      </View>
-    </GestureDetector>
-  )
-}
-const bS = StyleSheet.create({
-  msgRow:       { flexDirection: 'row', alignItems: 'flex-end', gap: 4, marginBottom: 2 },
-  msgRowMine:   { justifyContent: 'flex-end' },
-  msgRowTheirs: { justifyContent: 'flex-start' },
-  swipeIcon:    { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-
-  wrap:         { maxWidth: '80%' },
-  wrapMine:     { alignItems: 'flex-end' },
-  wrapTheirs:   { alignItems: 'flex-start' },
-
-  attribution:      { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 },
-  attributionMine:  { alignSelf: 'flex-end' },
-  attributionTheirs:{ alignSelf: 'flex-start' },
-  attributionText:  { color: 'rgba(255,255,255,0.35)', fontFamily: FONTS.alegreyaSans.regular, fontSize: 11 },
-
-  quoteCard:       { borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 3, maxWidth: '100%', borderWidth: 1 },
-  quoteCardMine:   { backgroundColor: 'rgba(0,0,0,0.15)', borderColor: 'rgba(0,0,0,0.12)', alignSelf: 'flex-end' },
-  quoteCardTheirs: { backgroundColor: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.1)', alignSelf: 'flex-start' },
-  quoteText:       { color: 'rgba(255,255,255,0.5)', fontFamily: FONTS.alegreyaSans.regular, fontSize: 13, lineHeight: 18 },
-
-  // Message bubble
-  bubble:       { borderRadius: 18, paddingHorizontal: 14, paddingVertical: 9 },
-  bubbleMine:   { backgroundColor: C.cyan, borderBottomRightRadius: 4 },
-  bubbleTheirs: { backgroundColor: C.raised, borderWidth: 1, borderColor: C.border, borderBottomLeftRadius: 4 },
-  textMine:     { color: C.cyanText, fontFamily: FONTS.alegreyaSans.regular, fontSize: 14, lineHeight: 20 },
-  textTheirs:   { color: C.white,    fontFamily: FONTS.alegreyaSans.regular, fontSize: 14, lineHeight: 20 },
-
-  meta:         { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 3, marginHorizontal: 2 },
-  time:         { color: C.muted, fontFamily: FONTS.alegreyaSans.regular, fontSize: 10 },
-  seen:         { color: C.cyan, fontFamily: FONTS.alegreyaSans.regular, fontSize: 10 },
-})
-
 export default function DmChatScreen() {
   const router        = useRouter()
   const insets        = useSafeAreaInsets()
@@ -377,6 +154,8 @@ export default function DmChatScreen() {
   const [loading,         setLoading]         = useState(true)
   const [sending,         setSending]         = useState(false)
   const [text,            setText]            = useState('')
+  // "@" opens the booking list; picking one writes its number in.
+  const mention = useBookingMentionPicker(text, setText)
   const [replyTo,         setReplyTo]         = useState<MsgItem | null>(null)
   const [isTyping,        setIsTyping]        = useState(false)
   const onlineUserIds                         = useMessagingStore(s => s.onlineUserIds)
@@ -385,6 +164,7 @@ export default function DmChatScreen() {
   const [emojiOpen,       setEmojiOpen]       = useState(false)
   const [photoOpen,       setPhotoOpen]       = useState(false)
   const [otherLastReadAt, setOtherLastReadAt] = useState<string | null>(null)
+  const [myLastReadAt,    setMyLastReadAt]    = useState<string | null | undefined>(undefined)
 
   const listRef     = useRef<FlatList>(null)
   const inputRef    = useRef<TextInput>(null)
@@ -401,9 +181,10 @@ export default function DmChatScreen() {
   // Opens on the latest message and stays there while the list fills in.
   const stick = useStickToEnd(listRef)
 
+  // The keyboard opening keeps the newest message in view, if you were on it.
   const scrollToEnd = useCallback(() => {
-    listRef.current?.scrollToEnd({ animated: true })
-  }, [])
+    if (stick.isPinned()) listRef.current?.scrollToEnd({ animated: true })
+  }, [stick])
 
   const kbHeight = useSharedValue(0)
   useKeyboardHandler({
@@ -446,8 +227,7 @@ export default function DmChatScreen() {
   useEffect(() => { fetchMessages() }, [fetchMessages])
 
   useEffect(() => {
-    if (isDraft) return
-    messagingApi.markAsRead(activeConvId).catch(() => {})
+    if (isDraft) { setMyLastReadAt(null); return }
     messagingApi.getConversations().then(convs => {
       const conv = convs.find(c => c.conversation_id === activeConvId)
       if (conv) {
@@ -457,7 +237,13 @@ export default function DmChatScreen() {
             : conv.participant_a_last_read_at
         )
       }
-    }).catch(() => {})
+      // Yours as the chat opened, for landing on the first unread message.
+      setMyLastReadAt(prev => prev !== undefined ? prev : conv
+        ? (conv.participant_a_id === currentUserId ? conv.participant_a_last_read_at : conv.participant_b_last_read_at)
+        : null)
+    }).catch(() => setMyLastReadAt(prev => prev ?? null))
+      // Marked read only after your last read was taken.
+      .finally(() => { messagingApi.markAsRead(activeConvId).catch(() => {}) })
   }, [activeConvId, isDraft, currentUserId])
 
   const applyReaction = useCallback((payload: ReactionTogglePayload) => {
@@ -486,7 +272,7 @@ export default function DmChatScreen() {
         return [...prev, inc]
       })
       if (raw.sender_id !== currentUserId && !isDraft) messagingApi.markAsRead(activeConvId).catch(() => {})
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80)
+      // No jump here: the list follows it only if you're at the bottom (useStickToEnd).
     },
     onReadReceipt: ({ conversation_id, reader_id, last_read_at }) => {
       if (conversation_id !== activeConvId) return
@@ -501,13 +287,6 @@ export default function DmChatScreen() {
     },
   })
 
-  // Opening the chat: back on the latest message (useStickToEnd keeps it there).
-  useEffect(() => {
-    if (!loading && messages.length > 0) {
-      stick.pin()
-      listRef.current?.scrollToEnd({ animated: false })
-    }
-  }, [loading])
 
   /** Sends the typed text, or (with `photo`) an uploaded photo and its caption. */
   const handleSend = async (photo?: { url: string; caption: string }) => {
@@ -536,7 +315,8 @@ export default function DmChatScreen() {
       reactions:       [],
       attachment_url:  photo?.url ?? null,
     }
-    stick.pin()
+    // Sending always goes to the newest message.
+    stick.jumpToEnd(false)
     setMessages(prev => [...prev, optimistic])
     if (!photo) clearInput()
     setReplyTo(null)
@@ -627,15 +407,30 @@ export default function DmChatScreen() {
 
   type Entry =
     | { type: 'date'; key: string; label: string }
-    | { type: 'msg';  key: string; msg: MsgItem }
+    | { type: 'msg';  key: string; msg: MsgItem; showName: boolean }
 
   const entries: Entry[] = []
   let lastDay = ''
-  for (const msg of messages) {
+  messages.forEach((msg, i) => {
     const d = dayKey(msg.sent_at)
     if (d !== lastDay) { entries.push({ type: 'date', key: `sep-${d}`, label: formatDateSeparator(msg.sent_at) }); lastDay = d }
-    entries.push({ type: 'msg', key: msg.id, msg })
-  }
+    // Name + avatar on the last message of a run from one sender.
+    const next = messages[i + 1]
+    entries.push({ type: 'msg', key: msg.id, msg, showName: !next || next.sender_id !== msg.sender_id || dayKey(next.sent_at) !== d })
+  })
+
+
+  // Opening the chat: your first unread message, or the newest when all is read.
+  useEffect(() => {
+    if (loading || myLastReadAt === undefined) return
+    const readMs = myLastReadAt ? parsePHT(myLastReadAt).getTime() : null
+    const first = entries.findIndex(e => e.type === 'msg' &&
+      e.msg.sender_id !== currentUserId && !e.msg.id.startsWith('optimistic-') &&
+      (readMs === null || parsePHT(e.msg.sent_at).getTime() > readMs))
+    // One row earlier, so the date line above it shows too.
+    stick.place(first >= 0 ? Math.max(0, first - 1) : null)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, myLastReadAt])
 
   // Every message of yours up to the other person's last read has been seen.
   const readMs = useMemo(
@@ -647,15 +442,7 @@ export default function DmChatScreen() {
 
   const name = participantName ?? 'Chat'
 
-  // Calls are for staff and drivers only. A chat opened from a push may not
-  // know the role; the server refuses a client call either way.
-  const placeCall = useChatCallStore(s => s.placeCall)
-  const inCall    = useChatCallStore(s => s.inCall)
-  const callConv  = useChatCallStore(s => s.callConversationId)
-  const canCall   = !isDraft && !!activeConvId && !!placeCall && participantRole !== 'client'
-  // On a call with this person: the button does nothing. On a call with someone
-  // else it stays live, so pressing it says why it can't call.
-  const withThem  = inCall && callConv === activeConvId
+  const fullName = participantRole ? `${name} (${roleLabel(participantRole)})` : name
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
@@ -671,25 +458,13 @@ export default function DmChatScreen() {
           </View>
           <View>
             <Text style={styles.headerName} numberOfLines={1}>
-              {participantRole ? `${name} (${roleLabel(participantRole)})` : name}
+              {fullName}
             </Text>
             <Text style={[styles.headerStatus, isOnline && styles.headerStatusOnline]}>
               {isTyping ? 'typing…' : isOnline ? 'Active now' : 'Offline'}
             </Text>
           </View>
         </View>
-        {canCall && (
-          <TouchableOpacity
-            onPress={() => placeCall!({ conversationId: activeConvId, peerName: name, peerRole: participantRole ?? '' })}
-            disabled={withThem}
-            activeOpacity={0.7}
-            style={[styles.backBtn, withThem && { opacity: 0.4 }]}
-            accessibilityRole="button"
-            accessibilityLabel={`Call ${name}`}
-          >
-            <Phone size={20} color={C.cyan} />
-          </TouchableOpacity>
-        )}
       </View>
 
         {loading ? (
@@ -709,42 +484,28 @@ export default function DmChatScreen() {
             onContentSizeChange={stick.onContentSizeChange}
             onLayout={stick.onLayout}
             onScroll={stick.onScroll}
+            onScrollToIndexFailed={stick.onScrollToIndexFailed}
             scrollEventThrottle={64}
             renderItem={({ item }) => {
-              if (item.type === 'date') {
-                return (
-                  <View style={styles.dateSep}>
-                    <View style={styles.dateLine} />
-                    <Text style={styles.dateText}>{item.label}</Text>
-                    <View style={styles.dateLine} />
-                  </View>
-                )
-              }
-              if (item.msg.id === 'typing') {
-                return (
-                  <View style={styles.typingWrap}>
-                    <View style={styles.typingAvatar}>
-                      <Text style={styles.typingAvatarText}>{name.charAt(0).toUpperCase()}</Text>
-                    </View>
-                    <View style={styles.typingBubble}><TypingDots /></View>
-                  </View>
-                )
-              }
-              const isMine       = item.msg.sender_id === currentUserId
-              const isOptimistic = item.msg.id.startsWith('optimistic-')
+              if (item.type === 'date') return <MessageDateDivider label={item.label} />
+              const isMine = item.msg.sender_id === currentUserId
+              const reply  = item.msg.reply_to
               return (
-                <View style={isOptimistic ? styles.optimistic : undefined}>
-                  <Bubble
-                    msg={item.msg}
-                    isMine={isMine}
-                    showSeen={isSeen(item.msg)}
-                    participantName={name}
-                    currentUserId={currentUserId}
-                    onLongPress={setPickerMsgId}
-                    onReact={handleReact}
-                    onReply={setReplyTo}
-                  />
-                </View>
+                <MessageItem
+                  msg={item.msg}
+                  isMine={isMine}
+                  currentUserId={currentUserId}
+                  senderName={fullName}
+                  showName={item.showName}
+                  initials={initialsOf(name)}
+                  online={isOnline}
+                  time={formatMsgTime(item.msg.sent_at)}
+                  seen={isMine ? isSeen(item.msg) : undefined}
+                  replyName={reply ? (reply.sender_id === currentUserId ? 'You' : name) : undefined}
+                  onLongPress={setPickerMsgId}
+                  onReact={handleReact}
+                  onReply={() => setReplyTo(item.msg)}
+                />
               )
             }}
           />
@@ -752,58 +513,26 @@ export default function DmChatScreen() {
 
         {isTyping && (
           <View style={styles.typingRow}>
-            <TypingDots />
+            <TypingMessage name={fullName} initials={initialsOf(name)} />
           </View>
         )}
 
-        {replyTo && (
-          <View style={styles.replyPreview}>
-            <CornerUpLeft size={14} color={C.cyan} />
-            <Text style={styles.replyPreviewText} numberOfLines={1}>{replyTo.content}</Text>
-            <TouchableOpacity onPress={() => setReplyTo(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <X size={14} color={C.muted} />
-            </TouchableOpacity>
-          </View>
-        )}
-
-        <View style={styles.inputBar}>
-          <TouchableOpacity
-            onPress={() => { Keyboard.dismiss(); setEmojiOpen(o => !o) }}
-            activeOpacity={0.7}
-            style={styles.emojiToggle}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Smile size={22} color={emojiOpen ? C.cyan : C.muted} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => { Keyboard.dismiss(); setEmojiOpen(false); setPhotoOpen(true) }}
-            activeOpacity={0.7}
-            style={styles.emojiToggle}
-            hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-            accessibilityLabel="Send a photo"
-          >
-            <ImagePlus size={22} color={C.muted} />
-          </TouchableOpacity>
-          <TextInput
-            ref={inputRef}
-            value={text}
-            onChangeText={handleChangeText}
-            onFocus={() => setEmojiOpen(false)}
-            placeholder="Type a message…"
-            placeholderTextColor="rgba(255,255,255,0.22)"
-            style={styles.input}
-            multiline
-            maxLength={5000}
-          />
-          <TouchableOpacity
-            onPress={() => void handleSend()}
-            disabled={!text.trim() || sending}
-            activeOpacity={0.75}
-            style={[styles.sendBtn, (!text.trim() || sending) && styles.sendBtnDisabled]}
-          >
-            <Send size={17} color={text.trim() ? C.cyanText : C.muted} />
-          </TouchableOpacity>
-        </View>
+        <MessageComposer
+          inputRef={inputRef}
+          value={text}
+          onChangeText={handleChangeText}
+          onFocus={() => setEmojiOpen(false)}
+          onSend={() => void handleSend()}
+          sending={sending}
+          emojiOpen={emojiOpen}
+          onToggleEmoji={() => { Keyboard.dismiss(); setEmojiOpen(o => !o) }}
+          onPhoto={() => { Keyboard.dismiss(); setEmojiOpen(false); setPhotoOpen(true) }}
+          replyTo={replyTo ? { name: replyTo.sender_id === currentUserId ? 'yourself' : name, content: replyTo.content } : null}
+          onCancelReply={() => setReplyTo(null)}
+          mention={mention}
+          showJumpToLatest={!stick.atEnd}
+          onJumpToLatest={() => stick.jumpToEnd()}
+        />
 
         <ChatPhotoSheet
           visible={photoOpen}
@@ -849,26 +578,9 @@ const styles = StyleSheet.create({
   headerStatus: { color: C.muted, fontFamily: FONTS.alegreyaSans.regular, fontSize: 11, marginTop: 1 },
   headerStatusOnline: { color: '#3af626' },
 
-  listContent: { paddingHorizontal: 12, paddingVertical: 16, gap: 4 },
+  listContent: { paddingHorizontal: 12, paddingVertical: 16, gap: 10 },
   center:      { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  optimistic:  { opacity: 0.6 },
 
-  dateSep: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 12 },
-  dateLine: { flex: 1, height: 1, backgroundColor: C.border },
-  dateText:  { color: C.muted, fontFamily: FONTS.alegreyaSans.regular, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1 },
+  typingRow: { paddingHorizontal: 12, paddingVertical: 6 },
 
-  typingRow: { paddingHorizontal: 16, paddingVertical: 6 },
-  typingWrap: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, marginBottom: 4, alignSelf: 'flex-start' },
-  typingAvatar: { width: 28, height: 28, borderRadius: 14, backgroundColor: C.raised, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
-  typingAvatarText: { color: C.white, fontFamily: FONTS.alegreyaSans.bold, fontSize: 10 },
-  typingBubble: { backgroundColor: C.raised, borderWidth: 1, borderColor: C.border, borderRadius: 18, borderBottomLeftRadius: 4, paddingHorizontal: 14, paddingVertical: 8 },
-
-  replyPreview: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: C.raised, borderTopWidth: 1, borderTopColor: C.border },
-  replyPreviewText: { flex: 1, color: C.dimText, fontFamily: FONTS.alegreyaSans.regular, fontSize: 13 },
-
-  inputBar: { flexDirection: 'row', alignItems: 'flex-end', gap: 10, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 10, backgroundColor: C.bg, borderTopWidth: 1, borderTopColor: C.border },
-  emojiToggle: { width: 38, height: 42, alignItems: 'center', justifyContent: 'center' },
-  input:    { flex: 1, backgroundColor: C.raised, borderRadius: 20, borderWidth: 1, borderColor: C.border, paddingHorizontal: 16, paddingVertical: 10, color: C.white, fontFamily: FONTS.alegreyaSans.regular, fontSize: 14, maxHeight: 120 },
-  sendBtn:  { width: 42, height: 42, borderRadius: 21, backgroundColor: C.cyan, alignItems: 'center', justifyContent: 'center' },
-  sendBtnDisabled: { backgroundColor: C.raised, borderWidth: 1, borderColor: C.border },
 })

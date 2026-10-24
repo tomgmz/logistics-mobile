@@ -12,7 +12,6 @@ import { useTrackingResume } from '../../hooks/useTrackingResume'
 import { useDriverId } from '../../lib/store/auth.store'
 import { startAutoFlush, flushOnAppForeground } from '../../lib/offlineQueue'
 import { prefetchEmergencyContact } from '../../lib/emergencyCall'
-import { ChatCallHost } from '../../components/messaging/ChatCallHost'
 // Imported for its side effect: defining the background location task at module
 // scope. The OS can invoke that task before any screen has mounted — including
 // in a fresh JS context after the app was evicted — so the definition has to be
@@ -85,18 +84,7 @@ export default function DriverLayout() {
 
   if (blocked) return <View style={styles.root} />
 
-  // Calls from Messages ring on every driver screen, so the host sits beside
-  // the Slot in both layouts.
-  const callHost = currentUserId ? <ChatCallHost userId={currentUserId} /> : null
-
-  if (hideChrome) {
-    return (
-      <>
-        <Slot />
-        {callHost}
-      </>
-    )
-  }
+  if (hideChrome) return <Slot />
 
   return (
     <View style={styles.root}>
@@ -104,7 +92,6 @@ export default function DriverLayout() {
       <View style={styles.main}>
         <Slot />
       </View>
-      {callHost}
     </View>
   )
 }

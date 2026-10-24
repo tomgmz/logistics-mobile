@@ -1,8 +1,9 @@
 import React, { useState } from 'react'
-import { View, Text, Image, TouchableOpacity, Modal, StyleSheet, Pressable } from 'react-native'
+import { View, Text, Image, TouchableOpacity, Modal, StyleSheet, Pressable, type TextStyle } from 'react-native'
 import { MapPin, X } from 'lucide-react-native'
 import { FONTS } from '../../lib/config/fonts'
 import { PHOTO_PLACEHOLDER } from '../../lib/chatPhoto'
+import { MentionText } from './BookingMention'
 
 /**
  * A photo message inside a chat bubble: the picture (tap for full screen) with
@@ -13,7 +14,7 @@ export default function ChatPhotoBubble({ url, stamped, caption, textStyle, onLo
   url:          string
   stamped?:     boolean
   caption:      string
-  textStyle:    object
+  textStyle:    TextStyle
   onLongPress?: () => void
 }) {
   const [open, setOpen] = useState(false)
@@ -30,7 +31,7 @@ export default function ChatPhotoBubble({ url, stamped, caption, textStyle, onLo
           </View>
         )}
       </TouchableOpacity>
-      {shown && <Text style={[textStyle, s.caption]}>{shown}</Text>}
+      {shown && <MentionText text={shown} style={[textStyle, s.caption]} />}
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable style={s.viewer} onPress={() => setOpen(false)}>
@@ -45,11 +46,11 @@ export default function ChatPhotoBubble({ url, stamped, caption, textStyle, onLo
 }
 
 const s = StyleSheet.create({
-  wrap:    { gap: 6, marginHorizontal: -8, marginTop: -4 },
-  image:   { width: 220, height: 280, borderRadius: 14, backgroundColor: 'rgba(0,0,0,0.25)' },
+  wrap:    { gap: 6 },
+  image:   { width: 220, height: 280, borderRadius: 6, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.1)', backgroundColor: 'rgba(0,0,0,0.25)' },
   tag:     { position: 'absolute', top: 6, left: 6, flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10, backgroundColor: 'rgba(0,0,0,0.55)' },
   tagText: { color: '#fff', fontFamily: FONTS.alegreyaSans.medium, fontSize: 9 },
-  caption: { paddingHorizontal: 8 },
+  caption: { paddingHorizontal: 6, paddingBottom: 2 },
   viewer:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', alignItems: 'center', justifyContent: 'center' },
   full:    { width: '100%', height: '85%' },
   close:   { position: 'absolute', top: 48, right: 20 },

@@ -6,6 +6,8 @@ import type {
   GroupMessageRaw,
   MessagableUser,
   GroupMemberRequest,
+  MentionableBooking,
+  BookingMentionDetails,
 } from '../../types/messaging.types'
 
 interface ApiRes<T> { success: boolean; data: T }
@@ -35,6 +37,14 @@ const B = '/messaging'
 export const messagingApi = {
   getMessagableUsers: () =>
     get<MessagableUser[]>(`${B}/users`),
+
+  /** Bookings offered after typing "@" (only those the driver is crewed on). */
+  searchMentionableBookings: (q: string) =>
+    get<MentionableBooking[]>(`${B}/booking-mentions`, { q }),
+
+  /** Details cards for mentioned booking numbers; ones the driver can't see are left out. */
+  getBookingMentionDetails: (refs: string[]) =>
+    get<BookingMentionDetails[]>(`${B}/booking-mentions/details`, { refs: refs.join(',') }),
 
   createOrGetConversation: (body: { target_user_id: string; booking_id?: string }) =>
     post<{ conversation_id: string }>(`${B}/conversations`, body),
