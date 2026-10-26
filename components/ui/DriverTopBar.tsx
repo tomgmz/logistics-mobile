@@ -8,7 +8,7 @@
  * profile circle opens the menu that used to live in the drawer (account,
  * passkey sign-in, sign out).
  */
-import React, { useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import {
   View,
   Text,
@@ -17,11 +17,13 @@ import {
   Pressable,
   TouchableOpacity,
   StyleSheet,
+  Switch,
+  AppState,
 } from 'react-native'
 import { MotiView } from 'moti'
 import { useRouter, usePathname } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { Bell, MessageCircle, ChevronLeft, LogOut, KeyRound } from 'lucide-react-native'
+import { Bell, BellOff, MessageCircle, ChevronLeft, LogOut, KeyRound } from 'lucide-react-native'
 
 import { useAuthStore } from '../../lib/store/auth.store'
 import { useMessagingStore } from '../../lib/store/messaging.store'
@@ -31,6 +33,7 @@ import { FONTS } from '../../lib/config/fonts'
 import ReusableModal from './ReusableModal'
 import { roleLabel } from '../../lib/roles'
 import { useCoachTarget } from '../../lib/coachMarks'
+import { getPushPermission, openNotificationSettings, registerForPushNotifications } from '../../lib/push'
 
 const logoImg = require('../../assets/Final_Logo.png')
 
@@ -205,6 +208,8 @@ export default function DriverTopBar() {
 
             <View style={styles.menuLine} />
 
+            <PushToggleRow />
+
             <MenuRow
               icon={<KeyRound size={16} color={COLORS.cyan} />}
               label="Passkey sign-in"
@@ -265,6 +270,86 @@ function CircleButton({
           <Text style={styles.badgeText}>{badge > 9 ? '9+' : badge}</Text>
         </View>
       )}
+    </TouchableOpacity>
+  )
+}
+
+/**
+ * "Phone notifications": mirrors the phone's own notification setting for
+ * this app. A driver who tapped "Don't allow" on the first prompt is never
+ * asked again by the phone, so tapping the switch takes them straight to the
+ * phone's notification settings for 8338 (or shows the prompt, if the phone
+ * can still ask). Turning it off goes there too: an app cannot switch its own
+ * notifications off. The switch catches up when they come back to the app.
+ */
+function PushToggleRow() {
+  const [on,   setOn]   = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  const refresh = useCallback(async () => {
+    const perm = await getPushPermission()
+    setOn(perm.granted)
+    return perm
+  }, [])
+
+  useEffect(() => {
+    let wasGranted: boolean | null = null
+    void refresh().then(({ granted }) => { wasGranted = granted })
+    // Back from the phone's settings: if notifications were just allowed there,
+    // register this phone now rather than at the next sign-in. Only on that
+    // change, so an ordinary return to the app sends nothing.
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s !== 'active') return
+      void refresh().then(({ granted }) => {
+        if (granted && wasGranted === false) void registerForPushNotifications()
+        wasGranted = granted
+      })
+    })
+    return () => sub.remove()
+  }, [refresh])
+
+  const onPress = async () => {
+    if (busy) return
+    setBusy(true)
+    try {
+      const perm = await getPushPermission()
+      if (!perm.granted && perm.canAskAgain) {
+        // The phone can still show its own prompt; this asks and registers.
+        await registerForPushNotifications()
+        if ((await refresh()).granted) return
+      }
+      await openNotificationSettings()
+    } finally {
+      await refresh()
+      setBusy(false)
+    }
+  }
+
+  return (
+    <TouchableOpacity
+      onPress={() => { void onPress() }}
+      activeOpacity={0.75}
+      accessibilityRole="switch"
+      accessibilityState={{ checked: on, disabled: busy }}
+      accessibilityLabel="Phone notifications"
+      accessibilityHint="Opens this phone's notification settings for 8338"
+      style={styles.menuRow}
+    >
+      <View style={styles.menuIcon}>
+        {on ? <Bell size={16} color={COLORS.cyan} /> : <BellOff size={16} color={COLORS.faint} />}
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.menuLabel}>Phone notifications</Text>
+        <Text style={styles.menuHint}>{on ? 'On' : 'Off. Tap to turn on'}</Text>
+      </View>
+      {/* Shows the phone's setting; the row's tap changes it. */}
+      <View pointerEvents="none">
+        <Switch
+          value={on}
+          trackColor={{ false: COLORS.menuLine, true: 'rgba(77,249,237,0.35)' }}
+          thumbColor={on ? COLORS.cyan : COLORS.faint}
+        />
+      </View>
     </TouchableOpacity>
   )
 }
@@ -460,5 +545,10 @@ const styles = StyleSheet.create({
     color:      COLORS.white,
     fontSize:   14,
     fontWeight: '500',
+  },
+  menuHint: {
+    color:     COLORS.faint,
+    fontSize:  11,
+    marginTop: 1,
   },
 })

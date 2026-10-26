@@ -1,4 +1,4 @@
-import { Platform } from 'react-native'
+import { Linking, Platform } from 'react-native'
 import Constants from 'expo-constants'
 import * as Device from 'expo-device'
 import * as Notifications from 'expo-notifications'
@@ -40,6 +40,35 @@ function getProjectId(): string | undefined {
     Constants.expoConfig?.extra?.eas?.projectId ??
     (Constants as unknown as { easConfig?: { projectId?: string } }).easConfig?.projectId
   )
+}
+
+/** Whether the phone itself lets this app show notifications. */
+export async function getPushPermission(): Promise<{ granted: boolean; canAskAgain: boolean }> {
+  try {
+    const p = await Notifications.getPermissionsAsync()
+    return { granted: p.status === 'granted', canAskAgain: p.canAskAgain }
+  } catch {
+    return { granted: false, canAskAgain: false }
+  }
+}
+
+/**
+ * Open the phone's notification settings for this app. A driver who tapped
+ * "Don't allow" on the first prompt is never asked again by the phone, so this
+ * is the only way back. Android goes straight to the app's notification page;
+ * iOS (and any Android that refuses the intent) to the app's settings page,
+ * where Notifications is one tap away.
+ */
+export async function openNotificationSettings(): Promise<void> {
+  if (Platform.OS === 'android') {
+    try {
+      await Linking.sendIntent('android.settings.APP_NOTIFICATION_SETTINGS', [
+        { key: 'android.provider.extra.APP_PACKAGE', value: Constants.expoConfig?.android?.package ?? 'ph.logistics8338.mobile' },
+      ])
+      return
+    } catch { /* older Android: fall back to the app's settings page */ }
+  }
+  try { await Linking.openSettings() } catch { /* nothing else to try */ }
 }
 
 /**
