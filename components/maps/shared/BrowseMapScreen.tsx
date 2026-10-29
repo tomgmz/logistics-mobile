@@ -34,6 +34,8 @@ import { FONTS } from '../../../lib/config/fonts'
 
 interface Props {
   onBack: () => void
+  /** A point to open on (e.g. a hand-over point) instead of the driver's position. */
+  pin?: { latitude: number; longitude: number; label: string }
 }
 
 interface Suggestion {
@@ -71,7 +73,7 @@ function newSessionToken(): string {
   return token
 }
 
-export default function BrowseMapScreen({ onBack }: Props) {
+export default function BrowseMapScreen({ onBack, pin }: Props) {
   const insets = useSafeAreaInsets()
 
   const controller = useRef<MapViewController | null>(null)
@@ -86,7 +88,9 @@ export default function BrowseMapScreen({ onBack }: Props) {
   const [searching,   setSearching]   = useState(false)
   // The last search came back empty — said out loud, not shown as a blank.
   const [noResults,   setNoResults]   = useState(false)
-  const [place,       setPlace]       = useState<Place | null>(null)
+  const [place,       setPlace]       = useState<Place | null>(
+    pin ? { address: pin.label, latitude: pin.latitude, longitude: pin.longitude } : null,
+  )
   const [locating,    setLocating]    = useState(false)
   const [notice,      setNotice]      = useState<string | null>(null)
   const [canShowMe,   setCanShowMe]   = useState(false)
@@ -126,12 +130,28 @@ export default function BrowseMapScreen({ onBack }: Props) {
 
   const onMapReady = useCallback(() => {
     mapReady.current = true
+    const map = controller.current
+    if (pin) {
+      // Opened on a point: mark it and stay there rather than jumping to the driver.
+      void map?.addMarker({ id: 'search', position: { lat: pin.latitude, lng: pin.longitude }, title: pin.label })
+      map?.moveCamera({ target: { lat: pin.latitude, lng: pin.longitude }, zoom: 16 })
+      return
+    }
     const fix = lastFix.current
-    if (fix) controller.current?.moveCamera({ target: { lat: fix.latitude, lng: fix.longitude }, zoom: 15 })
-  }, [])
+    if (fix) map?.moveCamera({ target: { lat: fix.latitude, lng: fix.longitude }, zoom: 15 })
+  }, [pin?.latitude, pin?.longitude, pin?.label])
 
   // Look for the driver straight away; the camera follows once the map is ready.
-  useEffect(() => { void goToCurrentLocation(true) }, [goToCurrentLocation])
+  // With a pin, only the blue dot is wanted, not a camera move.
+  useEffect(() => {
+    if (pin) {
+      void readCurrentFix().then((fix) => {
+        if (fix) { lastFix.current = fix; setCanShowMe(true) }
+      })
+      return
+    }
+    void goToCurrentLocation(true)
+  }, [goToCurrentLocation, !!pin])
 
   const search = useCallback(async (text: string) => {
     const id = ++requestId.current
@@ -224,7 +244,9 @@ export default function BrowseMapScreen({ onBack }: Props) {
         myLocationEnabled={canShowMe}
         myLocationButtonEnabled={false}
         mapToolbarEnabled={false}
-        initialCameraPosition={{ target: DEFAULT_CENTER, zoom: 11 }}
+        initialCameraPosition={pin
+          ? { target: { lat: pin.latitude, lng: pin.longitude }, zoom: 16 }
+          : { target: DEFAULT_CENTER, zoom: 11 }}
         onMapClick={() => Keyboard.dismiss()}
         onMapReady={onMapReady}
         onMapViewControllerCreated={(c) => { controller.current = c }}

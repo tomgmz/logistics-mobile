@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
-  Linking,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -11,6 +10,7 @@ import {
   View,
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { router } from 'expo-router'
 import NetInfo from '@react-native-community/netinfo'
 import { isOnline } from '../../../lib/network'
 import {
@@ -1264,12 +1264,16 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
             {transfer.handover_latitude != null && transfer.handover_longitude != null && (
               <TouchableOpacity
                 activeOpacity={0.75}
-                onPress={() => {
-                  const url = `https://www.google.com/maps/dir/?api=1&destination=${transfer.handover_latitude},${transfer.handover_longitude}`
-                  Linking.openURL(url).catch(() => {})
-                }}
+                onPress={() => router.push({
+                  pathname: '/driver/maps',
+                  params: {
+                    lat:   String(transfer.handover_latitude),
+                    lng:   String(transfer.handover_longitude),
+                    label: `Hand-over point · ${transfer.old_vehicle_plate ?? 'replaced vehicle'}`,
+                  },
+                })}
                 accessibilityRole="button"
-                accessibilityLabel="Open the hand-over point in Google Maps"
+                accessibilityLabel="Open the hand-over point on the map"
                 style={s.previewBtn}
               >
                 <MapPin size={16} color={D.white} strokeWidth={2} />
