@@ -50,7 +50,7 @@ const TITLES: Record<string, string> = {
   // mid-route is an accident, a hold-up or a colleague who has collapsed, and
   // filing those under maintenance told them the screen was not for them.
   '/driver/reports':           'Reports',
-  '/driver/passkeys':          'Passkey Sign-in',
+  '/driver/passkeys':          'Passkey Setup',
 }
 
 const COLORS = {
@@ -212,7 +212,7 @@ export default function DriverTopBar() {
 
             <MenuRow
               icon={<KeyRound size={16} color={COLORS.cyan} />}
-              label="Passkey sign-in"
+              label="Passkey Setup"
               onPress={() => {
                 setMenuOpen(false)
                 router.push('/driver/passkeys')

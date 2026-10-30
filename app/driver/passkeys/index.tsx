@@ -195,7 +195,9 @@ export default function PasskeysScreen() {
           </View>
         )}
 
-        {support.supported ? (
+        {/* One passkey per driver: once one exists (or while the list is still
+            loading) there is no set-up button. */}
+        {support.supported ? (loading || loadError || items.length > 0) ? null : (
           <TouchableOpacity
             onPress={handleCreate}
             disabled={creating}
@@ -208,9 +210,7 @@ export default function PasskeysScreen() {
             ) : (
               <>
                 <MaterialIcons name="add" size={18} color="#080808" />
-                <Text style={styles.primaryText}>
-                  {items.length > 0 ? 'Set up another passkey' : 'Set up a passkey'}
-                </Text>
+                <Text style={styles.primaryText}>Set up a passkey</Text>
               </>
             )}
           </TouchableOpacity>
