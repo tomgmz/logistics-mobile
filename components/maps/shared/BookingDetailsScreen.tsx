@@ -70,6 +70,7 @@ import { startDelivery, type StartOutcome } from '../../../lib/deliveryStart'
 import { useCrewWatch } from '../../../hooks/useCrewWatch'
 import { useStopSteps, markArrived, markStepFinished } from '../../../lib/stopSteps'
 import { StopSteps } from './StopSteps'
+import { WheelCard } from './WheelCard'
 import { currentPause, type TripPause } from '../../../lib/tripPause'
 import { PausedBanner } from './PausedBanner'
 
@@ -773,6 +774,12 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
   const isSecondDriver = booking.my_crew_role === 'second'
   const leadUser = booking.driver_assignments?.find((a) => a.crew_role !== 'second')?.drivers?.users
   const leadName = leadUser ? `${leadUser.first_name ?? ''} ${leadUser.last_name ?? ''}`.trim() : ''
+  // With a second driver the two swap at the wheel; either records it (WheelCard)
+  // while the truck is on the road, the drive back to the lot included.
+  const hasSecondDriver = !!booking.driver_assignments?.some((a) => a.crew_role === 'second')
+  const myUser = booking.driver_assignments?.find((a) => (a.crew_role === 'second') === isSecondDriver)?.drivers?.users
+  const myName = myUser ? `${myUser.first_name ?? ''} ${myUser.last_name ?? ''}`.trim() : ''
+  const onTheRoad = inTransit || (isDone && !hasReturned)
 
   const shuttle = isMultiTrip(trips)
   const counts  = tripProgressCounts(trips)
@@ -1159,6 +1166,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
             is in there is exactly one thing the driver should do next, and a
             phone in a cab is the worst place to offer a choice between similar
             green buttons. */}
+        {hasSecondDriver && onTheRoad && <WheelCard bookingId={bookingId} myName={myName} />}
         {isSecondDriver ? (
           <>
             <View style={s.doneNote}>
