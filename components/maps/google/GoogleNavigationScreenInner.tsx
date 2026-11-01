@@ -32,7 +32,7 @@ import { fetchTripsWithCache, currentTrip, recordLocalProgress, clearLocalProgre
 import { saveStopOrder, syncStopOrder, loadStopOrder, clearStopOrders, moveEarlier } from '../../../lib/stopOrder'
 import { setNextStop, stopTracking } from '../../../lib/locationTracking'
 import { useCrewWatch } from '../../../hooks/useCrewWatch'
-import { useStopSteps, markStepFinished } from '../../../lib/stopSteps'
+import { useStopSteps, markArrived, markStepFinished } from '../../../lib/stopSteps'
 import { StopSteps } from '../shared/StopSteps'
 import { saveBookingCache, loadBookingCache, clearBookingCache } from '../../../lib/navCache'
 import {
@@ -317,7 +317,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
   const [toggleError, setToggleError] = useState<string | null>(null)
   // The planned stops and which one is current. The trip sheet renders the list.
   const [stops, setStops]       = useState<DisplayStop[]>([])
-  // Arrived at parking / docked / started / departed at each stop.
+  // Arrived (recorded by the app) / started (the driver's tap) at each stop.
   const stopSteps = useStopSteps(bookingId)
   const [legIndex, setLegIndex] = useState(0)
   // Index of the stop whose arrival geofence we're inside, if any — a visual cue
@@ -330,6 +330,17 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
   // The stop whose proof popup is open, and whether it opened by itself (arrival
   // detected) or from the button. Null when the popup is closed.
   const [proofFor, setProofFor] = useState<{ idx: number; auto: boolean } | null>(null)
+  // The truck is at the stop whose proof popup opened — by navigation's arrival
+  // (the usual case) or the driver's button when the SDK missed it. That is the
+  // stop's arrival time; the driver never taps it. First one wins.
+  useEffect(() => {
+    if (!proofFor) return
+    const leg = legsRef.current[proofFor.idx]
+    if (!leg) return
+    void markArrived(bookingId, leg.type === 'pickup'
+      ? { tripId: leg.tripId }
+      : { tripId: leg.tripId, tripStopId: leg.tripStopId })
+  }, [proofFor, bookingId])
   // Set once the driver marks the whole delivery done — shows the closing card.
   const [completed, setCompleted]   = useState(false)
   // The pause the office put on the delivery (weather, breakdown, closed stop…).
@@ -1853,8 +1864,8 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
                 compact
                 kind={leg.type === 'pickup' ? 'pickup' : 'dropoff'}
                 times={times}
-                // The stop being driven to, and a finished one still to depart.
-                showButton={state !== 'upcoming'}
+                // Start on the stop being driven to (or reached) only.
+                showButton={state === 'current'}
                 onRecord={(stage) => { void stopSteps.record(target, stage) }}
               />
             )

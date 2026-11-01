@@ -31,6 +31,9 @@ export interface TripPause {
   /** Not sent by the server (staff-only); kept for pauses saved by older builds. */
   note?:    string | null
   pausedAt: string
+  /** When the office expects it to move again: YYYY-MM-DD + the driver's call time (HH:MM). */
+  continuesOn?:   string | null
+  continuesCall?: string | null
 }
 
 const storageKey = (bookingId: string) => `trip_pause_${bookingId}`
@@ -58,7 +61,11 @@ async function writeLocal(bookingId: string, pause: TripPause | null): Promise<v
  */
 export async function currentPause(
   bookingId: string,
-  serverBooking?: { paused_at?: string | null; pause_reason?: string | null } | null,
+  serverBooking?: {
+    paused_at?: string | null
+    pause_reason?: string | null
+    pauses?: Array<{ expected_resume_date: string | null; expected_resume_call_time: string | null; resumed_at: string | null }> | null
+  } | null,
 ): Promise<TripPause | null> {
   if (!serverBooking) return readLocal(bookingId)
 
@@ -67,9 +74,13 @@ export async function currentPause(
     return null
   }
 
+  // The open pause's continuation, if the office has set one.
+  const open = (serverBooking.pauses ?? []).find((p) => !p.resumed_at && p.expected_resume_date)
   const server: TripPause = {
     reason:   (serverBooking.pause_reason ?? 'other') as PauseReason,
     pausedAt: serverBooking.paused_at,
+    continuesOn:   open?.expected_resume_date?.slice(0, 10) ?? null,
+    continuesCall: open?.expected_resume_call_time?.slice(0, 5) ?? null,
   }
   await writeLocal(bookingId, server)
   return server

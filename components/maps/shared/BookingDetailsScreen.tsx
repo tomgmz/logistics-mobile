@@ -68,7 +68,7 @@ import { queuedIds, flush } from '../../../lib/offlineQueue'
 import { loadResumableNavSession, endNavSession, type NavSession } from '../../../lib/navSession'
 import { startDelivery, type StartOutcome } from '../../../lib/deliveryStart'
 import { useCrewWatch } from '../../../hooks/useCrewWatch'
-import { useStopSteps, markStepFinished } from '../../../lib/stopSteps'
+import { useStopSteps, markArrived, markStepFinished } from '../../../lib/stopSteps'
 import { StopSteps } from './StopSteps'
 import { currentPause, type TripPause } from '../../../lib/tripPause'
 import { PausedBanner } from './PausedBanner'
@@ -603,6 +603,9 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
   const openProof = useCallback((stop: TripStop, label: string) => {
     setUploadError(null)
     if (stop.status === 'pending') {
+      // Confirming from here means the truck is at the drop-off: that is its
+      // arrival, if navigation hasn't recorded one already.
+      void markArrived(bookingId, { tripId: stop.trip_id, tripStopId: stop.trip_stop_id })
       setProofFor({ stop, label, mode: 'confirm' })
       return
     }
@@ -1029,8 +1032,9 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
         )}
 
         {/* The times at the loading and each drop-off, per trip, and what went
-            on the truck. The same buttons as on the map's panel, for a stop
-            worked from here. */}
+            on the truck: arrival (recorded by the app), start, finish. The same
+            Start button as on the map's panel, for a stop worked from here. A
+            drop-off served over several trips shows each visit. */}
         {(inTransit || isDone) && trips.length > 0 && (
           <Card icon={<Clock size={16} color={D.cyan} />} title="STOP TIMES">
             {trips.map((trip) => {
@@ -1057,10 +1061,17 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
                   {visits.map((stop) => {
                     const n = dropoffs.findIndex((d) => d.destination_id === stop.destination_id) + 1
                     const target = { tripId: trip.trip_id, tripStopId: stop.trip_stop_id }
+                    // Which visit to this drop-off this is, across the trips.
+                    const allVisits = trips
+                      .slice().sort((a, b) => a.trip_number - b.trip_number)
+                      .flatMap((t) => (t.booking_trip_stops ?? []).filter((v) => v.destination_id === stop.destination_id))
+                    const visitNo = allVisits.findIndex((v) => v.trip_stop_id === stop.trip_stop_id) + 1
                     return (
                       <View key={stop.trip_stop_id} style={{ gap: 4 }}>
                         <Text style={s.stepsWhere} numberOfLines={1}>
-                          Unloading · Drop-off {n || '?'}{stop.booking_destinations?.address ? ` · ${stop.booking_destinations.address}` : ''}
+                          Unloading · Drop-off {n || '?'}
+                          {allVisits.length > 1 ? ` · visit ${visitNo} of ${allVisits.length}` : ''}
+                          {stop.booking_destinations?.address ? ` · ${stop.booking_destinations.address}` : ''}
                         </Text>
                         <StopSteps
                           kind="dropoff"

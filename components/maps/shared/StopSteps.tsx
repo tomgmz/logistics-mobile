@@ -18,18 +18,17 @@ function hhmm(iso: string): string {
 }
 
 const SHORT: Record<StepStage | 'finished', string> = {
-  arrived_parking: 'Parking',
-  docked:          'Dock',
-  started:         'Start',
-  finished:        'Finish',
-  departed:        'Left',
+  arrived:  'Arrived',
+  started:  'Start',
+  finished: 'Done',
 }
-const ORDER: Array<StepStage | 'finished'> = ['arrived_parking', 'docked', 'started', 'finished', 'departed']
+const ORDER: Array<StepStage | 'finished'> = ['arrived', 'started', 'finished']
 
 /**
- * The times tapped at one stop, and the button for the next one. The finish is
- * the proof confirmation, done with the stop's own button; this never blocks
- * it, so a driver who forgot a step can still confirm the stop.
+ * The times at one stop (the arrival is recorded by the app on its own), and
+ * the one button: Start loading / Start unloading. The finish is the proof
+ * confirmation, done with the stop's own button; this never blocks it, so a
+ * driver who forgot to tap Start can still confirm the stop.
  */
 export function StopSteps({ kind, times, onRecord, compact = false, showButton = true }: {
   kind:       'pickup' | 'dropoff'

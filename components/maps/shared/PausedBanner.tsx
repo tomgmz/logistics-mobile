@@ -19,6 +19,18 @@ function sinceLabel(iso: string): string {
     : t.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })
 }
 
+/** "Nov 5" from YYYY-MM-DD, as a calendar day. */
+function dayLabel(ymd: string): string {
+  const [y, m, d] = ymd.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' })
+}
+
+/** "8:00 AM" from HH:MM. */
+function clockLabel(hhmm: string): string {
+  const [h, m] = hhmm.split(':').map(Number)
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`
+}
+
 export function PausedBanner({
   pause, style,
 }: {
@@ -42,6 +54,12 @@ export function PausedBanner({
         </Text>
         {!!pause.note && (
           <Text style={{ color: C.dimWhite, fontSize: 12, lineHeight: 17 }} numberOfLines={2}>{pause.note}</Text>
+        )}
+        {!!pause.continuesOn && (
+          <Text style={{ color: C.dimWhite, fontSize: 12, fontWeight: '700' }}>
+            Continues {dayLabel(pause.continuesOn)}
+            {pause.continuesCall ? ` · your call time ${clockLabel(pause.continuesCall)}` : ''}
+          </Text>
         )}
         <Text style={{ color: C.dimmer, fontSize: 11 }}>
           {since ? `Since ${since} · ` : ''}Paused by the office. Wait until they resume it.

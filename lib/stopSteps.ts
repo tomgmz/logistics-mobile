@@ -8,19 +8,23 @@ import { readCurrentFix } from './stopGeofence'
 import { parseLocalId } from './tripCargo'
 
 /**
- * The steps around each stop, tapped by the driver:
+ * The times at each stop:
  *
- *   Arrived at parking → Arrived at docking → Start loading/unloading
- *     → [finish = the proof confirmation] → Departed
+ *   Arrived → Start loading/unloading → [finish = the proof confirmation]
  *
- * A tap is recorded on this phone at once (so the button moves on even in a
+ * The arrival is recorded by the app itself, never tapped: when navigation
+ * detects the arrival, or when the driver opens the stop's proof popup or taps
+ * Start, whichever comes first (markArrived). Start is the driver's one button.
+ * Parking, docking and departure are no longer recorded.
+ *
+ * Each is recorded on this phone at once (so the button moves on even in a
  * dead zone) and sent through the offline queue with the phone's own time. Every
  * request also carries the phone's clock at the moment it is sent, so the
- * server corrects the tap by however far off this phone's clock is — a phone
- * three hours ahead still records the right time, offline or not.
+ * server corrects it by however far off this phone's clock is — a phone three
+ * hours ahead still records the right time, offline or not.
  */
 
-export type StepStage = 'arrived_parking' | 'docked' | 'started' | 'departed'
+export type StepStage = 'arrived' | 'started'
 export type StepTimes = Partial<Record<StepStage | 'finished', string>>
 
 /** Where a step happened: the loading of a trip (no stop), or one drop-off visit. */
@@ -83,7 +87,7 @@ export async function refreshStopSteps(bookingId: string): Promise<void> {
   }
 }
 
-/** The proof confirmation is the finish; mark it here too so Depart appears at once. */
+/** The proof confirmation is the finish; mark it here too so the stop shows it at once. */
 export async function markStepFinished(bookingId: string, target: StepTarget): Promise<void> {
   const all = await readLocal(bookingId)
   const k = key(target)
@@ -91,17 +95,32 @@ export async function markStepFinished(bookingId: string, target: StepTarget): P
   await writeLocal(bookingId, { ...all, [k]: { ...(all[k] ?? {}), finished: new Date(serverNow()).toISOString() } })
 }
 
-/** One tap. Recorded here at once; sent through the queue. */
+/**
+ * The truck is at this stop. Silent and idempotent: called on navigation's
+ * arrival, on opening the proof popup and before Start, so the first one wins.
+ */
+export function markArrived(bookingId: string, target: StepTarget): Promise<void> {
+  return recordStep(bookingId, target, 'arrived')
+}
+
+/** One step. Recorded here at once; sent through the queue. */
 export async function recordStep(bookingId: string, target: StepTarget, stage: StepStage): Promise<void> {
   const all = await readLocal(bookingId)
   const k = key(target)
   if (all[k]?.[stage]) return
+  // Already finished (proof confirmed): an arrival or start now would be late
+  // and out of order — the office fills it in if it matters.
+  if (all[k]?.finished) return
+  // Start without an arrival (navigation missed it, or the driver was already
+  // there): the arrival is now, just before the start.
+  if (stage === 'started' && !all[k]?.arrived) await recordStep(bookingId, target, 'arrived')
+  const fresh = stage === 'started' ? await readLocal(bookingId) : all
   // Shown here at once on the server-corrected clock; SENT as the phone's own
   // time, which the server corrects by how far off this phone's clock is when
   // the tap finally goes out (X-Device-Time) — right even after a restart.
   const at = new Date().toISOString()
   const shownAt = new Date(serverNow()).toISOString()
-  await writeLocal(bookingId, { ...all, [k]: { ...(all[k] ?? {}), [stage]: shownAt } })
+  await writeLocal(bookingId, { ...fresh, [k]: { ...(fresh[k] ?? {}), [stage]: shownAt } })
 
   // A trip or stop the phone created offline has no server id yet: name it by
   // trip number + drop-off, as the confirmations do.
@@ -153,21 +172,14 @@ export function useStopSteps(bookingId: string) {
   return { timesFor, totalFor, record, refresh: () => refreshStopSteps(bookingId) }
 }
 
-/** The next step to tap, given what is done. Null while the finish (proof) is what's owed. */
-export function nextStep(times: StepTimes): StepStage | null {
-  if (!times.arrived_parking && !times.finished) return 'arrived_parking'
-  if (!times.docked && !times.finished) return 'docked'
-  if (!times.started && !times.finished) return 'started'
-  if (!times.finished) return null
-  if (!times.departed) return 'departed'
-  return null
+/** The button to show: Start, until it is tapped or the stop is confirmed. */
+export function nextStep(times: StepTimes): 'started' | null {
+  return !times.started && !times.finished ? 'started' : null
 }
 
 export function stepLabel(stage: StepStage, kind: 'pickup' | 'dropoff'): string {
   switch (stage) {
-    case 'arrived_parking': return 'Arrived at parking'
-    case 'docked':          return 'Arrived at docking'
-    case 'started':         return kind === 'pickup' ? 'Start loading' : 'Start unloading'
-    case 'departed':        return 'Departed'
+    case 'arrived': return kind === 'pickup' ? 'Arrived at pickup' : 'Arrived at drop-off'
+    case 'started': return kind === 'pickup' ? 'Start loading' : 'Start unloading'
   }
 }
