@@ -73,6 +73,7 @@ import { StopSteps } from './StopSteps'
 import { WheelCard } from './WheelCard'
 import { currentPause, type TripPause } from '../../../lib/tripPause'
 import { PausedBanner } from './PausedBanner'
+import { DelayedBanner } from './DelayedBanner'
 
 /**
  * Assignment details — the screen a driver lands on from their booking list, and
@@ -1177,6 +1178,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
             </View>
             {/* Only the office pauses and resumes; both drivers just see it. */}
             {pause && !isDone && <PausedBanner pause={pause} />}
+            {!pause && !isDone && <DelayedBanner booking={booking} />}
             {onPreview && (
               <TouchableOpacity
                 activeOpacity={0.75}
@@ -1315,6 +1317,8 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
         {/* The office paused the delivery. Read-only: only Operations or the
             Company Administrator can resume it. */}
         {pause && !isDone && <PausedBanner pause={pause} />}
+        {/* Running late (the server's delay flag); a pause explains itself instead. */}
+        {!pause && !isDone && <DelayedBanner booking={booking} />}
 
         {/* Always available: seeing the run is never gated, only running it. */}
         {onPreview && !isDone && !inTransit && (
