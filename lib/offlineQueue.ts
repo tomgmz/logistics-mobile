@@ -45,10 +45,10 @@ const MAX_CONFLICT_ATTEMPTS = 5
 
 export interface QueuedAction {
   id:        string                    // 'pickup:<bookingId>' | 'delivery:<stopId>' | 'complete:<bookingId>' | 'pause:/resume:<bookingId>:<ms>' (older builds only)
-  kind:      'pickup' | 'delivery' | 'complete' | 'pause' | 'resume' | 'start' | 'wheel'
+  kind:      'pickup' | 'delivery' | 'complete' | 'pause' | 'resume' | 'start' | 'wheel' | 'order'
   url:       string                    // '/driver/bookings/:id/pickup' | '.../destinations/:id/delivered' | '.../complete'
   // PATCH unless said otherwise; Start Navigation ('start:<bookingId>') is a POST.
-  method?:   'patch' | 'post'
+  method?:   'patch' | 'post' | 'put'
   body:      Record<string, unknown>   // { proof_photo_url } for stops; empty for completion
   // Local file URI of a proof photo that still needs uploading. Once uploaded,
   // its hosted URL is merged into `body` as proof_photo_url and this is cleared.
@@ -161,6 +161,7 @@ export function flush(): Promise<void> {
 
       try {
         if (item.method === 'post') await api.post(item.url, item.body)
+        else if (item.method === 'put') await api.put(item.url, item.body)
         else await api.patch(item.url, item.body)
         // success → drop
       } catch (e: any) {

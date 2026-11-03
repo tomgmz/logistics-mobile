@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Alert,
   Animated,
   PanResponder,
   Pressable,
@@ -511,16 +510,8 @@ function BoardStop({
 
       {onChooseNext && (
         <TouchableOpacity
-          onPress={() => {
-            Alert.alert(
-              `Go to ${stop.label} next?`,
-              `Navigation will take you to ${placeName(stop.address)} before the other drop-offs.`,
-              [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Go here next', onPress: onChooseNext },
-              ],
-            )
-          }}
+          // The reason picker that opens is the confirmation (StopOrderReasonModal).
+          onPress={onChooseNext}
           activeOpacity={0.7}
           accessibilityRole="button"
           accessibilityLabel={`Go to ${stop.label} next`}

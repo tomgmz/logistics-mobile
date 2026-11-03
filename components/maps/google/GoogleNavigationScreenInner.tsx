@@ -30,6 +30,7 @@ import { buildNavPlan } from '../../../lib/navLegs'
 import { SosButton } from '../../reports/SosButton'
 import { fetchTripsWithCache, currentTrip, recordLocalProgress, clearLocalProgress, type Trip } from '../../../lib/trips'
 import { saveStopOrder, syncStopOrder, loadStopOrder, clearStopOrders, moveEarlier } from '../../../lib/stopOrder'
+import { StopOrderReasonModal, type StopOrderReason } from '../shared/StopOrderReasonModal'
 import { setNextStop, stopTracking } from '../../../lib/locationTracking'
 import { useCrewWatch } from '../../../hooks/useCrewWatch'
 import { useStopSteps, markArrived, markStepFinished } from '../../../lib/stopSteps'
@@ -330,6 +331,8 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
   // The stop whose proof popup is open, and whether it opened by itself (arrival
   // detected) or from the button. Null when the popup is closed.
   const [proofFor, setProofFor] = useState<{ idx: number; auto: boolean } | null>(null)
+  // The drop-off the driver tapped "Go here next" on, while they pick a reason.
+  const [reasonFor, setReasonFor] = useState<number | null>(null)
   // The truck is at the stop whose proof popup opened — by navigation's arrival
   // (the usual case) or the driver's button when the SDK missed it. That is the
   // stop's arrival time; the driver never taps it. First one wins.
@@ -944,7 +947,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
    * that never settles (ROUTE_BUILD_TIMEOUT_MS) — the driver would be left on a
    * route to the old stop with the sheet claiming the new one.
    */
-  const chooseNextDropoff = useCallback(async (idx: number) => {
+  const chooseNextDropoff = useCallback(async (idx: number, reason: StopOrderReason | null = null) => {
     if (confirmingRef.current || applyingRef.current) return
 
     const cur    = legIndexRef.current
@@ -1008,8 +1011,9 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
     const tripId = leg.tripId
     const order  = legsRef.current.flatMap((l) => (l.type === 'dropoff' ? [l.tripStopId] : []))
     saveStopOrder(tripId, order)
-    // So the web shows which drop-off the truck is heading to.
-    void syncStopOrder(tripId, order)
+    // So the web shows which drop-off the truck is heading to, and the office
+    // sees why (the reason is optional).
+    void syncStopOrder(tripId, order, reason)
     // Once the load is aboard, live tracking is closing on a stop; point it at
     // the new one so the "arriving" tier fires for the right bay.
     if (target === cur) setNextStop(legCoordinates(legsRef.current[cur])).catch(() => {})
@@ -1850,7 +1854,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
           distanceM={navInfo?.nextDistanceM}
           totalEtaSeconds={navInfo?.finalEtaS}
           onConfirmStop={(idx) => setProofFor({ idx, auto: false })}
-          onChooseNext={confirming || rerouting ? undefined : chooseNextDropoff}
+          onChooseNext={confirming || rerouting ? undefined : (idx: number) => setReasonFor(idx)}
           renderSteps={(idx, state) => {
             const leg = legsRef.current[idx]
             if (!leg) return null
@@ -1875,6 +1879,17 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
       )}
 
       {proofModal}
+
+      <StopOrderReasonModal
+        visible={reasonFor != null}
+        stopLabel={reasonFor != null ? stops[reasonFor]?.label ?? 'this drop-off' : ''}
+        onCancel={() => setReasonFor(null)}
+        onPick={(reason) => {
+          const idx = reasonFor
+          setReasonFor(null)
+          if (idx != null) void chooseNextDropoff(idx, reason)
+        }}
+      />
 
       {/* Closing card — shown once the driver marks the delivery done. The
           status update may still be queued (dead zone); it syncs on reconnect,

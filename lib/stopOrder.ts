@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import api from './api/auth.api'
+import { enqueue, flush } from './offlineQueue'
 
 /**
  * The order the DRIVER chose to work a run's drop-offs in.
@@ -29,15 +29,26 @@ export async function saveStopOrder(tripId: string, tripStopIds: string[]): Prom
 }
 
 /**
- * Tell the server the run's new order. Best effort and never blocking: the
- * phone's copy already drives navigation, and the next change (or the next
- * screen load) sends it again.
+ * Tell the server the run's new order, through the offline queue: it is sent
+ * again until the server has it, so the office, the client and the arrival
+ * times never stay on the old order because one call failed. `reason` is the
+ * driver's optional why (only on a real choice; a re-send on screen load has
+ * none, and the server only announces an actual change).
  */
-export async function syncStopOrder(tripId: string, tripStopIds: string[]): Promise<void> {
+export async function syncStopOrder(
+  tripId: string,
+  tripStopIds: string[],
+  reason?: string | null,
+): Promise<void> {
   if (tripStopIds.length === 0) return
-  try {
-    await api.put(`/driver/trips/${tripId}/stop-order`, { trip_stop_ids: tripStopIds })
-  } catch { /* offline or refused: the local order still applies */ }
+  await enqueue({
+    id:     `order:${tripId}:${Date.now()}`,
+    kind:   'order',
+    method: 'put',
+    url:    `/driver/trips/${tripId}/stop-order`,
+    body:   { trip_stop_ids: tripStopIds, ...(reason ? { reason } : {}) },
+  }).catch(() => {})
+  void flush()
 }
 
 export async function loadStopOrder(tripId: string): Promise<string[] | null> {
