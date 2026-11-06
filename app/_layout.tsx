@@ -13,6 +13,7 @@ import { syncServerTime } from '../lib/serverTime'
 import { registerForPushNotifications, initPushResponders } from '../lib/push'
 import { flush } from '../lib/offlineQueue'
 import { configureNetwork } from '../lib/network'
+import { warnIfUnsupportedDevice } from '../lib/deviceSupport'
 
 SplashScreen.preventAutoHideAsync()
 // Online = our server answers, on Wi-Fi or mobile data alike (lib/network).
@@ -26,6 +27,9 @@ export default function RootLayout() {
 
   const [fontsLoaded, fontError] = useFonts(APP_FONTS)
   const isReady = (fontsLoaded || !!fontError) && authReady
+
+  // Once per phone: warn when it can't run navigation/maps/push properly.
+  useEffect(() => { if (isReady) void warnIfUnsupportedDevice() }, [isReady])
 
   useEffect(() => {
     setSessionExpiredHandler(() => {
