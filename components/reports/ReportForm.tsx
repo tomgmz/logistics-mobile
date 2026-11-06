@@ -10,10 +10,11 @@ import {
 } from 'react-native'
 import * as ImagePicker from 'expo-image-picker'
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller'
-import { Check, Image as ImageIcon, SendHorizontal, Video, X } from 'lucide-react-native'
+import { Camera, Check, Image as ImageIcon, SendHorizontal, X } from 'lucide-react-native'
 
 import { FONTS } from '../../lib/config/fonts'
-import { uploadProofPhoto } from '../../lib/proofPhoto'
+import { captureProofPhoto, photoTakenAt, uploadProofPhoto } from '../../lib/proofPhoto'
+import { readCurrentFix } from '../../lib/stopGeofence'
 import {
   SUB_TYPES,
   type BlowbagetsItems,
@@ -30,7 +31,12 @@ import { useReportContext } from '../../hooks/useReportContext'
  * Everything on it exists to answer one operational question — does somebody
  * have to be sent out right now — and the form is ordered so that question is
  * reachable without scrolling past anything optional. Type, sub-type and
- * description are required; media and the vehicle check are not.
+ * description are required; photos and the vehicle check are not.
+ *
+ * Evidence is photos only (2026-11-06): taken with the camera on the spot, or
+ * picked from the gallery. Video was removed; the server refuses video_urls.
+ * Every photo is stamped (time, place, driver, plate + booking when known); a
+ * gallery photo's stamp says it was attached from the gallery.
  *
  * The BLOWBAGETS section appears only for a vehicle breakdown, and only when the
  * driver opts in. It is the same ten-item mnemonic the fleet manager runs before
@@ -131,7 +137,6 @@ export function ReportForm({
   const [subType, setSubType]     = useState<string | null>(initial?.sub_type ?? null)
   const [description, setDescription] = useState(initial?.description ?? '')
   const [photos, setPhotos]       = useState<string[]>([])
-  const [videos, setVideos]       = useState<string[]>([])
   const [uploading, setUploading] = useState(false)
   const [mediaError, setMediaError] = useState<string | null>(null)
 
@@ -149,28 +154,49 @@ export function ReportForm({
   // possible moment.
   const showCheck = type === 'vehicle_breakdown'
 
-  const pickMedia = useCallback(async (kind: 'photo' | 'video') => {
+  const addPhoto = useCallback(async (source: 'camera' | 'library') => {
     setMediaError(null)
     try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: kind === 'photo' ? ['images'] : ['videos'],
-        quality:    0.6,
-      })
-      if (result.canceled || !result.assets?.length) return
+      let uri: string | null = null
+      if (source === 'camera') {
+        // Throws CameraPermissionError (with a readable message) when denied.
+        uri = await captureProofPhoto()
+      } else {
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync()
+        if (!perm.granted) {
+          setMediaError('Photo access is needed to choose a photo. Enable it in Settings, then try again.')
+          return
+        }
+        const result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          quality:    0.6,
+        })
+        if (!result.canceled && result.assets?.length) uri = result.assets[0].uri
+      }
+      if (!uri) return
 
       setUploading(true)
       // Uploaded immediately rather than at submit: evidence is the part of this
       // form most likely to be lost, and a driver who backs out of the screen
-      // after picking three photos should not lose them with it.
-      const url = await uploadProofPhoto(result.assets[0].uri)
-      if (kind === 'photo') setPhotos((p) => [...p, url])
-      else                  setVideos((v) => [...v, url])
+      // after taking three photos should not lose them with it.
+      // Stamped like stop proof (2026-11-06): INCIDENT REPORT, time, place,
+      // driver, and the plate + booking when there is one. A fresh fix, so the
+      // place is where the photo was taken, not where the form was opened.
+      const fix = await readCurrentFix().catch(() => null)
+      const url = await uploadProofPhoto(uri, {
+        stop:        'report',
+        refId:       bookingId ?? '',
+        takenAt:     source === 'camera' ? photoTakenAt(uri) : new Date().toISOString(),
+        fix,
+        fromGallery: source === 'library',
+      })
+      setPhotos((p) => [...p, url])
     } catch (e: any) {
-      setMediaError(e?.response?.data?.message ?? e?.message ?? 'That file could not be uploaded.')
+      setMediaError(e?.response?.data?.message ?? e?.message ?? 'That photo could not be uploaded.')
     } finally {
       setUploading(false)
     }
-  }, [])
+  }, [bookingId])
 
   const missingType = !type
   const missingDesc = !description.trim()
@@ -187,7 +213,6 @@ export function ReportForm({
       sub_type:          subType,
       description:       description.trim(),
       photo_urls:        photos,
-      video_urls:        videos,
       latitude:          ctx.latitude,
       longitude:         ctx.longitude,
       accuracy_m:        ctx.accuracy_m,
@@ -268,21 +293,21 @@ export function ReportForm({
       </Section>
 
       <Section
-        title="PHOTO/VIDEO UPLOAD"
-        hint="Optional evidence for your report — file size should not exceed 20MB."
+        title="PHOTOS"
+        hint="Optional evidence for your report. Take a photo now or choose one from your gallery."
       >
         <View style={{ flexDirection: 'row', gap: 12 }}>
           <MediaTile
-            icon={<ImageIcon size={22} color={D.faint} />}
-            label="Add photo"
+            icon={<Camera size={22} color={D.faint} />}
+            label="Take photo"
             disabled={busy || uploading}
-            onPress={() => pickMedia('photo')}
+            onPress={() => addPhoto('camera')}
           />
           <MediaTile
-            icon={<Video size={22} color={D.faint} />}
-            label="Add video"
+            icon={<ImageIcon size={22} color={D.faint} />}
+            label="From gallery"
             disabled={busy || uploading}
-            onPress={() => pickMedia('video')}
+            onPress={() => addPhoto('library')}
           />
           {uploading && (
             <View style={{ justifyContent: 'center' }}>
@@ -291,7 +316,7 @@ export function ReportForm({
           )}
         </View>
 
-        {(photos.length > 0 || videos.length > 0) && (
+        {photos.length > 0 && (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
             {photos.map((url) => (
               <View key={url} style={{ width: 62, height: 62, borderRadius: 8, overflow: 'hidden' }}>
@@ -300,31 +325,6 @@ export function ReportForm({
                   onPress={() => setPhotos((p) => p.filter((u) => u !== url))}
                   accessibilityRole="button"
                   accessibilityLabel="Remove photo"
-                  style={{
-                    position: 'absolute', top: 2, right: 2,
-                    width: 18, height: 18, borderRadius: 999,
-                    alignItems: 'center', justifyContent: 'center',
-                    backgroundColor: 'rgba(0,0,0,0.7)',
-                  }}
-                >
-                  <X size={11} color={D.white} />
-                </TouchableOpacity>
-              </View>
-            ))}
-            {videos.map((url) => (
-              <View
-                key={url}
-                style={{
-                  width: 62, height: 62, borderRadius: 8,
-                  alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: D.inner, borderWidth: 1, borderColor: D.line,
-                }}
-              >
-                <Video size={20} color={D.faint} />
-                <TouchableOpacity
-                  onPress={() => setVideos((v) => v.filter((u) => u !== url))}
-                  accessibilityRole="button"
-                  accessibilityLabel="Remove video"
                   style={{
                     position: 'absolute', top: 2, right: 2,
                     width: 18, height: 18, borderRadius: 999,
@@ -501,7 +501,7 @@ function MediaTile({
       accessibilityRole="button"
       accessibilityLabel={label}
       style={{
-        width: 68, height: 68, borderRadius: 10,
+        width: 80, height: 68, borderRadius: 10,
         alignItems: 'center', justifyContent: 'center', gap: 5,
         borderWidth: 1, borderColor: D.line, backgroundColor: D.card,
         opacity: disabled ? 0.5 : 1,

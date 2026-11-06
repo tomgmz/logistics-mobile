@@ -10,7 +10,7 @@ import { useAuthStore, useAuthHydrated } from '../lib/store/auth.store'
 import { getMe, setSessionExpiredHandler, TokenStore } from '../lib/api/auth.api'
 import { APP_FONTS } from '../lib/config/fonts'
 import { syncServerTime } from '../lib/serverTime'
-import { registerForPushNotifications, initPushResponders } from '../lib/push'
+import { registerForPushNotifications, initPushResponders, ensureNotificationChannels } from '../lib/push'
 import { flush } from '../lib/offlineQueue'
 import { configureNetwork } from '../lib/network'
 import { warnIfUnsupportedDevice } from '../lib/deviceSupport'
@@ -69,6 +69,8 @@ export default function RootLayout() {
   }, [authReady, user?.user_id])
 
   useEffect(() => {
+    // Channels first, signed in or not, so a push never lands on a silent fallback channel.
+    void ensureNotificationChannels()
     const cleanup = initPushResponders()
     return cleanup
   }, [])

@@ -104,6 +104,9 @@ function groupEventText(msg: GMsg, currentUserId: string, nameOf: (uid: string) 
   if (meta.event === 'removed') {
     return `${actor} removed ${meta.user_id === currentUserId ? 'you' : meta.name} from the group.`
   }
+  if (meta.event === 'joined') {
+    return meta.user_id === currentUserId ? 'You joined the group.' : `${meta.name || nameOf(meta.user_id)} joined the group.`
+  }
   return msg.content
 }
 

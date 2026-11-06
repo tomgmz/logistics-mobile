@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
   Text,
-  TextInput,
+  TouchableOpacity,
   useWindowDimensions,
   View,
 } from 'react-native'
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller'
 import { router } from 'expo-router'
 import { useAuthStore, useAuthHydrated } from '../../lib/store/auth.store'
 import { changePassword, getMe } from '../../lib/api/auth.api'
@@ -178,18 +176,24 @@ export default function ChangePasswordPage() {
       {/* Top cyan accent line */}
       <View style={{ height: 1, backgroundColor: CYAN, opacity: 0.35 }} />
 
-      <KeyboardAvoidingView
+      {/* A scroll view, not a fixed centred column: with the keyboard up (the
+          first field auto-focuses) the column overflowed and the "Set Password
+          & Continue" button sat under the keyboard with no way to reach it,
+          worst on small and edge-to-edge Android phones. Same pattern as the
+          reset-password screen. */}
+      <KeyboardAwareScrollView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
-      >
-        <View style={{
-          flex: 1,
+        bottomOffset={120}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{
+          flexGrow: 1,
           justifyContent: 'center',
           alignItems: 'center',
           paddingHorizontal: contentHorizontal,
-          paddingVertical: 16,
-        }}>
+          paddingTop: Math.max(16, height * 0.04),
+          paddingBottom: 32,
+        }}
+      >
 
           {/* ── Header ── */}
           <View style={{
@@ -352,25 +356,31 @@ export default function ChangePasswordPage() {
               </View>
             )}
 
-            {/* Submit */}
-            <Pressable
+            {/* Submit. A TouchableOpacity with a plain style object, NOT a
+                Pressable with style={({ pressed }) => ...}: NativeWind v4 wraps
+                Pressable and drops a function style, so the button's background
+                never rendered and drivers saw no button at all (only faint dark
+                text). The disabled look is a visible grey button too. */}
+            <TouchableOpacity
               onPress={handleSubmit}
               disabled={!canSubmit}
-              style={({ pressed }) => ({
-                backgroundColor: canSubmit
-                  ? pressed ? '#e0e0e0' : '#ffffff'
-                  : 'rgba(255,255,255,0.15)',
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: !canSubmit, busy: loading }}
+              style={{
+                backgroundColor: canSubmit ? '#ffffff' : '#2a2a2a',
+                borderWidth: 1,
+                borderColor: canSubmit ? '#ffffff' : '#4a4a4a',
                 borderRadius: 12,
                 paddingVertical: buttonPadding,
                 alignItems: 'center',
-                opacity: canSubmit ? 1 : 0.4,
-              })}
+              }}
             >
               {loading ? (
                 <ActivityIndicator color="#0a0a0a" size="small" />
               ) : (
                 <Text style={{
-                  color: '#0a0a0a',
+                  color: canSubmit ? '#0a0a0a' : 'rgba(255,255,255,0.6)',
                   fontSize: 11,
                   fontWeight: '700',
                   letterSpacing: 2.5,
@@ -379,7 +389,7 @@ export default function ChangePasswordPage() {
                   Set Password & Continue
                 </Text>
               )}
-            </Pressable>
+            </TouchableOpacity>
           </View>
 
           {/* Footer */}
@@ -392,8 +402,7 @@ export default function ChangePasswordPage() {
           }}>
             You will only need to do this once.
           </Text>
-        </View>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
     </View>
   )
 }

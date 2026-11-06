@@ -115,6 +115,10 @@ export default {
         {
           icon: "./assets/mobile-icon.png",
           color: "#00BCD4",
+          // Bundled into the app (Android res/raw, iOS main bundle) so a push can
+          // name it: the backend sends sound 'notify.wav' on the 'alerts' channel.
+          // Needs a native build; OTA cannot add a sound file.
+          sounds: ["./assets/sounds/notify.wav"],
         },
       ],
       // Camera, for the proof-of-pickup / proof-of-delivery photo the driver

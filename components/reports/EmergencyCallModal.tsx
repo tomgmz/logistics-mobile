@@ -10,6 +10,7 @@ import {
   startEmergencyCall,
   type CallEndReason,
 } from '../../lib/voiceCall'
+import { startRingback, stopRingback } from '../../lib/sounds'
 
 /**
  * The driver's in-app emergency call to Operations, placed right after the
@@ -89,6 +90,7 @@ export function EmergencyCallModal({ reportId, onFallback, onDone }: Props) {
   const finish = useCallback(async (reason: CallEndReason, dialOut: boolean, detail?: string) => {
     if (closedRef.current) return
     closedRef.current = true
+    stopRingback()
     await teardown()
     if (callIdRef.current) void endEmergencyCall(callIdRef.current, reason, detail)
     if (dialOut) {
@@ -176,6 +178,17 @@ export function EmergencyCallModal({ reportId, onFallback, onDone }: Props) {
     }
   }, [])
 
+  // Ringback while Operations is being rung: the driver hears that the call is
+  // going through. Stops the moment anyone answers, the driver cancels, or the
+  // call is handed to the phone's dialer (any phase change, or closing).
+  useEffect(() => {
+    if (phase !== 'ringing') return
+    void startRingback()
+    return () => stopRingback()
+  }, [phase])
+
+  useEffect(() => () => stopRingback(), [])
+
   // Ring countdown → no answer → phone call.
   useEffect(() => {
     if (phase !== 'ringing' || left == null) return
@@ -209,7 +222,7 @@ export function EmergencyCallModal({ reportId, onFallback, onDone }: Props) {
 
   const sub =
     phase === 'starting' ? 'Your alert was sent. Connecting the call…'
-    : phase === 'ringing' ? `Ringing the Operations Manager on duty${left != null ? ` · ${left}s` : ''}. If nobody answers, your phone will call them.`
+    : phase === 'ringing' ? `Ringing the Operations Managers and Company Administrators${left != null ? ` · ${left}s` : ''}. If nobody answers, your phone will call the office.`
     : phase === 'live'    ? `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`
     : note ?? ''
 

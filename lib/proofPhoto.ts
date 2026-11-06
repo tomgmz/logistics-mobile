@@ -29,11 +29,12 @@ const QUALITY = 0.6
  * photo uploaded hours later still carries the moment and place it was taken.
  */
 export interface ProofStamp {
-  stop:        'trip_pickup' | 'trip_stop'
-  refId:       string            // trip_id for a pickup, trip_stop_id for a drop-off
+  stop:        'trip_pickup' | 'trip_stop' | 'report'
+  refId:       string            // trip_id for a pickup, trip_stop_id for a drop-off, booking id (or '') for a report
   takenAt:     string            // ISO
   fix?:        StopFix | null
   addedLater?: boolean           // photo attached to a stop already confirmed
+  fromGallery?: boolean          // report photo picked from the gallery (the stamp says so)
 }
 
 // When each captured file was shot, keyed by its URI. The capture happens a few
@@ -94,6 +95,7 @@ export async function uploadProofPhoto(localUri: string, stamp?: ProofStamp | nu
       if (stamp.fix.accuracy_m != null) form.append('accuracy_m', String(stamp.fix.accuracy_m))
     }
     if (stamp.addedLater) form.append('added_later', '1')
+    if (stamp.fromGallery) form.append('from_gallery', '1')
   }
   // React Native's FormData takes this {uri, name, type} shape for files.
   form.append('image', {

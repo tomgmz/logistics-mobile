@@ -72,6 +72,44 @@ export async function openNotificationSettings(): Promise<void> {
 }
 
 /**
+ * The Android channel every push goes to, with the 8338 chime.
+ *
+ * A NEW channel id on purpose: Android fixes a channel's sound when the channel
+ * is first created and ignores later changes, so the old 'messages' channel
+ * (created without a custom sound) could never pick the chime up. The backend
+ * sends channelId 'alerts' + sound 'notify.wav'. 'messages' is kept so a push
+ * from an older backend still lands somewhere with a sound.
+ *
+ * Created at launch as well as at sign-in: a push that arrives for a channel
+ * the phone has never created falls back to a silent "Miscellaneous" one.
+ */
+export const ALERTS_CHANNEL = 'alerts'
+
+export async function ensureNotificationChannels(): Promise<void> {
+  if (Platform.OS !== 'android') return
+  try {
+    await Notifications.setNotificationChannelAsync(ALERTS_CHANNEL, {
+      name:             'Notifications',
+      description:      'Bookings, messages, reminders and alerts from 8338',
+      importance:       Notifications.AndroidImportance.HIGH,
+      sound:            'notify.wav',
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor:       '#4df9ed',
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    })
+    await Notifications.setNotificationChannelAsync('messages', {
+      name:             'Messages (older)',
+      importance:       Notifications.AndroidImportance.HIGH,
+      sound:            'default',
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor:       '#4df9ed',
+    })
+  } catch (err) {
+    console.warn('[push] channel setup failed', err)
+  }
+}
+
+/**
  * Request permission, obtain the Expo push token, and register it with the
  * backend. No-op on simulators/web. Safe to call repeatedly.
  */
@@ -79,14 +117,7 @@ export async function registerForPushNotifications(): Promise<void> {
   try {
     if (Platform.OS === 'web' || !Device.isDevice) return
 
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('messages', {
-        name: 'Messages',
-        importance: Notifications.AndroidImportance.HIGH,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#4df9ed',
-      })
-    }
+    await ensureNotificationChannels()
 
     const existing = await Notifications.getPermissionsAsync()
     let status = existing.status

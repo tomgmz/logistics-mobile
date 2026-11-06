@@ -2,7 +2,6 @@ import * as Location from 'expo-location'
 import * as TaskManager from 'expo-task-manager'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import NetInfo from '@react-native-community/netinfo'
-import { isOnline } from './network'
 import { Alert, AppState, Linking } from 'react-native'
 
 import api from './api/auth.api'
@@ -90,7 +89,30 @@ interface TrackingContext {
   nextStop:  Coordinates | null
   /** The last fix actually uploaded — the distance gate measures against this. */
   lastSent:  { latitude: number; longitude: number; at: number } | null
+  /**
+   * What happened since the last upload, so a silence reaches the server with
+   * its cause (sent once as `gap` on the next ping that goes out). Optional:
+   * a context written by an older build has none.
+   */
+  gap?: GapStats
 }
+
+interface GapStats {
+  /** Fixes the OS delivered. Zero over a long silence = the task wasn't running. */
+  fixes:      number
+  /** Skipped because the phone had no connection. */
+  offline:    number
+  /** Upload attempts that errored. */
+  failed:     number
+  lastError:  string | null
+  /** The task was started again for a trip it had already been tracking. */
+  restarted:  boolean
+}
+
+const EMPTY_GAP: GapStats = { fixes: 0, offline: 0, failed: 0, lastError: null, restarted: false }
+
+/** A silence longer than this is reported with the next ping. */
+const GAP_REPORT_MS = 2 * 60 * 1000
 
 async function readContext(): Promise<TrackingContext | null> {
   try {
@@ -145,14 +167,23 @@ async function considerFix(location: Location.LocationObject): Promise<void> {
   )
 
   const last = context.lastSent
+  const gap  = { ...EMPTY_GAP, ...context.gap, fixes: (context.gap?.fixes ?? 0) + 1 }
+  // Only bookkeep once a silence is already long; a write per fix would be waste.
+  const inGap = !!last && now - last.at > MAX_SILENCE_MS
+  const noteGap = async (patch: Partial<GapStats>) => {
+    if (inGap || patch.failed !== undefined) await writeContext({ ...context, gap: { ...gap, ...patch } })
+  }
+
   if (last) {
     const since = now - last.at
-    if (since < interval) return
+    if (since < interval) { await noteGap({}); return }
 
     const moved   = distanceInMetres(last, coords)
     const minMove = AppState.currentState === 'active' ? MIN_MOVE_M : MIN_MOVE_BACKGROUND_M
     if (moved < minMove && since < MAX_SILENCE_MS) return
   }
+
+  const silenceMs = last ? now - last.at : 0
 
   // Recorded on the device, because only the device knows when it looked. The
   // backend refuses fixes that reach it too late to be worth drawing.
@@ -163,6 +194,17 @@ async function considerFix(location: Location.LocationObject): Promise<void> {
     speed_mps:   coords.speed,
     heading_deg: coords.heading,
     recorded_at: new Date(location.timestamp).toISOString(),
+    ...(silenceMs > GAP_REPORT_MS && {
+      gap: {
+        since_ms:   Math.round(silenceMs),
+        fixes:      gap.fixes,
+        offline:    gap.offline,
+        failed:     gap.failed,
+        last_error: gap.lastError,
+        background: AppState.currentState !== 'active',
+        restarted:  gap.restarted,
+      },
+    }),
   }
 
   // Never fire a request with no connectivity to refresh a token against. The
@@ -175,11 +217,19 @@ async function considerFix(location: Location.LocationObject): Promise<void> {
   // It also stops the app hammering a dead network: the OS keeps delivering
   // fixes every few seconds, and without this each one would burn a radio wake
   // and an HTTP timeout.
+  //
+  // Only `isConnected === false` skips (2026-11-06). The cached reachability
+  // flag (isOnline) is re-tested on JS timers, which Android pauses for a
+  // backgrounded app: one failed /health check could hold it false and silence
+  // every ping for an hour while the truck drove. The sign-out worry above no
+  // longer applies either: the app signs out only on a real 401 (isSessionDead).
   const net = await NetInfo.fetch().catch(() => null)
-  if (!isOnline(net)) return
+  if (net && net.isConnected === false) { await noteGap({ offline: gap.offline + 1 }); return }
 
   try {
-    const res = await api.post(`/driver/bookings/${context.bookingId}/location`, body)
+    // Short timeout: a ping is worthless once late, and a hung request would
+    // stack up behind the next fixes.
+    const res = await api.post(`/driver/bookings/${context.bookingId}/location`, body, { timeout: 10_000 })
 
     // 202 means the server took the ping and deliberately did nothing with it.
     // `booking_ended` is the authoritative "stop tracking" signal — it
@@ -194,7 +244,8 @@ async function considerFix(location: Location.LocationObject): Promise<void> {
     // and only the main driver's phone is the truck's position.
     if (res.status === 202) {
       const reason = res.data?.reason
-      if (reason === 'booking_ended' || reason === 'not_lead') await stopTracking()
+      if (reason === 'booking_ended' || reason === 'not_lead') { await stopTracking(); return }
+      await noteGap({ failed: gap.failed + 1, lastError: `202 ${reason ?? 'not recorded'}` })
       return
     }
   } catch (e: any) {
@@ -205,6 +256,11 @@ async function considerFix(location: Location.LocationObject): Promise<void> {
     }
     // Otherwise dropped on purpose. Retrying would send a position that is
     // already stale by the time it lands, and the next fix is seconds away.
+    const status = e?.response?.status
+    await noteGap({
+      failed:    gap.failed + 1,
+      lastError: (status ? `HTTP ${status}` : String(e?.code ?? e?.message ?? 'error')).slice(0, 200),
+    })
     return
   }
 
@@ -213,6 +269,7 @@ async function considerFix(location: Location.LocationObject): Promise<void> {
   await writeContext({
     ...context,
     lastSent: { latitude: coords.latitude, longitude: coords.longitude, at: now },
+    gap:      undefined,
   })
 }
 
@@ -281,7 +338,12 @@ export async function startTracking(
   const granted = await requestTrackingPermissions()
   if (!granted) return 'denied'
 
-  await writeContext({ bookingId, nextStop, lastSent: null })
+  // Same trip but the task had died (OS killed it, phone rebooted): keep the
+  // last upload so the silence is measured, and say it was restarted.
+  const resumed = existing?.bookingId === bookingId
+  await writeContext(resumed
+    ? { ...existing!, nextStop: nextStop ?? existing!.nextStop, gap: { ...EMPTY_GAP, ...existing!.gap, restarted: true } }
+    : { bookingId, nextStop, lastSent: null })
 
   if (already) await stopUpdates()
 

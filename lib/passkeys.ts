@@ -153,6 +153,65 @@ function isCancellation(err: unknown): boolean {
 }
 
 /**
+ * A failure inside the phone's passkey service, with a message a driver can act on.
+ *
+ * react-native-passkeys rejects with bare codes ("NotConfigured", "NotSupported",
+ * "DomError: SecurityError - ...", "androidx...NoCreateOptionException"), and
+ * those went straight onto the screen. Driver Victor Vargas (2026-11-05) tried
+ * four times: the server issued each challenge but none came back, so every
+ * attempt died on the phone. Most likely a phone without Google Play services
+ * (most Huawei phones since 2019): Android's Credential Manager has nowhere to
+ * store a passkey there, and nothing in the app can change that.
+ *
+ * The raw code is kept at the end of the message so a screenshot is enough to tell
+ * the cases apart.
+ */
+export class PasskeyPhoneError extends Error {
+  constructor(message: string, readonly code: string) {
+    super(`${message} (${code})`)
+    this.name = 'PasskeyPhoneError'
+  }
+}
+
+const NO_PROVIDER =
+  'This phone has no passkey service. Passkeys need Google Play services and a Google ' +
+  'account, so Huawei phones without the Play Store cannot store one. Use a phone that ' +
+  'has the Play Store. Company drivers can sign in with a password or an emailed code instead.'
+
+const APP_NOT_TRUSTED =
+  'This copy of the app is not recognised for passkeys. Install the app from the link ' +
+  'the office sent, then try again.'
+
+/** Turn the library's raw rejection into a PasskeyPhoneError, or null if it isn't one. */
+function phoneError(err: unknown): PasskeyPhoneError | null {
+  const raw  = String((err as any)?.message ?? err ?? '')
+  const code = raw.split(/\s|:/)[0] || 'Unknown'
+  if (/NotConfigured|ProviderConfiguration|NoCreateOption|NotSupported|Unsupported|NoCredentialProvider/i.test(raw)) {
+    return new PasskeyPhoneError(NO_PROVIDER, code)
+  }
+  // Digital Asset Links failed: the build's signing key isn't in assetlinks.json.
+  if (/SecurityError|cannot be validated|RP ID|not associated|asset ?links/i.test(raw)) {
+    return new PasskeyPhoneError(APP_NOT_TRUSTED, 'SecurityError')
+  }
+  // Signing in: this phone holds no passkey for the account (deleted, or set up on another phone).
+  if (/NoCredentials/i.test(raw)) {
+    return new PasskeyPhoneError(
+      'This phone has no passkey for your account. Sign in with your password or an emailed ' +
+      'code, then set one up from the account menu (Passkey Setup).',
+      'NoCredentials',
+    )
+  }
+  if (/UnknownError|Interrupted/i.test(raw)) {
+    return new PasskeyPhoneError(
+      "The phone's passkey service did not answer. Check that the phone is signed in to a " +
+      'Google account and has a screen lock, then try again.',
+      code,
+    )
+  }
+  return null
+}
+
+/**
  * Create a passkey. `options` is the JSON the server produced with
  * generateRegistrationOptions and is passed through untouched — re-shaping it
  * here would mean keeping a second copy of the WebAuthn spec in the app.
@@ -166,7 +225,7 @@ export async function createPasskey(options: any): Promise<any> {
     if (err instanceof PasskeyCancelled) throw err
     if (isAlreadyRegistered(err)) throw new PasskeyAlreadyOnDevice()
     if (isCancellation(err)) throw new PasskeyCancelled()
-    throw err
+    throw phoneError(err) ?? err
   }
 }
 
@@ -179,7 +238,7 @@ export async function getPasskey(options: any): Promise<any> {
   } catch (err) {
     if (err instanceof PasskeyCancelled) throw err
     if (isCancellation(err)) throw new PasskeyCancelled()
-    throw err
+    throw phoneError(err) ?? err
   }
 }
 
