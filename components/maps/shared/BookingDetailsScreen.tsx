@@ -205,10 +205,10 @@ const D = {
 /** The tag beside the booking ref, one per state of the job. */
 const STATUS_TAG: Record<string, { label: string; color: string; bg: string }> = {
   pending:    { label: 'PENDING',    color: D.yellow,  bg: D.yellowDim             },
-  approved:   { label: 'APPROVED',   color: D.violet,  bg: D.violetDim             },
-  assigned:   { label: 'ASSIGNED',   color: D.orange,  bg: D.orangeDim             },
+  approved:   { label: 'APPROVED',   color: D.orange,  bg: D.orangeDim             },
+  assigned:   { label: 'ASSIGNED',   color: '#a024ff', bg: 'rgba(160,36,255,0.19)' },
   in_transit: { label: 'IN TRANSIT', color: D.cyan,    bg: D.cyanDim               },
-  delivered:  { label: 'DELIVERED',  color: D.green,   bg: D.greenDim              },
+  delivered:  { label: 'DELIVERED',  color: '#ffffff', bg: 'rgba(255,255,255,0.19)' },
   completed:  { label: 'COMPLETED',  color: D.green,   bg: D.greenDim              },
   cancelled:  { label: 'CANCELLED',  color: D.red,     bg: D.redDim                },
 }

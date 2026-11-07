@@ -100,10 +100,12 @@ export const STATUS_CONFIG: Record<StatusKey, {
   dotCn:   string
 }> = {
   pending:    { label: 'Pending',   badgeCn: 'bg-amber-950',   textCn: 'text-amber-400',   dotCn: 'bg-amber-400'   },
-  assigned:   { label: 'Assigned',  badgeCn: 'bg-blue-950',    textCn: 'text-blue-400',    dotCn: 'bg-blue-400'    },
-  in_transit: { label: 'En Route',  badgeCn: 'bg-emerald-950', textCn: 'text-emerald-400', dotCn: 'bg-emerald-400' },
-  delivered:  { label: 'Delivered', badgeCn: 'bg-zinc-800',    textCn: 'text-zinc-400',    dotCn: 'bg-zinc-500'    },
-  completed:  { label: 'Completed', badgeCn: 'bg-zinc-800',    textCn: 'text-zinc-400',    dotCn: 'bg-zinc-500'    },
+  // Same status colours as the web (Figma status legend 1122:820): assigned violet #A024FF,
+  // in transit cyan (blue is remapped to cyan), delivered white, completed green.
+  assigned:   { label: 'Assigned',  badgeCn: 'bg-[#1a0629]',   textCn: 'text-[#a024ff]',   dotCn: 'bg-[#a024ff]'   },
+  in_transit: { label: 'En Route',  badgeCn: 'bg-blue-950',    textCn: 'text-blue-400',    dotCn: 'bg-blue-400'    },
+  delivered:  { label: 'Delivered', badgeCn: 'bg-zinc-800',    textCn: 'text-white',       dotCn: 'bg-white'       },
+  completed:  { label: 'Completed', badgeCn: 'bg-emerald-950', textCn: 'text-emerald-400', dotCn: 'bg-emerald-400' },
   cancelled:  { label: 'Cancelled', badgeCn: 'bg-red-950',     textCn: 'text-red-400',     dotCn: 'bg-red-500'     },
 }
 

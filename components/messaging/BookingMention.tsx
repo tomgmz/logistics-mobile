@@ -18,10 +18,10 @@ import type { BookingMentionDetails, MentionableBooking } from '../../types/mess
 /** Same fixed status colours as the web (lib/palette.ts there). */
 const STATUS_COLOR: Record<string, string> = {
   pending: '#FFEA00', booked: '#FFEA00',
-  approved: '#8A38F5',
-  assigned: '#FF7A30',
+  approved: '#FF7A30',
+  assigned: '#A024FF',
   in_transit: '#4DF9ED', arrived: '#4DF9ED',
-  delivered: '#3AF626', completed: '#3AF626',
+  delivered: '#FFFFFF', completed: '#3AF626',
   cancelled: '#F62626',
 }
 const statusColor = (s: string) => STATUS_COLOR[s] ?? '#9f9c9c'
