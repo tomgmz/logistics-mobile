@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { ActivityIndicator, Alert, Linking, PixelRatio, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { Signpost, CheckCircle2, PackageCheck, WifiOff } from 'lucide-react-native'
+import { Signpost, CheckCircle2, PackageCheck, WifiOff, Volume2, VolumeX } from 'lucide-react-native'
+import { loadNavMuted, saveNavMuted } from '../../../lib/navVoice'
 import NetInfo from '@react-native-community/netinfo'
 import { isOnline } from '../../../lib/network'
 import * as Location from 'expo-location'
@@ -10,6 +11,7 @@ import {
   NavigationProvider,
   NavigationView,
   NavigationNightMode,
+  AudioGuidance,
   useNavigation,
   TaskRemovedBehavior,
   TravelMode,
@@ -200,7 +202,7 @@ const MAP_BTN_PITCH = MAP_BTN_SIZE + 6
 
 /**
  * The column under the compass, one evenly spaced slot per button: SOS, the
- * avoid-highways toggle, confirm-stop, then pause/resume.
+ * avoid-highways toggle, confirm-stop, then mute.
  *
  * Every button in it is MAP_BTN_SIZE wide at MAP_BTN_RIGHT, the compass's own
  * box — same width and same margin is what puts their centres on one line, so
@@ -315,6 +317,8 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
   } | null>(null)
   const [rerouting, setRerouting] = useState(false)
   const [avoidHighways, setAvoidHighways] = useState(false)
+  /** Driver's mute choice (per phone, lib/navVoice). Voice only; guidance runs on. */
+  const [voiceMuted, setVoiceMuted] = useState(false)
   const [toggleError, setToggleError] = useState<string | null>(null)
   // The planned stops and which one is current. The trip sheet renders the list.
   const [stops, setStops]       = useState<DisplayStop[]>([])
@@ -657,6 +661,41 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
       if (guidingRef.current) void navigationController.startGuidance().catch(() => {})
     }
   }, [pause, starting, completed, navigationController])
+
+  // The saved mute choice, read once when the screen opens.
+  useEffect(() => {
+    let alive = true
+    void loadNavMuted().then((m) => { if (alive) setVoiceMuted(m) })
+    return () => { alive = false }
+  }, [])
+
+  /**
+   * Mute = Google's SILENT audio guidance: no voice, no vibration. The route,
+   * the map, tracking and the notification are untouched. Applied once the
+   * navigator exists (`starting` false) and again on every change. It is a
+   * navigator setting, so it outlives stopGuidance (office pause) but not
+   * cleanup(), and a fresh navigator starts with voice on, hence re-applying
+   * on every start of this screen.
+   *
+   * Only SILENT (0) and VOICE_ALERTS_AND_GUIDANCE (4) are used on purpose: the
+   * SDK's Android bridge maps JS 1 to "alerts only" and JS 2 to full voice,
+   * which does not match the enum, so the in-between level is not offered.
+   */
+  useEffect(() => {
+    if (starting || completed) return
+    try {
+      navigationController.setAudioGuidanceType(
+        voiceMuted ? AudioGuidance.SILENT : AudioGuidance.VOICE_ALERTS_AND_GUIDANCE,
+      )
+    } catch {}
+  }, [voiceMuted, starting, completed, navigationController])
+
+  const toggleVoiceMuted = useCallback(() => {
+    setVoiceMuted((m) => {
+      saveNavMuted(!m)
+      return !m
+    })
+  }, [])
 
   // What to do when the connection comes back. Defined in render so it closes
   // over the latest applyDestinations; invoked via the ref from the NetInfo
@@ -1826,6 +1865,31 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
             : isFinalAction
               ? <CheckCircle2 size={22} color={C.green} strokeWidth={1.5} />
               : <PackageCheck size={22} color={C.green} strokeWidth={1.5} />}
+        </TouchableOpacity>
+      )}
+
+      {/* Mute: silences Google's voice for a quick break or a phone call.
+          Navigation itself keeps running. Red ring + crossed speaker while
+          muted, so a driver who forgot can see it at a glance. */}
+      {!SHOW_NATIVE_UI && !completed && (
+        <TouchableOpacity
+          onPress={toggleVoiceMuted}
+          activeOpacity={0.85}
+          accessibilityRole="switch"
+          accessibilityState={{ checked: voiceMuted }}
+          accessibilityLabel={voiceMuted ? 'Voice guidance muted. Tap to unmute' : 'Mute voice guidance'}
+          style={[
+            MAP_BTN,
+            {
+              top:         insets.top + mapBtnSlotTop(stops.length > 0 ? 3 : 2),
+              zIndex:      21,
+              borderColor: voiceMuted ? MAP_BTN_RED : MAP_BTN_IDLE,
+            },
+          ]}
+        >
+          {voiceMuted
+            ? <VolumeX size={22} color={MAP_BTN_RED} strokeWidth={1.5} />
+            : <Volume2 size={22} color={MAP_BTN_IDLE} strokeWidth={1.5} />}
         </TouchableOpacity>
       )}
 
