@@ -24,6 +24,7 @@ import {
 import { IncidentTypeGrid } from './IncidentTypeGrid'
 import { ReportDetailsPanel } from './ReportDetailsPanel'
 import { useReportContext } from '../../hooks/useReportContext'
+import FileImage from '../FileImage'
 
 /**
  * The detailed emergency report.
@@ -320,7 +321,7 @@ export function ReportForm({
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
             {photos.map((url) => (
               <View key={url} style={{ width: 62, height: 62, borderRadius: 8, overflow: 'hidden' }}>
-                <Image source={{ uri: url }} style={{ width: '100%', height: '100%' }} />
+                <FileImage uri={url} style={{ width: '100%', height: '100%' }} />
                 <TouchableOpacity
                   onPress={() => setPhotos((p) => p.filter((u) => u !== url))}
                   accessibilityRole="button"

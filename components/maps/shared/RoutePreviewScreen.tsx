@@ -15,6 +15,8 @@ import api from '../../../lib/api/auth.api'
 import { loadBookingCache } from '../../../lib/navCache'
 import { decodePolyline } from '../../../utils/geo'
 import { FONTS } from '../../../lib/config/fonts'
+import { PH_MIN_ZOOM, useKeepCameraInPhilippines } from '../../../lib/philippinesMap'
+import { fitZoom } from '../../../lib/mapFit'
 import type { LatLng } from '../../../types/navigation.types'
 
 /**
@@ -76,45 +78,13 @@ const C = {
 /** Our coords are {latitude, longitude}; the Google SDK speaks {lat, lng}. */
 const g = (p: LatLng) => ({ lat: p.latitude, lng: p.longitude })
 
-/**
- * The zoom that fits a bounding box into a viewport — the Web Mercator maths
- * Google's own `fitBounds` uses.
- *
- * The SDK's MapViewController has no bounds-fitting call (only `moveCamera` and
- * `setZoomLevel`), so the fit has to be computed here. Doing it from the span
- * alone gets it wrong: a route that is wide but short needs a different zoom
- * than a tall narrow one, and that depends on the viewport's own proportions.
- */
-const WORLD_PX = 256
-const MAX_ZOOM = 18
-
-function latRad(lat: number): number {
-  const sin   = Math.sin((lat * Math.PI) / 180)
-  const radX2 = Math.log((1 + sin) / (1 - sin)) / 2
-  return Math.max(Math.min(radX2, Math.PI), -Math.PI) / 2
-}
-
-function fitZoom(
-  bounds: { north: number; south: number; east: number; west: number },
-  viewport: { width: number; height: number },
-): number {
-  const latFraction = (latRad(bounds.north) - latRad(bounds.south)) / Math.PI
-  const lngDiff     = bounds.east - bounds.west
-  const lngFraction = (lngDiff < 0 ? lngDiff + 360 : lngDiff) / 360
-
-  // A degenerate span (one stop, or stops on top of each other) would divide by
-  // ~0 and shoot to max zoom; clamp both fractions to something a street-level
-  // view can represent.
-  const latZoom = Math.log2(viewport.height / WORLD_PX / Math.max(latFraction, 1e-6))
-  const lngZoom = Math.log2(viewport.width  / WORLD_PX / Math.max(lngFraction, 1e-6))
-
-  return Math.min(latZoom, lngZoom, MAX_ZOOM)
-}
 
 export default function RoutePreviewScreen({ bookingId, onBack }: Props) {
   const insets = useSafeAreaInsets()
 
   const controller = useRef<MapViewController | null>(null)
+  // Philippines only: pull the camera back if it is panned out of the country.
+  useKeepCameraInPhilippines(controller)
   const drawnRef   = useRef(false)
 
   const [loading,  setLoading]  = useState(true)
@@ -293,6 +263,7 @@ export default function RoutePreviewScreen({ bookingId, onBack }: Props) {
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
       <MapView
+        minZoomLevel={PH_MIN_ZOOM}
         style={StyleSheet.absoluteFill}
         onMapViewControllerCreated={(c) => { controller.current = c; setMapReady(true) }}
         // No initialCameraPosition: it is read once at mount, and the booking

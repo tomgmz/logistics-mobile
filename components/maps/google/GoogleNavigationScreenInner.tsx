@@ -3,6 +3,7 @@ import { ActivityIndicator, Alert, Linking, PixelRatio, Platform, StyleSheet, Te
 import { useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Signpost, CheckCircle2, PackageCheck, WifiOff, Volume2, VolumeX } from 'lucide-react-native'
+import { PH_MIN_ZOOM } from '../../../lib/philippinesMap'
 import { loadNavMuted, saveNavMuted } from '../../../lib/navVoice'
 import NetInfo from '@react-native-community/netinfo'
 import { isOnline } from '../../../lib/network'
@@ -1721,6 +1722,9 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
         // Dark map: during a nav session the theme is driven by
         // navigationNightMode (not a cloud mapId/color scheme), so force night.
         navigationNightMode={NavigationNightMode.FORCE_NIGHT}
+        // Philippines only: zooming out stops at about the whole country. A view
+        // prop, not a camera call, so Google's follow mode is untouched.
+        minZoomLevel={PH_MIN_ZOOM}
         // Google's own prompts (a flood or traffic report asking the driver to
         // confirm it) appear at the bottom, under our trip sheet. The sheet
         // steps aside while one is up.

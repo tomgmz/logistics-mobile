@@ -1,9 +1,10 @@
 import React, { useState } from 'react'
-import { View, Text, Image, TouchableOpacity, Modal, StyleSheet, Pressable, type TextStyle } from 'react-native'
+import { View, Text, TouchableOpacity, Modal, StyleSheet, Pressable, type TextStyle } from 'react-native'
 import { MapPin, X } from 'lucide-react-native'
 import { FONTS } from '../../lib/config/fonts'
 import { PHOTO_PLACEHOLDER } from '../../lib/chatPhoto'
 import { MentionText } from './BookingMention'
+import FileImage from '../FileImage'
 
 /**
  * A photo message inside a chat bubble: the picture (tap for full screen) with
@@ -23,7 +24,7 @@ export default function ChatPhotoBubble({ url, stamped, caption, textStyle, onLo
   return (
     <View style={s.wrap}>
       <TouchableOpacity activeOpacity={0.9} onPress={() => setOpen(true)} onLongPress={onLongPress} delayLongPress={350}>
-        <Image source={{ uri: url }} style={s.image} resizeMode="cover" />
+        <FileImage uri={url} style={s.image} resizeMode="cover" />
         {stamped && (
           <View style={s.tag}>
             <MapPin size={9} color="#fff" />
@@ -35,7 +36,7 @@ export default function ChatPhotoBubble({ url, stamped, caption, textStyle, onLo
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable style={s.viewer} onPress={() => setOpen(false)}>
-          <Image source={{ uri: url }} style={s.full} resizeMode="contain" />
+          <FileImage uri={url} style={s.full} resizeMode="contain" />
           <TouchableOpacity style={s.close} onPress={() => setOpen(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
             <X size={22} color="#fff" />
           </TouchableOpacity>

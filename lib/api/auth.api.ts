@@ -121,6 +121,37 @@ async function doRefresh(): Promise<string> {
   return newToken
 }
 
+/**
+ * The access token, refreshed first if it is about to expire, for requests
+ * that can't go through `api` (2026-11-08: stored-file images, which the API
+ * only serves to the account the link was issued to). Shares the refresh
+ * queue with the interceptors, so a burst of images triggers one refresh.
+ * Null when signed out or the refresh failed.
+ */
+export async function getFreshAccessToken(): Promise<string | null> {
+  const token = await TokenStore.getAccess()
+  if (!token || !isTokenExpiredOrExpiringSoon(token)) return token
+  if (isRefreshing) {
+    return new Promise<string>((resolve, reject) => { failedQueue.push({ resolve, reject }) })
+      .catch(() => null)
+  }
+  isRefreshing = true
+  try {
+    const fresh = await doRefresh()
+    processQueue(null, fresh)
+    return fresh
+  } catch (e) {
+    processQueue(e)
+    if (isSessionDead(e)) {
+      await TokenStore.clearAll()
+      _onSessionExpired?.()
+    }
+    return null
+  } finally {
+    isRefreshing = false
+  }
+}
+
 api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
   // The phone's clock at the moment this goes out. The server compares it with
   // its own to learn how far off this phone is right now, and corrects the

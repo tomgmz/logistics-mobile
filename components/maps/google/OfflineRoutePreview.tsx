@@ -12,6 +12,7 @@ import type { CachedRouteGeometry, GeoPoint } from '../../../lib/routeGeometryCa
 import type { DisplayStop } from '../../../lib/navSession'
 import { GoogleNavSheet, SHEET_PEEK_H } from './GoogleNavSheet'
 import { C } from '../../../theme/navigation.theme'
+import { PH_MIN_ZOOM, useKeepCameraInPhilippines } from '../../../lib/philippinesMap'
 
 /**
  * What the driver gets instead of an error screen when navigation can't start.
@@ -134,6 +135,8 @@ export function OfflineRoutePreview({
   const [sheetH, setSheetH] = useState(SHEET_PEEK_H + insets.bottom)
   const drawnRef      = useRef(false)
   const controllerRef = useRef<MapViewController | null>(null)
+  // Philippines only: pull the camera back if it is panned out of the country.
+  useKeepCameraInPhilippines(controllerRef)
   const mapReadyRef   = useRef(false)
 
   // Fit to the whole run — line and markers together, so a route whose geometry
@@ -195,6 +198,7 @@ export function OfflineRoutePreview({
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <MapView
+        minZoomLevel={PH_MIN_ZOOM}
         style={{ flex: 1 }}
         mapColorScheme={MapColorScheme.DARK}
         myLocationEnabled

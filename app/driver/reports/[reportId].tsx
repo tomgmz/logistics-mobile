@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import {
   ActivityIndicator,
-  Image,
   ScrollView,
   StatusBar,
   Text,
@@ -23,6 +22,7 @@ import {
 } from '../../../lib/api/reports.api'
 import { ReportForm } from '../../../components/reports/ReportForm'
 import { useLiveSignal } from '../../../hooks/useLiveSignal'
+import FileImage from '../../../components/FileImage'
 
 /**
  * One report.
@@ -280,9 +280,9 @@ export default function ReportDetailScreen() {
               </Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {report.photo_urls.map((url) => (
-                  <Image
+                  <FileImage
                     key={url}
-                    source={{ uri: url }}
+                    uri={url}
                     style={{ width: 78, height: 78, borderRadius: 8, backgroundColor: D.inner }}
                   />
                 ))}
