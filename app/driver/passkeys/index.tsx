@@ -18,7 +18,6 @@ import {
   removeMyPasskey,
   type MyPasskey,
 } from '../../../lib/api/auth.api'
-import { useAuthStore } from '../../../lib/store/auth.store'
 import {
   checkPasskeySupport,
   createPasskey,
@@ -32,10 +31,11 @@ import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 /**
  * Passkey sign-in, set up from inside the app.
  *
- * Vendor drivers get their passkey from an emailed setup link (driver-setup).
- * 8338's own drivers are already signed in, so their session is what authorises
- * the passkey: one tap, the phone's fingerprint/face/PIN prompt, done. They keep
- * the emailed code and password; the passkey is a faster way in, not the only one.
+ * Every driver (8338's own and, since 2026-11-09, vendor drivers) is already
+ * signed in, so their session is what authorises the passkey: one tap, the
+ * phone's fingerprint/face/PIN prompt, done. They keep the emailed code and
+ * password; the passkey is a faster way in, not the only one. A vendor driver
+ * can also get one from an emailed setup link (driver-setup).
  */
 
 const C = {
@@ -71,7 +71,7 @@ function formatDay(iso: string | null | undefined): string | null {
   return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`
 }
 
-/** The library's own copy talks to vendor drivers; a company driver always has email sign-in to fall back on. */
+/** The library's own copy assumes no other way in; every driver has email sign-in to fall back on. */
 function unsupportedMessage(reason: string): string {
   if (reason === 'os-too-old') {
     return 'This phone runs a version of Android that cannot store a passkey (Android 9 or newer is required). Keep signing in with your email.'
@@ -86,7 +86,6 @@ type Notice = { tone: 'ok' | 'info' | 'error'; text: string } | null
 
 export default function PasskeysScreen() {
   const insets     = useSafeAreaInsets()
-  const isExternal = useAuthStore((s) => s.user?.drivers?.is_external === true)
 
   const [support]     = useState(() => checkPasskeySupport())
   const [items,       setItems]       = useState<MyPasskey[]>([])
@@ -157,9 +156,6 @@ export default function PasskeysScreen() {
     }
   }, [removing, removeBusy, load])
 
-  // A vendor driver may not remove their last one: it is their only way in.
-  const lastLocked = isExternal && items.length <= 1
-
   return (
     <View style={styles.root}>
       <ScrollView
@@ -174,7 +170,7 @@ export default function PasskeysScreen() {
           <Text style={styles.heroText}>
             Use your phone's fingerprint, face or screen lock to sign in, with no code to wait
             for and no password to type.
-            {isExternal ? '' : ' You can still sign in with your email at any time.'}
+            {' '}You can still sign in with your email at any time.
           </Text>
         </View>
 
@@ -253,17 +249,15 @@ export default function PasskeysScreen() {
                     {[added && `Added ${added}`, used ? `Last used ${used}` : 'Not used yet'].filter(Boolean).join(' · ')}
                   </Text>
                 </View>
-                {!lastLocked && (
-                  <TouchableOpacity
-                    onPress={() => setRemoving(p)}
-                    hitSlop={8}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Remove passkey ${p.device_label ?? ''}`}
-                    style={styles.removeBtn}
-                  >
-                    <Text style={styles.removeText}>Remove</Text>
-                  </TouchableOpacity>
-                )}
+                <TouchableOpacity
+                  onPress={() => setRemoving(p)}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove passkey ${p.device_label ?? ''}`}
+                  style={styles.removeBtn}
+                >
+                  <Text style={styles.removeText}>Remove</Text>
+                </TouchableOpacity>
               </View>
             )
           })
@@ -273,11 +267,7 @@ export default function PasskeysScreen() {
       <ConfirmDialog
         visible={!!removing}
         title="Remove this passkey?"
-        message={
-          isExternal
-            ? 'It will stop working for sign-in. Your other passkey keeps working.'
-            : 'It will stop working for sign-in. You can still sign in with your email, and set up a new passkey at any time.'
-        }
+        message="It will stop working for sign-in. You can still sign in with your email, and set up a new passkey at any time."
         confirmLabel="Remove"
         tone="red"
         busy={removeBusy}

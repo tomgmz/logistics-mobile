@@ -287,7 +287,7 @@ export interface AuthUser {
     license_number:   string
     license_expiry:   string
     status:           string
-    /** A vendor's driver (passkey sign-in, crewed per booking, not in the company pool). */
+    /** A vendor's driver (crewed per booking, not in the company pool). */
     is_external?:     boolean
   } | null
 
@@ -433,7 +433,7 @@ export async function logoutAll(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Passkeys — for outside-vendor drivers, who have no password at all.
+// Passkeys — an optional way in for every driver (company and vendor).
 
 export interface EnrollmentInvitePreview {
   valid:        boolean

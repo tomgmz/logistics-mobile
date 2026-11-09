@@ -1017,8 +1017,8 @@ export default function SignInScreen() {
                 />
 
                 {/*
-                  Passkey sign-in: the only way in for vendor drivers, and an
-                  option for 8338 drivers who set one up from the account menu.
+                  Passkey sign-in: an option for every driver who set one up
+                  (account menu, or a vendor driver's emailed setup link).
                   Shown only when this phone can actually use one, so it is
                   never a button that leads to a refusal. It skips the email
                   field entirely — the OS picks the account.
