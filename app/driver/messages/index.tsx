@@ -6,7 +6,8 @@ import {
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { Search, Users, MessageCircle, Plus, ArrowLeft } from 'lucide-react-native'
+import { Search, MessageCircle, Plus, ChevronLeft } from 'lucide-react-native'
+import { useNetInfo } from '@react-native-community/netinfo'
 import { useAuthStore } from '../../../lib/store/auth.store'
 import { messagingApi } from '../../../lib/api/messaging.api'
 import { useMessagingRealtime } from '../../../hooks/useMessagingRealtime'
@@ -19,7 +20,11 @@ import type {
 import { FONTS } from '../../../lib/config/fonts'
 
 const C = {
-  bg:        '#0a0a0a',
+  bg:        '#000000',
+  field:     '#111212',
+  ring:      '#5a5a5a',
+  teal:      '#073b38',
+  green:     '#3af626',
   card:      '#141414',
   raised:    '#1a1a1a',
   elevated:  '#1e1e1e',
@@ -82,10 +87,15 @@ function DmRow({ item, currentUserId, isOnline, onPress, index }: {
   const hasUnread = item.unread_count > 0
   const isMyLast  = last?.sender_id === currentUserId
 
+  const senderFirst = !isMyLast && last ? (u.first_name ?? '') : ''
+  const preview = last
+    ? (isMyLast ? `You: ${last.content}` : hasUnread && senderFirst ? `${senderFirst}: ${last.content}` : last.content)
+    : 'No messages yet'
+
   return (
     <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
       <TouchableOpacity onPress={onPress} activeOpacity={0.75} style={styles.row}>
-        <View style={styles.avatar}>
+        <View style={[styles.avatar, hasUnread && styles.avatarUnread]}>
           <Text style={styles.avatarText}>{initials(u.first_name, u.last_name)}</Text>
           {isOnline && <View style={styles.onlineDot} />}
         </View>
@@ -95,31 +105,20 @@ function DmRow({ item, currentUserId, isOnline, onPress, index }: {
             <Text style={[styles.rowName, hasUnread && styles.rowNameUnread]} numberOfLines={1}>
               {nameWithRole(u.first_name, u.last_name, u.role)}
             </Text>
-            {last && (
-              <Text style={styles.rowTime}>{formatTime(last.sent_at)}</Text>
-            )}
+            {last && <Text style={styles.rowTime}>{formatTime(last.sent_at)}</Text>}
           </View>
-          <View style={styles.rowBottom}>
-            <Text style={[styles.rowPreview, hasUnread && styles.rowPreviewUnread]} numberOfLines={1}>
-              {isMyLast && <Text style={styles.youPrefix}>You: </Text>}
-              {last?.content ?? 'No messages yet'}
-            </Text>
-            {hasUnread && (
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>
-                  {item.unread_count > 9 ? '9+' : item.unread_count}
-                </Text>
-              </View>
-            )}
-          </View>
+          <Text style={[styles.rowPreview, hasUnread && styles.rowPreviewUnread]} numberOfLines={1}>
+            {preview}
+          </Text>
         </View>
       </TouchableOpacity>
     </Animated.View>
   )
 }
 
-function GroupRow({ item, onPress, index }: {
+function GroupRow({ item, currentUserId, onPress, index }: {
   item: GroupRaw
+  currentUserId: string
   onPress: () => void
   index: number
 }) {
@@ -138,35 +137,31 @@ function GroupRow({ item, onPress, index }: {
   const isPending = item.my_status === 'pending'
   const count     = item.members.filter(m => m.status === 'accepted').length
 
+  const groupInitials = item.name.trim().split(/\s+/).slice(0, 2).map(w => w[0] ?? '').join('').toUpperCase() || 'G'
+  const preview = isPending
+    ? null
+    : last
+      ? (last.sender_id === currentUserId ? `You: ${last.content}` : last.content)
+      : `${count} member${count !== 1 ? 's' : ''}`
+
   return (
     <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
       <TouchableOpacity onPress={onPress} activeOpacity={0.75} style={styles.row}>
-        <View style={[styles.avatar, styles.groupAvatar]}>
+        <View style={[styles.avatar, (hasUnread || isPending) && styles.avatarUnread]}>
           {isPending && <View style={styles.pendingDot} />}
-          <Users size={17} color={C.muted} />
+          <Text style={styles.avatarText}>{groupInitials}</Text>
         </View>
 
         <View style={styles.rowBody}>
           <View style={styles.rowTop}>
-            <Text style={[styles.rowName, hasUnread && styles.rowNameUnread]} numberOfLines={1}>
+            <Text style={[styles.rowName, (hasUnread || isPending) && styles.rowNameUnread]} numberOfLines={1}>
               {item.name}
             </Text>
             {last && <Text style={styles.rowTime}>{formatTime(last.sent_at)}</Text>}
           </View>
-          <View style={styles.rowBottom}>
-            <Text style={[styles.rowPreview, hasUnread && styles.rowPreviewUnread]} numberOfLines={1}>
-              {isPending
-                ? <Text style={styles.pendingText}>Invite pending</Text>
-                : last?.content ?? `${count} member${count !== 1 ? 's' : ''}`}
-            </Text>
-            {hasUnread && (
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>
-                  {item.unread_count > 9 ? '9+' : item.unread_count}
-                </Text>
-              </View>
-            )}
-          </View>
+          <Text style={[styles.rowPreview, hasUnread && styles.rowPreviewUnread]} numberOfLines={1}>
+            {isPending ? <Text style={styles.pendingText}>Invite pending</Text> : preview}
+          </Text>
         </View>
       </TouchableOpacity>
     </Animated.View>
@@ -188,6 +183,11 @@ export default function MessagesScreen() {
   const [search,        setSearch]        = useState('')
   const [composeOpen,   setComposeOpen]   = useState(false)
   const [nowTick,       setNowTick]       = useState(0)
+  const [tab,           setTab]           = useState<'direct' | 'groups'>('direct')
+  // The ONLINE pill: whether this phone has a connection, so messages arrive
+  // live (null while unknown counts as online, as the offline queue does).
+  const netInfo = useNetInfo()
+  const isOnlineNow = netInfo.isConnected !== false
 
   useEffect(() => {
     const id = setInterval(() => setNowTick(t => t + 1), 60_000)
@@ -260,15 +260,16 @@ export default function MessagesScreen() {
 
   const q = search.toLowerCase()
 
-  const unified: UnifiedItem[] = [
-    ...conversations
-      // By name or role, e.g. "company administrator".
-      .filter(c => matchesPersonSearch(search, c.other_user))
-      .map(c => ({ kind: 'dm' as const, data: c, lastAt: c.last_message?.sent_at ?? c.created_at })),
-    ...groups
-      .filter(g => g.name.toLowerCase().includes(q.trim()))
-      .map(g => ({ kind: 'group' as const, data: g, lastAt: g.last_message?.sent_at ?? g.created_at })),
-  ].sort((a, b) => b.lastAt.localeCompare(a.lastAt))
+  // DIRECT and GROUPS are separate tabs (Figma), each newest first.
+  const unified: UnifiedItem[] = (tab === 'direct'
+    ? conversations
+        // By name or role, e.g. "company administrator".
+        .filter(c => matchesPersonSearch(search, c.other_user))
+        .map(c => ({ kind: 'dm' as const, data: c, lastAt: c.last_message?.sent_at ?? c.created_at }))
+    : groups
+        .filter(g => g.name.toLowerCase().includes(q.trim()))
+        .map(g => ({ kind: 'group' as const, data: g, lastAt: g.last_message?.sent_at ?? g.created_at }))
+  ).sort((a, b) => b.lastAt.localeCompare(a.lastAt))
 
   const totalUnread =
     conversations.reduce((s, c) => s + c.unread_count, 0) +
@@ -279,34 +280,45 @@ export default function MessagesScreen() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} activeOpacity={0.7} style={styles.backBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <ArrowLeft size={22} color={C.white} />
+          <ChevronLeft size={22} color={C.white} />
         </TouchableOpacity>
-        <View>
-          <View style={styles.titleRow}>
-            <Text style={styles.title}>Messages</Text>
-            {totalUnread > 0 && (
-              <View style={styles.totalBadge}>
-                <Text style={styles.totalBadgeText}>{totalUnread > 99 ? '99+' : totalUnread}</Text>
-              </View>
-            )}
-          </View>
+        <Text style={styles.title} numberOfLines={1}>MESSAGES</Text>
+        <View style={[styles.statusPill, !isOnlineNow && styles.statusPillOff]}>
+          <View style={[styles.statusDot, !isOnlineNow && styles.statusDotOff]} />
+          <Text style={[styles.statusText, !isOnlineNow && styles.statusTextOff]}>{isOnlineNow ? 'ONLINE' : 'OFFLINE'}</Text>
         </View>
       </View>
 
       {/* Search */}
       <View style={styles.searchWrap}>
-        <Search size={14} color={C.muted} style={styles.searchIcon} />
+        <Search size={18} color={C.muted} style={styles.searchIcon} />
         <TextInput
           value={search}
           onChangeText={setSearch}
-          placeholder="Search by name or role…"
-          placeholderTextColor="rgba(255,255,255,0.22)"
+          placeholder="Search Conversations"
+          placeholderTextColor="rgba(255,255,255,0.4)"
           style={styles.searchInput}
         />
       </View>
 
-      {/* Separator */}
+      {/* Dashed separator */}
       <View style={styles.sep} />
+
+      {/* DIRECT / GROUPS */}
+      <View style={styles.tabs}>
+        {(['direct', 'groups'] as const).map(t => {
+          const active = tab === t
+          const unread = t === 'direct'
+            ? conversations.reduce((n, c) => n + c.unread_count, 0)
+            : groups.reduce((n, g) => n + g.unread_count, 0) + groups.filter(g => g.my_status === 'pending').length
+          return (
+            <TouchableOpacity key={t} onPress={() => setTab(t)} activeOpacity={0.8} style={[styles.tab, active && styles.tabActive]}>
+              <Text style={styles.tabText}>{t === 'direct' ? 'DIRECT' : 'GROUPS'}</Text>
+              {unread > 0 && !active && <View style={styles.tabDot} />}
+            </TouchableOpacity>
+          )
+        })}
+      </View>
 
       {/* List */}
       {loading ? (
@@ -326,7 +338,9 @@ export default function MessagesScreen() {
             <View style={styles.center}>
               <MessageCircle size={36} color="rgba(255,255,255,0.12)" />
               <Text style={styles.emptyText}>
-                {search ? 'No conversations match your search' : 'No conversations yet'}
+                {search
+                  ? 'No conversations match your search'
+                  : tab === 'direct' ? 'No conversations yet' : 'No groups yet'}
               </Text>
             </View>
           }
@@ -358,6 +372,7 @@ export default function MessagesScreen() {
             ) : (
               <GroupRow
                 item={item.data}
+                currentUserId={currentUserId}
                 index={index}
                 onPress={() => {
                   if (item.data.unread_count > 0) decrementUnread(item.data.unread_count)
@@ -385,7 +400,7 @@ export default function MessagesScreen() {
         onPress={() => setComposeOpen(true)}
         style={[styles.fab, { bottom: insets.bottom + 20 }]}
       >
-        <Plus size={24} color={C.bg} />
+        <Plus size={26} color={C.cyan} strokeWidth={2.2} />
       </TouchableOpacity>
 
       <ComposeModal
@@ -419,227 +434,94 @@ export default function MessagesScreen() {
 }
 
 
+// Darker Grotesque: the face in the Messages design (Figma, 2026-11-10). It
+// has short letters, so sizes are set from the design's letter heights.
+const DG = FONTS.darker
+
 const styles = StyleSheet.create({
-  container: {
-    flex:            1,
-    backgroundColor: C.bg,
-  },
+  container: { flex: 1, backgroundColor: C.bg },
+
+  // Header: back circle, MESSAGES, connection pill
   header: {
-    flexDirection:     'row',
-    alignItems:        'center',
-    gap:               6,
-    paddingHorizontal: 16,
-    paddingTop:        12,
-    paddingBottom:     12,
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 19, paddingTop: 14, paddingBottom: 14,
   },
   backBtn: {
-    padding:      4,
-    borderRadius: 8,
+    width: 35, height: 35, borderRadius: 17.5,
+    backgroundColor: C.field, borderWidth: 1, borderColor: '#2f2f2f',
+    alignItems: 'center', justifyContent: 'center',
   },
-  label: {
-    color:         C.muted,
-    fontSize:      10,
-    fontFamily: FONTS.alegreyaSans.bold,
-    letterSpacing: 2.5,
-    textTransform: 'uppercase',
-    marginBottom:  2,
+  title: { flex: 1, color: C.white, fontSize: 36, fontFamily: DG.extraBold, letterSpacing: 0.4, lineHeight: 40 },
+  statusPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 8, height: 18, borderRadius: 9,
+    backgroundColor: 'rgba(58,246,38,0.12)', borderWidth: 1, borderColor: C.green,
   },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems:    'center',
-    gap:           10,
-  },
-  title: {
-    color:      C.white,
-    fontSize:   28,
-    fontFamily: FONTS.alegreyaSans.bold,
-    letterSpacing: -0.5,
-  },
-  totalBadge: {
-    backgroundColor: C.cyan,
-    borderRadius:    14,
-    minWidth:        28,
-    height:          28,
-    alignItems:      'center',
-    justifyContent:  'center',
-    paddingHorizontal: 6,
-  },
-  totalBadgeText: {
-    color:      C.bg,
-    fontSize:   12,
-    fontFamily: FONTS.alegreyaSans.bold,
-  },
+  statusPillOff: { backgroundColor: 'rgba(255,255,255,0.06)', borderColor: C.muted },
+  statusDot:     { width: 6, height: 6, borderRadius: 3, backgroundColor: C.green },
+  statusDotOff:  { backgroundColor: C.muted },
+  statusText:    { color: C.green, fontSize: 13, fontFamily: DG.semiBold, letterSpacing: 0.3, lineHeight: 15 },
+  statusTextOff: { color: C.muted },
+
+  // Search
   searchWrap: {
-    flexDirection:     'row',
-    alignItems:        'center',
-    marginHorizontal:  16,
-    marginBottom:      12,
-    backgroundColor:   C.raised,
-    borderRadius:      12,
-    borderWidth:       1,
-    borderColor:       C.border,
-    paddingHorizontal: 12,
-    height:            42,
+    flexDirection: 'row', alignItems: 'center',
+    marginHorizontal: 19, marginBottom: 9,
+    backgroundColor: C.field, borderRadius: 18.5, borderWidth: 1, borderColor: '#2a2a2a',
+    paddingHorizontal: 14, height: 37,
   },
-  searchIcon: {
-    marginRight: 8,
-  },
-  searchInput: {
-    flex:      1,
-    color:     C.white,
-    fontSize:  14,
-    fontFamily: FONTS.alegreyaSans.regular,
-    paddingVertical: 0,
-  },
+  searchIcon: { marginRight: 10 },
+  searchInput: { flex: 1, color: C.white, fontSize: 16, fontFamily: DG.medium, paddingVertical: 0 },
+
+  // Dashed rule under the search
   sep: {
-    height:          1,
-    backgroundColor: C.border,
-    marginHorizontal: 16,
-    marginBottom:    4,
+    marginHorizontal: 16, height: 0, borderTopWidth: 1, borderStyle: 'dashed', borderColor: 'rgba(255,255,255,0.35)',
   },
-  center: {
-    flex:           1,
-    alignItems:     'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-    gap:            12,
+
+  // Tabs
+  tabs: { flexDirection: 'row', marginHorizontal: 16, marginBottom: 14 },
+  tab: {
+    flex: 1, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6,
+    paddingTop: 10, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: 'transparent',
   },
-  emptyText: {
-    color:     C.muted,
-    fontSize:  13,
-    fontFamily: FONTS.alegreyaSans.regular,
-    textAlign: 'center',
-  },
+  tabActive: { borderBottomColor: C.cyan },
+  tabText:   { color: C.white, fontSize: 15, fontFamily: DG.bold, letterSpacing: 0.4 },
+  tabDot:    { width: 6, height: 6, borderRadius: 3, backgroundColor: C.cyan },
+
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 12 },
+  emptyText: { color: C.muted, fontSize: 16, fontFamily: DG.medium, textAlign: 'center' },
 
   // Row
-  row: {
-    flexDirection:     'row',
-    alignItems:        'center',
-    gap:               12,
-    paddingHorizontal: 16,
-    paddingVertical:   12,
-  },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 19, paddingVertical: 4.5 },
   avatar: {
-    width:           44,
-    height:          44,
-    borderRadius:    22,
-    backgroundColor: C.raised,
-    borderWidth:     1,
-    borderColor:     C.border,
-    alignItems:      'center',
-    justifyContent:  'center',
-    flexShrink:      0,
-    position:        'relative',
+    width: 35, height: 35, borderRadius: 17.5,
+    backgroundColor: C.field, borderWidth: 1, borderColor: C.ring,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0, position: 'relative',
   },
+  avatarUnread: { borderWidth: 2, borderColor: C.cyan },
+  avatarText: { color: C.white, fontSize: 15, fontFamily: DG.medium },
   onlineDot: {
-    position:        'absolute',
-    bottom:          0,
-    right:           0,
-    width:           12,
-    height:          12,
-    borderRadius:    6,
-    backgroundColor: '#3af626',
-    borderWidth:     2,
-    borderColor:     C.bg,
-  },
-  groupAvatar: {
-    position: 'relative',
-  },
-  avatarText: {
-    color:      C.white,
-    fontSize:   14,
-    fontFamily: FONTS.alegreyaSans.bold,
+    position: 'absolute', bottom: -1, right: -1, width: 10, height: 10, borderRadius: 5,
+    backgroundColor: C.green, borderWidth: 2, borderColor: C.bg,
   },
   pendingDot: {
-    position:        'absolute',
-    top:             -1,
-    right:           -1,
-    width:           12,
-    height:          12,
-    borderRadius:    6,
-    backgroundColor: '#ff7a30',
-    borderWidth:     2,
-    borderColor:     C.bg,
-    zIndex:          1,
+    position: 'absolute', top: -2, right: -2, width: 10, height: 10, borderRadius: 5,
+    backgroundColor: '#ff7a30', borderWidth: 2, borderColor: C.bg, zIndex: 1,
   },
-  rowBody: {
-    flex: 1,
-  },
-  rowTop: {
-    flexDirection:  'row',
-    alignItems:     'center',
-    justifyContent: 'space-between',
-    gap:            8,
-    marginBottom:   3,
-  },
-  rowName: {
-    flex:       1,
-    color:      'rgba(255,255,255,0.75)',
-    fontSize:   14,
-    fontFamily: FONTS.alegreyaSans.medium,
-  },
-  rowNameUnread: {
-    color:      C.white,
-    fontWeight: '700',
-  },
-  rowTime: {
-    color:     C.muted,
-    fontSize:  11,
-    fontFamily: FONTS.alegreyaSans.regular,
-    flexShrink: 0,
-  },
-  rowBottom: {
-    flexDirection:  'row',
-    alignItems:     'center',
-    justifyContent: 'space-between',
-    gap:            8,
-  },
-  rowPreview: {
-    flex:       1,
-    color:      'rgba(255,255,255,0.28)',
-    fontSize:   12,
-    fontFamily: FONTS.alegreyaSans.regular,
-  },
-  rowPreviewUnread: {
-    color: 'rgba(255,255,255,0.55)',
-  },
-  youPrefix: {
-    color: 'rgba(77,249,237,0.5)',
-  },
-  pendingText: {
-    color: '#ff7a30',
-  },
-  badge: {
-    backgroundColor: C.cyan,
-    borderRadius:    9,
-    minWidth:        18,
-    height:          18,
-    alignItems:      'center',
-    justifyContent:  'center',
-    paddingHorizontal: 4,
-    flexShrink:      0,
-  },
-  badgeText: {
-    color:      C.bg,
-    fontSize:   10,
-    fontFamily: FONTS.alegreyaSans.bold,
-    lineHeight: 12,
-  },
+  rowBody: { flex: 1, gap: 2 },
+  rowTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 },
+  rowName: { flex: 1, color: C.white, fontSize: 18, fontFamily: DG.medium, lineHeight: 21 },
+  rowNameUnread: { color: C.cyan, fontFamily: DG.bold },
+  rowTime: { color: C.muted, fontSize: 12, fontFamily: DG.medium, flexShrink: 0, lineHeight: 15 },
+  rowPreview: { color: C.muted, fontSize: 13, fontFamily: DG.medium, lineHeight: 15 },
+  rowPreviewUnread: { color: C.white, fontFamily: DG.bold },
+  pendingText: { color: '#ff7a30' },
 
-  // FAB
+  // + (new message)
   fab: {
-    position:        'absolute',
-    right:           20,
-    width:           56,
-    height:          56,
-    borderRadius:    28,
-    backgroundColor: C.cyan,
-    alignItems:      'center',
-    justifyContent:  'center',
-    shadowColor:     C.cyan,
-    shadowOpacity:   0.4,
-    shadowRadius:    12,
-    shadowOffset:    { width: 0, height: 4 },
-    elevation:       8,
+    position: 'absolute', right: 16, width: 48, height: 48, borderRadius: 24,
+    backgroundColor: C.teal, borderWidth: 2, borderColor: C.cyan,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: C.cyan, shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 6,
   },
 })

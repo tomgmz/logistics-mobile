@@ -33,9 +33,24 @@ export const APP_FONTS = {
   'LeagueSpartan-Black':       require('../../assets/fonts/League_Spartan/static/LeagueSpartan-Black.ttf'),
 
   'Eurostile-ExtdBlackItalic': require('../../assets/fonts/Eurostile/Eurostile_Extd_Black_Italic.otf'),
+
+  // Messaging (Figma, 2026-11-10).
+  'DarkerGrotesque-Regular':   require('@expo-google-fonts/darker-grotesque/400Regular/DarkerGrotesque_400Regular.ttf'),
+  'DarkerGrotesque-Medium':    require('@expo-google-fonts/darker-grotesque/500Medium/DarkerGrotesque_500Medium.ttf'),
+  'DarkerGrotesque-SemiBold':  require('@expo-google-fonts/darker-grotesque/600SemiBold/DarkerGrotesque_600SemiBold.ttf'),
+  'DarkerGrotesque-Bold':      require('@expo-google-fonts/darker-grotesque/700Bold/DarkerGrotesque_700Bold.ttf'),
+  'DarkerGrotesque-ExtraBold': require('@expo-google-fonts/darker-grotesque/800ExtraBold/DarkerGrotesque_800ExtraBold.ttf'),
 } as const
 
 export const FONTS = {
+  // Messaging screens (Figma 2026-11-10: inbox, chats, new message).
+  darker: {
+    regular:   'DarkerGrotesque-Regular',
+    medium:    'DarkerGrotesque-Medium',
+    semiBold:  'DarkerGrotesque-SemiBold',
+    bold:      'DarkerGrotesque-Bold',
+    extraBold: 'DarkerGrotesque-ExtraBold',
+  },
   aboreto: {
     regular: 'Aboreto-Regular',
   },

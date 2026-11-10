@@ -13,6 +13,7 @@
   "dependencies": {
     "@config-plugins/react-native-webrtc": "13.0.0",
     "@emoji-mart/data": "^1.2.1",
+    "@expo-google-fonts/darker-grotesque": "0.4.2",
     "@expo/vector-icons": "^15.1.1",
     "@googlemaps/react-native-navigation-sdk": "^0.16.1",
     "@gorhom/bottom-sheet": "^5.2.9",

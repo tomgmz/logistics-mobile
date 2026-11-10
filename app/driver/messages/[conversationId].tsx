@@ -6,7 +6,7 @@ import {
 } from 'react-native'
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { ArrowLeft, Trash2 } from 'lucide-react-native'
+import { Trash2, ChevronLeft } from 'lucide-react-native'
 import Reanimated, { useSharedValue, useAnimatedStyle, runOnJS } from 'react-native-reanimated'
 import { useKeyboardHandler } from 'react-native-keyboard-controller'
 import { useAuthStore } from '../../../lib/store/auth.store'
@@ -449,11 +449,11 @@ export default function DmChatScreen() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} activeOpacity={0.7} style={styles.backBtn}>
-          <ArrowLeft size={20} color={C.white} />
+          <ChevronLeft size={24} color={C.white} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <View style={styles.headerAvatar}>
-            <Text style={styles.headerAvatarText}>{name.charAt(0).toUpperCase()}</Text>
+            <Text style={styles.headerAvatarText}>{initialsOf(name)}</Text>
             {isOnline && <View style={styles.onlineDot} />}
           </View>
           <View>
@@ -505,6 +505,7 @@ export default function DmChatScreen() {
                   onLongPress={setPickerMsgId}
                   onReact={handleReact}
                   onReply={() => setReplyTo(item.msg)}
+                  hideIdentity
                 />
               )
             }}
@@ -568,17 +569,18 @@ const styles = StyleSheet.create({
   root:      { flex: 1, backgroundColor: C.bg },
   flex:      { flex: 1 },
 
-  header:    { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 12, backgroundColor: C.bg, borderBottomWidth: 1, borderBottomColor: C.border },
-  backBtn:   { padding: 8, borderRadius: 10 },
-  headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  headerAvatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: C.raised, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', position: 'relative' },
-  headerAvatarText: { color: C.white, fontFamily: FONTS.alegreyaSans.bold, fontSize: 14 },
-  onlineDot: { position: 'absolute', bottom: 0, right: 0, width: 11, height: 11, borderRadius: 6, backgroundColor: '#3af626', borderWidth: 2, borderColor: C.bg },
-  headerName: { color: C.white, fontFamily: FONTS.alegreyaSans.medium, fontSize: 15 },
-  headerStatus: { color: C.muted, fontFamily: FONTS.alegreyaSans.regular, fontSize: 11, marginTop: 1 },
+  // Figma (Messaging.png): chevron, ringed initials, name + status; no rule.
+  header:    { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 12, backgroundColor: C.bg },
+  backBtn:   { padding: 4 },
+  headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  headerAvatar: { width: 35, height: 35, borderRadius: 17.5, backgroundColor: '#111212', borderWidth: 1, borderColor: '#5a5a5a', alignItems: 'center', justifyContent: 'center', position: 'relative' },
+  headerAvatarText: { color: C.white, fontFamily: FONTS.darker.medium, fontSize: 15 },
+  onlineDot: { position: 'absolute', bottom: -1, right: -1, width: 10, height: 10, borderRadius: 5, backgroundColor: '#3af626', borderWidth: 2, borderColor: C.bg },
+  headerName: { color: C.white, fontFamily: FONTS.darker.medium, fontSize: 22, lineHeight: 24 },
+  headerStatus: { color: C.muted, fontFamily: FONTS.darker.medium, fontSize: 13, lineHeight: 15 },
   headerStatusOnline: { color: '#3af626' },
 
-  listContent: { paddingHorizontal: 12, paddingVertical: 16, gap: 10 },
+  listContent: { paddingHorizontal: 12, paddingVertical: 12, gap: 4 },
   center:      { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   typingRow: { paddingHorizontal: 12, paddingVertical: 6 },

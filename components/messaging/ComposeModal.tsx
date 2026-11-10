@@ -5,7 +5,7 @@ import {
   FlatList, ActivityIndicator, StyleSheet, KeyboardAvoidingView, Platform,
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { X, Search, Users, MessageCirclePlus, Check } from 'lucide-react-native'
+import { X, Search, Users, MessageCirclePlus, CircleCheck, Circle } from 'lucide-react-native'
 import { messagingApi } from '../../lib/api/messaging.api'
 import type { MessagableUser } from '../../types/messaging.types'
 import { roleLabel, matchesPersonSearch } from '../../lib/roles'
@@ -14,6 +14,9 @@ import { useKeyboardHeight } from '../../hooks/useKeyboardHeight'
 
 const C = {
   bg:       '#0a0a0a',
+  sheet:    '#0e1010',
+  teal:     '#033330',
+  ring:     '#5a5a5a',
   card:     '#141414',
   raised:   '#1a1a1a',
   border:   '#2a2a2a',
@@ -64,7 +67,11 @@ export default function ComposeModal({
   }, [visible])
 
   // By name or role: "company administrator", "operations manager", "gm".
-  const filtered = useMemo(() => users.filter(u => matchesPersonSearch(search, u)), [users, search])
+  // Clients talk one-to-one only; the API refuses them in groups.
+  const filtered = useMemo(
+    () => users.filter(u => (mode === 'dm' || u.role !== 'client') && matchesPersonSearch(search, u)),
+    [users, search, mode],
+  )
 
   const selectedUsers = useMemo(
     () => users.filter(u => selected.has(u.user_id)),
@@ -116,30 +123,38 @@ export default function ComposeModal({
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerLeft}>
-              {mode === 'dm'
-                ? <MessageCirclePlus size={16} color={C.cyan} />
-                : <Users size={16} color={C.cyan} />}
-              <Text style={styles.headerTitle}>{mode === 'dm' ? 'New Message' : 'New Group'}</Text>
+              <MessageCirclePlus size={18} color={C.cyan} />
+              <Text style={styles.headerTitle}>New Message</Text>
             </View>
             <TouchableOpacity onPress={onClose} hitSlop={10} style={styles.closeBtn}>
-              <X size={16} color={C.muted} />
+              <X size={18} color={C.muted} />
             </TouchableOpacity>
           </View>
 
-          {/* Mode toggle */}
+          {/* DIRECT / GROUP */}
           <View style={styles.toggle}>
-            <TouchableOpacity
-              onPress={() => setMode('dm')}
-              style={[styles.toggleBtn, mode === 'dm' && styles.toggleBtnActive]}
-            >
-              <Text style={[styles.toggleText, mode === 'dm' && styles.toggleTextActive]}>Direct</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setMode('group')}
-              style={[styles.toggleBtn, mode === 'group' && styles.toggleBtnActive]}
-            >
-              <Text style={[styles.toggleText, mode === 'group' && styles.toggleTextActive]}>Group</Text>
-            </TouchableOpacity>
+            {(['dm', 'group'] as const).map(m => (
+              <TouchableOpacity
+                key={m}
+                onPress={() => setMode(m)}
+                activeOpacity={0.8}
+                style={[styles.toggleBtn, mode === m && styles.toggleBtnActive]}
+              >
+                <Text style={styles.toggleText}>{m === 'dm' ? 'DIRECT' : 'GROUP'}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Search */}
+          <View style={styles.searchWrap}>
+            <Search size={18} color={C.muted} style={{ marginRight: 10 }} />
+            <TextInput
+              value={search}
+              onChangeText={setSearch}
+              placeholder="Search by name, role..."
+              placeholderTextColor="rgba(255,255,255,0.4)"
+              style={styles.searchInput}
+            />
           </View>
 
           {/* Group name */}
@@ -147,38 +162,12 @@ export default function ComposeModal({
             <TextInput
               value={groupName}
               onChangeText={setGroupName}
-              placeholder="Group name…"
-              placeholderTextColor="rgba(255,255,255,0.22)"
+              placeholder="Group Name"
+              placeholderTextColor="rgba(255,255,255,0.4)"
               maxLength={100}
               style={styles.groupNameInput}
             />
           )}
-
-          {/* Selected chips */}
-          {/* At most two rows; more selected people scroll here, so the list below keeps its room. */}
-          {mode === 'group' && selectedUsers.length > 0 && (
-            <ScrollView style={styles.chipScroll} contentContainerStyle={styles.chipWrap}
-              nestedScrollEnabled keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator>
-              {selectedUsers.map(u => (
-                <TouchableOpacity key={u.user_id} onPress={() => toggle(u.user_id)} style={styles.chip}>
-                  <Text style={styles.chipText}>{u.first_name} {u.last_name}</Text>
-                  <X size={11} color={C.cyan} />
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          )}
-
-          {/* Search */}
-          <View style={styles.searchWrap}>
-            <Search size={14} color={C.muted} style={{ marginRight: 8 }} />
-            <TextInput
-              value={search}
-              onChangeText={setSearch}
-              placeholder="Search by name or role…"
-              placeholderTextColor="rgba(255,255,255,0.22)"
-              style={styles.searchInput}
-            />
-          </View>
 
           {/* List */}
           {loading ? (
@@ -197,7 +186,7 @@ export default function ComposeModal({
                 </View>
               }
               renderItem={({ item: u }) => {
-                const isSel     = selected.has(u.user_id)
+                const isSel      = selected.has(u.user_id)
                 const isStarting = busy === u.user_id
                 return (
                   <TouchableOpacity
@@ -215,34 +204,62 @@ export default function ComposeModal({
                     </View>
                     {mode === 'dm'
                       ? (isStarting && <ActivityIndicator size="small" color={C.cyan} />)
-                      : (
-                        <View style={[styles.checkbox, isSel && styles.checkboxOn]}>
-                          {isSel && <Check size={12} color={C.bg} />}
-                        </View>
-                      )}
+                      : isSel
+                        ? <CircleCheck size={22} color={C.cyan} strokeWidth={1.8} />
+                        : <Circle size={22} color={C.muted} strokeWidth={1.6} />}
                   </TouchableOpacity>
                 )
               }}
             />
           )}
 
-          {/* Group create footer */}
+          {/* Group: Members strip + Create Group */}
           {mode === 'group' && (
             <View style={styles.footer}>
+              <Text style={styles.membersLabel}>Members</Text>
+              {selectedUsers.length === 0 ? (
+                <Text style={styles.membersEmpty}>Tick the people to add.</Text>
+              ) : (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                  contentContainerStyle={styles.memberStrip}
+                >
+                  {selectedUsers.map(u => (
+                    <View key={u.user_id} style={styles.member}>
+                      <View style={styles.memberAvatar}>
+                        <Text style={styles.avatarText}>{initials(u.first_name, u.last_name)}</Text>
+                        <TouchableOpacity
+                          onPress={() => toggle(u.user_id)}
+                          hitSlop={8}
+                          style={styles.memberRemove}
+                          accessibilityLabel={`Remove ${u.first_name ?? ''} ${u.last_name ?? ''}`.trim()}
+                        >
+                          <X size={9} color={C.white} strokeWidth={3} />
+                        </TouchableOpacity>
+                      </View>
+                      <Text style={styles.memberName} numberOfLines={1}>{u.first_name ?? ''}</Text>
+                    </View>
+                  ))}
+                </ScrollView>
+              )}
+
               {error && users.length > 0 && <Text style={styles.errorText}>{error}</Text>}
               <TouchableOpacity
                 onPress={createGroup}
                 disabled={!groupName.trim() || selected.size === 0 || !!busy}
+                activeOpacity={0.85}
                 style={[
                   styles.createBtn,
                   (!groupName.trim() || selected.size === 0 || !!busy) && styles.createBtnDisabled,
                 ]}
               >
                 {busy === 'group'
-                  ? <ActivityIndicator size="small" color={C.bg} />
-                  : <Users size={15} color={C.bg} />}
+                  ? <ActivityIndicator size="small" color={C.cyan} />
+                  : <Users size={20} color={C.cyan} />}
                 <Text style={styles.createBtnText}>
-                  {busy === 'group' ? 'Creating…' : `Create group${selected.size > 0 ? ` (${selected.size})` : ''}`}
+                  {busy === 'group' ? 'Creating…' : 'Create Group'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -253,49 +270,50 @@ export default function ComposeModal({
   )
 }
 
+// Darker Grotesque: the face in the Messages design (Figma, 2026-11-10).
+const DG = FONTS.darker
+
 const styles = StyleSheet.create({
-  backdrop:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  sheet:      { maxHeight: '88%', backgroundColor: C.bg, borderTopLeftRadius: 20, borderTopRightRadius: 20, borderWidth: 1, borderColor: C.border },
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  sheet:    { maxHeight: '90%', backgroundColor: C.sheet, borderTopLeftRadius: 18, borderTopRightRadius: 18, borderWidth: 1, borderColor: '#3a3a3a' },
 
-  header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: C.border },
-  headerLeft:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  headerTitle: { color: C.white, fontFamily: FONTS.alegreyaSans.bold, fontSize: 13, letterSpacing: 1.5, textTransform: 'uppercase' },
-  closeBtn:    { padding: 4 },
+  header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 10, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: '#3a3a3a' },
+  headerLeft:  { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  headerTitle: { color: C.white, fontFamily: DG.bold, fontSize: 18 },
+  closeBtn:    { padding: 2 },
 
-  toggle:          { flexDirection: 'row', gap: 6, margin: 12, padding: 4, backgroundColor: C.raised, borderRadius: 12, borderWidth: 1, borderColor: C.border },
-  toggleBtn:       { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center' },
-  toggleBtnActive: { backgroundColor: C.cyanDim },
-  toggleText:      { color: C.muted, fontFamily: FONTS.alegreyaSans.medium, fontSize: 13 },
-  toggleTextActive:{ color: C.cyan },
+  toggle:          { flexDirection: 'row', gap: 6, marginHorizontal: 18, marginTop: 9, marginBottom: 15 },
+  toggleBtn:       { flex: 1, height: 29, borderRadius: 4, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'transparent' },
+  toggleBtnActive: { backgroundColor: C.teal, borderColor: C.cyan },
+  toggleText:      { color: C.white, fontFamily: DG.bold, fontSize: 14, letterSpacing: 0.4 },
 
-  groupNameInput: { marginHorizontal: 12, marginBottom: 8, backgroundColor: C.raised, borderWidth: 1, borderColor: C.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, color: C.white, fontFamily: FONTS.alegreyaSans.regular, fontSize: 14 },
+  searchWrap:  { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginBottom: 13, borderRadius: 10, borderWidth: 1, borderColor: '#2f2f2f', paddingHorizontal: 12, height: 29 },
+  searchInput: { flex: 1, color: C.white, fontFamily: DG.medium, fontSize: 15, paddingVertical: 0 },
 
-  // Two rows of chips (about 28 high each, 6 apart) plus the bottom padding.
-  chipScroll: { maxHeight: 70, flexGrow: 0 },
-  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 12, paddingBottom: 8 },
-  chip:     { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: C.cyanDim, borderWidth: 1, borderColor: 'rgba(77,249,237,0.25)', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
-  chipText: { color: C.cyan, fontFamily: FONTS.alegreyaSans.regular, fontSize: 12 },
+  groupNameInput: { marginHorizontal: 16, marginBottom: 6, borderWidth: 1, borderColor: C.cyan, borderRadius: 10, paddingHorizontal: 8, height: 29, paddingVertical: 0, color: C.white, fontFamily: DG.medium, fontSize: 15 },
 
-  searchWrap:  { flexDirection: 'row', alignItems: 'center', marginHorizontal: 12, marginBottom: 8, backgroundColor: C.raised, borderRadius: 12, borderWidth: 1, borderColor: C.border, paddingHorizontal: 12, height: 42 },
-  searchInput: { flex: 1, color: C.white, fontFamily: FONTS.alegreyaSans.regular, fontSize: 14, paddingVertical: 0 },
-
-  list:   { paddingHorizontal: 8 },
+  list:   { paddingHorizontal: 0 },
   center: { paddingVertical: 48, alignItems: 'center', justifyContent: 'center' },
-  muted:  { color: C.muted, fontFamily: FONTS.alegreyaSans.regular, fontSize: 13 },
+  muted:  { color: C.muted, fontFamily: DG.medium, fontSize: 15 },
 
-  userRow:  { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 8, paddingVertical: 10 },
-  avatar:   { width: 40, height: 40, borderRadius: 20, backgroundColor: C.raised, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
-  avatarText:{ color: C.white, fontFamily: FONTS.alegreyaSans.bold, fontSize: 13 },
-  userBody: { flex: 1 },
-  userName: { color: C.white, fontFamily: FONTS.alegreyaSans.regular, fontSize: 14 },
-  userRole: { color: C.muted, fontFamily: FONTS.alegreyaSans.regular, fontSize: 11, textTransform: 'capitalize', marginTop: 1 },
+  userRow:   { flexDirection: 'row', alignItems: 'center', gap: 9, paddingLeft: 19, paddingRight: 16, paddingVertical: 4.5 },
+  avatar:    { width: 35, height: 35, borderRadius: 17.5, borderWidth: 1, borderColor: C.ring, alignItems: 'center', justifyContent: 'center' },
+  avatarText:{ color: C.white, fontFamily: DG.medium, fontSize: 15 },
+  userBody:  { flex: 1 },
+  userName:  { color: C.white, fontFamily: DG.medium, fontSize: 18, lineHeight: 21 },
+  userRole:  { color: C.muted, fontFamily: DG.medium, fontSize: 13, lineHeight: 15 },
 
-  checkbox:   { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' },
-  checkboxOn: { backgroundColor: C.cyan, borderColor: C.cyan },
+  footer:       { paddingHorizontal: 16, paddingTop: 6, borderTopWidth: 1, borderTopColor: '#3a3a3a' },
+  membersLabel: { color: C.white, fontFamily: DG.medium, fontSize: 15, marginLeft: 3, marginBottom: 4 },
+  membersEmpty: { color: C.muted, fontFamily: DG.medium, fontSize: 13, marginLeft: 3, marginBottom: 8 },
+  memberStrip:  { gap: 22, paddingLeft: 11, paddingRight: 8, paddingTop: 4, paddingBottom: 6 },
+  member:       { alignItems: 'center', width: 40 },
+  memberAvatar: { width: 35, height: 35, borderRadius: 17.5, borderWidth: 1.5, borderColor: C.cyan, alignItems: 'center', justifyContent: 'center', backgroundColor: C.sheet },
+  memberRemove: { position: 'absolute', top: -4, right: -5, width: 14, height: 14, borderRadius: 7, backgroundColor: '#5a5a5a', borderWidth: 1, borderColor: C.sheet, alignItems: 'center', justifyContent: 'center' },
+  memberName:   { color: C.white, fontFamily: DG.medium, fontSize: 12, marginTop: 2, maxWidth: 52 },
 
-  footer:           { paddingHorizontal: 12, paddingTop: 8, borderTopWidth: 1, borderTopColor: C.border },
-  errorText:        { color: C.danger, fontFamily: FONTS.alegreyaSans.regular, fontSize: 12, marginBottom: 8 },
-  createBtn:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: C.cyan, borderRadius: 12, paddingVertical: 12, marginTop: 4 },
-  createBtnDisabled:{ opacity: 0.3 },
-  createBtnText:    { color: C.bg, fontFamily: FONTS.alegreyaSans.bold, fontSize: 14 },
+  errorText:         { color: C.danger, fontFamily: DG.medium, fontSize: 14, marginBottom: 6 },
+  createBtn:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 40, borderRadius: 10, backgroundColor: '#1d3d3a', borderWidth: 1, borderColor: C.cyan, marginTop: 4 },
+  createBtnDisabled: { opacity: 0.45 },
+  createBtnText:     { color: C.cyan, fontFamily: DG.bold, fontSize: 18 },
 })
