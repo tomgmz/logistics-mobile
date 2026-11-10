@@ -166,10 +166,12 @@ export function flush(): Promise<void> {
         // success → drop
       } catch (e: any) {
         const status: number | undefined = e?.response?.status
-        if (status === undefined || status === 401 || status >= 500) {
+        if (status === undefined || status === 401 || status === 429 || status >= 500) {
           // Network/timeout, token-refresh failure (interceptor already tried),
-          // or a transient server error → keep this and everything after it and
-          // stop; retry on the next flush.
+          // the server asking us to slow down (429: too many requests), or a
+          // transient server error → keep this and everything after it and
+          // stop; retry on the next flush. A 429 is never a refusal of the
+          // update itself, so dropping it would lose a stop the driver confirmed.
           stop = true
           remaining.push({ ...item, attempts: item.attempts + 1 })
         } else if (status === 409 && item.attempts + 1 < MAX_CONFLICT_ATTEMPTS) {
