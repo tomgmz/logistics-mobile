@@ -37,7 +37,7 @@ import {
 
 import api from '../../../lib/api/auth.api'
 import { saveBookingCache, loadBookingCache } from '../../../lib/navCache'
-import { bookingRef } from '../../../lib/driverBookings'
+import { bookingRef, fetchBookingBody, memoryBookingBody } from '../../../lib/driverBookings'
 import { navigationGate, formatGateDate } from '../../../lib/deliveryWindow'
 import { syncServerTime } from '../../../lib/serverTime'
 import { FONTS } from '../../../lib/config/fonts'
@@ -355,7 +355,11 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
   }, [refreshQueued, sendingStops.size, completeWaiting])
 
   const load = useCallback(async () => {
-    setLoading(true)
+    // This session's copy of the booking (shared query cache) shows at once;
+    // the fresh read below replaces it. Without one, the spinner as before.
+    const memory = memoryBookingBody(bookingId)?.data
+    if (memory) setBooking(memory)
+    setLoading(!memory)
     setError(null)
 
     // The gate below is only as good as our clock, and this is the screen where
@@ -372,7 +376,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
       .catch(() => {})
 
     try {
-      const { data } = await api.get(`/booking/${bookingId}`)
+      const data = await fetchBookingBody(bookingId)
       setBooking(data.data)
       setFromCache(false)
       // Keep a copy so navigation can still derive its stops if the network
@@ -495,7 +499,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
     let gate = currentGate
     if (!offline) {
       try {
-        const { data } = await api.get(`/booking/${bookingId}`)
+        const data = await fetchBookingBody(bookingId)
         setBooking(data.data)
         saveBookingCache(bookingId, data.data)
         gate = navigationGate(data.data)
@@ -581,8 +585,8 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
   useEffect(() => {
     if (!pause || offline) return
     const t = setInterval(() => {
-      api.get(`/booking/${bookingId}`)
-        .then(async ({ data }) => setPause(await currentPause(bookingId, data.data)))
+      fetchBookingBody(bookingId)
+        .then(async (data) => setPause(await currentPause(bookingId, data.data)))
         .catch(() => {})
     }, 30_000)
     return () => clearInterval(t)

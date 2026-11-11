@@ -21,6 +21,7 @@ import {
 } from '@googlemaps/react-native-navigation-sdk'
 
 import api from '../../../lib/api/auth.api'
+import { fetchBookingBody } from '../../../lib/driverBookings'
 import { flush } from '../../../lib/offlineQueue'
 import {
   confirmTripPickup,
@@ -627,7 +628,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
   const refreshPause = useCallback(async () => {
     let server: any = null
     try {
-      const { data } = await api.get(`/booking/${bookingId}`)
+      const data = await fetchBookingBody(bookingId)
       server = data?.data ?? null
       if (server) saveBookingCache(bookingId, server)
     } catch { /* offline: the phone's own record stands */ }
@@ -1359,7 +1360,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
       try {
         let booking: any
         try {
-          const { data } = await api.get(`/booking/${bookingId}`)
+          const data = await fetchBookingBody(bookingId)
           booking = data.data
           // Refresh the cache so a later offline start can still derive stops.
           saveBookingCache(bookingId, booking)

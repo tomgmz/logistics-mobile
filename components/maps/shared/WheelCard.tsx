@@ -3,6 +3,8 @@ import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { RefreshCw } from 'lucide-react-native'
 
 import api from '../../../lib/api/auth.api'
+import { cachedFetch } from '../../../lib/query/useApiQuery'
+import { qk } from '../../../lib/query/keys'
 import { enqueue, flush } from '../../../lib/offlineQueue'
 import { readCurrentFix } from '../../../lib/stopGeofence'
 
@@ -40,7 +42,7 @@ export function WheelCard({ bookingId, myName }: { bookingId: string; myName: st
 
   const load = useCallback(async () => {
     try {
-      const { data } = await api.get(`/driver/bookings/${bookingId}/driving`)
+      const data = await cachedFetch(qk.driving(bookingId), async () => (await api.get(`/driver/bookings/${bookingId}/driving`)).data)
       const open = ((data?.data ?? []) as Shift[]).find((s) => !s.ended_at) ?? null
       setCurrent(open)
       setMine(null)

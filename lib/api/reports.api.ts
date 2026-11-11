@@ -1,4 +1,6 @@
 import api from './auth.api'
+import { cachedFetch } from '../query/useApiQuery'
+import { qk } from '../query/keys'
 
 /**
  * The driver's Reports module — what used to be the (empty) Maintenance tab.
@@ -79,8 +81,18 @@ export interface CreateReportInput {
 }
 
 export async function listMyReports(): Promise<DriverReport[]> {
-  const { data } = await api.get('/driver/reports')
-  return data.data ?? []
+  return cachedFetch(qk.reports(), async () => {
+    const { data } = await api.get('/driver/reports')
+    return (data.data ?? []) as DriverReport[]
+  })
+}
+
+/** One report (GET /driver/reports/:id), kept in the shared query cache. */
+export async function getMyReport(reportId: string): Promise<DriverReport> {
+  return cachedFetch(qk.report(reportId), async () => {
+    const { data } = await api.get(`/driver/reports/${reportId}`)
+    return data.data as DriverReport
+  })
 }
 
 /** Who the quick alert phones. Only a role and a number — never a staff name. */

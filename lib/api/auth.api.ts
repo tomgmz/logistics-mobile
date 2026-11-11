@@ -6,6 +6,8 @@ import axios, {
 import * as SecureStore from 'expo-secure-store'
 import { Platform } from 'react-native'
 import { jwtDecode } from 'jwt-decode'
+import { cachedFetch } from '../query/useApiQuery'
+import { qk } from '../query/keys'
 
 function getApiUrl(): string {
   const url = process.env.EXPO_PUBLIC_API_URL
@@ -544,8 +546,10 @@ export async function passkeyRegisterVerify(credential: any, label?: string): Pr
 }
 
 export async function listMyPasskeys(): Promise<MyPasskey[]> {
-  const { data } = await api.get<{ status: string; data: MyPasskey[] }>('/auth/passkey/credentials')
-  return data.data ?? []
+  return cachedFetch(qk.passkeys(), async () => {
+    const { data } = await api.get<{ status: string; data: MyPasskey[] }>('/auth/passkey/credentials')
+    return data.data ?? []
+  })
 }
 
 export async function removeMyPasskey(credentialPk: string): Promise<void> {

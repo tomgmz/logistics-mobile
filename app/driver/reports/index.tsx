@@ -22,6 +22,8 @@ import {
 import { ReportOptionModal } from '../../../components/reports/ReportOptionModal'
 import { QuickAlertConfirm } from '../../../components/reports/QuickAlertConfirm'
 import { useLiveSignal } from '../../../hooks/useLiveSignal'
+import { cachedData } from '../../../lib/query/useApiQuery'
+import { qk } from '../../../lib/query/keys'
 
 /**
  * REPORTS — everything this driver has raised from the road.
@@ -81,7 +83,10 @@ export default function ReportsScreen() {
   const [confirmOpen, setConfirmOpen] = useState(false)
 
   const load = useCallback(async (isRefresh = false) => {
-    if (!isRefresh) setLoading(true)
+    // This session's list shows at once; the fresh read below replaces it.
+    const kept = isRefresh ? undefined : cachedData<Awaited<ReturnType<typeof listMyReports>>>(qk.reports())
+    if (kept) setReports(kept)
+    if (!isRefresh) setLoading(!kept)
     try {
       setReports(await listMyReports())
       setError(null)

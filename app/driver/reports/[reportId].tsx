@@ -14,6 +14,7 @@ import { Check, ChevronLeft, MapPin, TriangleAlert } from 'lucide-react-native'
 import { FONTS } from '../../../lib/config/fonts'
 import api from '../../../lib/api/auth.api'
 import {
+  getMyReport,
   enrichReport,
   INCIDENT_LABEL,
   STATUS_TONE,
@@ -67,8 +68,7 @@ export default function ReportDetailScreen() {
   const load = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true)
     try {
-      const { data } = await api.get(`/driver/reports/${reportId}`)
-      setReport(data.data)
+      setReport(await getMyReport(reportId))
       setError(null)
     } catch (e: any) {
       if (!quiet) setError(e?.response?.data?.message ?? 'That report could not be loaded.')

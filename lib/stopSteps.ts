@@ -6,6 +6,8 @@ import { enqueue, flush } from './offlineQueue'
 import { now as serverNow } from './serverTime'
 import { readCurrentFix } from './stopGeofence'
 import { parseLocalId } from './tripCargo'
+import { cachedFetch } from './query/useApiQuery'
+import { qk } from './query/keys'
 
 /**
  * The times at each stop:
@@ -65,7 +67,7 @@ async function writeLocal(bookingId: string, all: Record<string, StepTimes>): Pr
 /** Server times win; a local tap not yet synced fills in what the server lacks. */
 export async function refreshStopSteps(bookingId: string): Promise<void> {
   try {
-    const { data } = await api.get(`/booking/${bookingId}/timeline`)
+    const data = await cachedFetch(qk.timeline(bookingId), async () => (await api.get(`/booking/${bookingId}/timeline`)).data)
     const local = await readLocal(bookingId)
     const merged: Record<string, StepTimes> = { ...local }
     const put = (t: StepTarget, times: Record<string, { at: string } | null>) => {

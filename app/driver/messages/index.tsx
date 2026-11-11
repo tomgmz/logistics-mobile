@@ -195,6 +195,14 @@ export default function MessagesScreen() {
   }, [])
 
   const fetchAll = useCallback(async () => {
+    // This session's inbox shows at once; the fresh read below replaces it.
+    const keptConvs  = messagingApi.peekConversations()
+    const keptGroups = messagingApi.peekGroups()
+    if (keptConvs && keptGroups) {
+      setConversations(prev => (prev.length ? prev : keptConvs))
+      setGroups(prev => (prev.length ? prev : keptGroups))
+      setLoading(false)
+    }
     try {
       const [rawConvs, rawGroups] = await Promise.all([
         messagingApi.getConversations(),

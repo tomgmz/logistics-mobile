@@ -5,6 +5,7 @@ import { readCurrentFix } from '../lib/stopGeofence'
 import { useAuthStore } from '../lib/store/auth.store'
 import { loadBookingCache } from '../lib/navCache'
 import api from '../lib/api/auth.api'
+import { fetchBookingBody } from '../lib/driverBookings'
 
 /**
  * The four facts every report opens with: where, which truck, and who.
@@ -85,7 +86,7 @@ export function useReportContext(bookingId?: string | null): ReportContext {
     ;(async () => {
       let booking: any = null
       try {
-        const { data } = await api.get(`/booking/${bookingId}`)
+        const data = await fetchBookingBody(bookingId)
         booking = data.data
       } catch {
         booking = await loadBookingCache<any>(bookingId)

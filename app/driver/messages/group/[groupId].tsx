@@ -24,6 +24,7 @@ import { chooseMessageRemoval, type DeleteScope } from '../../../../components/m
 import type { GroupMessageRaw, ReactionTogglePayload, GroupReadReceiptPayload, GroupSystemEvent, GroupMemberRequest } from '../../../../types/messaging.types'
 import { FONTS } from '../../../../lib/config/fonts'
 import { nameWithRole } from '../../../../lib/roles'
+import { cachedData, storeData } from '../../../../lib/query/useApiQuery'
 
 const C = {
   bg:       '#0a0a0a',
@@ -351,6 +352,19 @@ export default function GroupChatScreen() {
   }, [groupId, myStatus, currentUserId, router])
 
   useEffect(() => { loadGroup() }, [loadGroup])
+
+  // What this chat showed last time (live messages included), kept for the
+  // session so reopening it shows that at once; the fresh read replaces it.
+  const viewKey = ['messaging', 'view', 'group', groupId ?? ''] as const
+  useEffect(() => {
+    if (groupId && messages.length > 0) storeData(viewKey, messages)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, groupId])
+  useEffect(() => {
+    const kept = groupId ? cachedData<typeof messages>(viewKey) : undefined
+    if (kept?.length) { setMessages(prev => (prev.length ? prev : kept)); setLoading(false) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupId])
 
   const fetchMessages = useCallback(async () => {
     if (!groupId || myStatus !== 'accepted') return

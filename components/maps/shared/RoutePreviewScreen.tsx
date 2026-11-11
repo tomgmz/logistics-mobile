@@ -12,6 +12,7 @@ import { MapView, type MapViewController } from '@googlemaps/react-native-naviga
 import { ChevronLeft, Eye, TriangleAlert } from 'lucide-react-native'
 
 import api from '../../../lib/api/auth.api'
+import { fetchBookingBody } from '../../../lib/driverBookings'
 import { loadBookingCache } from '../../../lib/navCache'
 import { decodePolyline } from '../../../utils/geo'
 import { FONTS } from '../../../lib/config/fonts'
@@ -102,7 +103,7 @@ export default function RoutePreviewScreen({ bookingId, onBack }: Props) {
 
     let booking: Booking | null = null
     try {
-      const { data } = await api.get(`/booking/${bookingId}`)
+      const data = await fetchBookingBody(bookingId)
       booking = data.data
     } catch {
       booking = await loadBookingCache<Booking>(bookingId)

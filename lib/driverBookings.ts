@@ -9,6 +9,8 @@
  */
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import api from './api/auth.api'
+import { cachedData, cachedFetch } from './query/useApiQuery'
+import { qk } from './query/keys'
 
 export interface BookingDestination {
   destination_id:  string
@@ -151,9 +153,35 @@ export async function writeCache(driverId: string, bookings: BookingWithRelation
   }
 }
 
+/** The driver's bookings. Kept in the shared query cache (home and My Assignments share one request). */
 export async function fetchDriverBookings(driverId: string): Promise<BookingWithRelations[]> {
-  const { data } = await api.get(`/booking/driver/${driverId}`)
-  return data.data ?? []
+  return cachedFetch(qk.driverBookings(driverId), async () => {
+    const { data } = await api.get(`/booking/driver/${driverId}`)
+    return (data.data ?? []) as BookingWithRelations[]
+  })
+}
+
+/** The last bookings list held in memory this session, if any (shown before AsyncStorage). */
+export function memoryDriverBookings(driverId: string): BookingWithRelations[] | undefined {
+  return cachedData<BookingWithRelations[]>(qk.driverBookings(driverId))
+}
+
+/**
+ * GET /booking/:id, the whole response body ({ status, data }). Kept in the
+ * shared query cache, so the booking screen, route preview, navigation and the
+ * report form opened one after another share it; every call still asks the
+ * server (errors reach the caller as before, so offline fallbacks still run).
+ */
+export async function fetchBookingBody(bookingId: string): Promise<any> {
+  return cachedFetch(qk.booking(bookingId), async () => {
+    const { data } = await api.get(`/booking/${bookingId}`)
+    return data
+  })
+}
+
+/** The last GET /booking/:id body held in memory this session, if any. */
+export function memoryBookingBody(bookingId: string): any | undefined {
+  return cachedData<any>(qk.booking(bookingId))
 }
 
 /**

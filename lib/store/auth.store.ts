@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { persist, createJSONStorage, StateStorage } from 'zustand/middleware'
 import * as SecureStore from 'expo-secure-store'
 import { Platform } from 'react-native'
-import { AuthUser } from '../api/auth.api'
+import type { AuthUser } from '../api/auth.api'
 
 const secureStorage: StateStorage = Platform.OS === 'web'
   ? {

@@ -25,6 +25,7 @@ import {
   FilterKey,
   bookingRef,
   fetchDriverBookings,
+  memoryDriverBookings,
   filterBookings,
   statusConfigFor,
   formatCacheAge,
@@ -312,9 +313,12 @@ export default function DriverBookingList() {
     void refreshAvailability()
 
     if (!isRefresh) {
-      const cached = await readCache(driverId)
-      if (cached) {
-        setBookings(cached.bookings)
+      // This session's answer first (shared query cache: instant, no disk
+      // read), else the copy saved on the phone (survives a restart offline).
+      const memory = memoryDriverBookings(driverId)
+      const cached = memory ? null : await readCache(driverId)
+      if (memory || cached) {
+        setBookings(memory ?? cached!.bookings)
         setLoading(false)
       }
     }

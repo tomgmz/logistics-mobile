@@ -3,6 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 
 import { pendingConfirmations } from './offlineQueue'
 import { applyLocalLoads, localStopId, localTripId, type CargoLine } from './tripCargo'
+import { cachedFetch } from './query/useApiQuery'
+import { qk } from './query/keys'
 
 /**
  * The runs the truck makes for one booking.
@@ -65,9 +67,12 @@ export interface Trip {
   booking_trip_stops: TripStop[]
 }
 
+/** The server's trip plan (no local overlay), kept in the shared query cache. */
 export async function fetchTrips(bookingId: string): Promise<Trip[]> {
-  const { data } = await api.get(`/driver/bookings/${bookingId}/trips`)
-  return data.data ?? []
+  return cachedFetch(qk.trips(bookingId), async () => {
+    const { data } = await api.get(`/driver/bookings/${bookingId}/trips`)
+    return (data.data ?? []) as Trip[]
+  })
 }
 
 /* ── Offline copy ─────────────────────────────────────────────────────────── */

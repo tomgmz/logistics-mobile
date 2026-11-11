@@ -1,4 +1,5 @@
 import api from './auth.api'
+import { cachedData, cachedFetch } from '../query/useApiQuery'
 import type {
   ConversationWithDetails,
   MessageRow,
@@ -12,9 +13,21 @@ import type {
 
 interface ApiRes<T> { success: boolean; data: T }
 
+/**
+ * Every messaging read (inbox, threads, groups, contacts, members) goes through
+ * the shared query cache under its URL + parameters: two screens reading the
+ * same thing share one request, and the last answer is kept for this session.
+ */
 async function get<T>(url: string, params?: Record<string, string | number | undefined>): Promise<T> {
-  const { data } = await api.get<ApiRes<T>>(url, { params })
-  return data.data
+  return cachedFetch<T>(['messaging', url, params ?? null], async () => {
+    const { data } = await api.get<ApiRes<T>>(url, { params })
+    return data.data
+  })
+}
+
+/** The last answer kept for a read (see get), without asking the server. */
+function peek<T>(url: string, params?: Record<string, string | number | undefined>): T | undefined {
+  return cachedData<T>(['messaging', url, params ?? null])
 }
 
 async function post<T>(url: string, payload?: unknown): Promise<T> {
@@ -60,6 +73,10 @@ export const messagingApi = {
 
   getConversations: () =>
     get<ConversationWithDetails[]>(`${B}/conversations`),
+
+  /** This session's last inbox answers, shown before the fresh read. */
+  peekConversations: () => peek<ConversationWithDetails[]>(`${B}/conversations`),
+  peekGroups:        () => peek<GroupRaw[]>(`${B}/groups`),
 
   getMessages: (conversationId: string, params?: { limit?: number; before?: string }) =>
     get<MessageRow[]>(`${B}/conversations/${conversationId}/messages`, params),

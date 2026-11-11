@@ -1,5 +1,6 @@
 import api from './auth.api'
 import { expandText } from '../roles'
+import { cachedFetch } from '../query/useApiQuery'
 
 export interface AppNotification {
   notification_id: string
@@ -28,7 +29,7 @@ export const notificationApi = {
 
   /** One numbered page, newest first, with the total for the pager. */
   page: async (page: number, limit: number): Promise<{ items: AppNotification[]; total: number; totalPages: number }> => {
-    const { data } = await api.get('/notifications', { params: { page, limit } })
+    const data = await cachedFetch(['notifications', page, limit], async () => (await api.get('/notifications', { params: { page, limit } })).data)
     return {
       items:      ((data?.data ?? []) as AppNotification[]).map(normalizeNotification),
       total:      data?.meta?.total ?? 0,
@@ -37,7 +38,7 @@ export const notificationApi = {
   },
 
   unreadCount: async (): Promise<number> => {
-    const { data } = await api.get('/notifications/unread-count')
+    const data = await cachedFetch(['notifications', 'unread-count'], async () => (await api.get('/notifications/unread-count')).data)
     return data?.data?.count ?? 0
   },
 

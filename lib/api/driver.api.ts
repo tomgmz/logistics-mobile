@@ -1,4 +1,5 @@
 import api from './auth.api'
+import { cachedFetch } from '../query/useApiQuery'
 
 /**
  * Whether the driver can be given delivery work.
@@ -47,12 +48,12 @@ export interface DriverAvailabilityMonth {
 
 export const driverApi = {
   getAvailability: async (): Promise<DriverAvailability> => {
-    const { data } = await api.get('/driver/availability')
+    const data = await cachedFetch(['availability'], async () => (await api.get('/driver/availability')).data)
     return data.data
   },
 
   getAvailabilityDays: async (month: string): Promise<DriverAvailabilityMonth> => {
-    const { data } = await api.get('/driver/availability/days', { params: { month } })
+    const data = await cachedFetch(['availability', 'days', month], async () => (await api.get('/driver/availability/days', { params: { month } })).data)
     return data.data
   },
 
