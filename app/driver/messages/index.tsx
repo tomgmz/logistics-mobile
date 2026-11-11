@@ -8,6 +8,7 @@ import { useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Search, MessageCircle, Plus, ChevronLeft } from 'lucide-react-native'
 import { useNetInfo } from '@react-native-community/netinfo'
+import { useCatchUp } from '../../../hooks/useLiveSignal'
 import { useAuthStore } from '../../../lib/store/auth.store'
 import { messagingApi } from '../../../lib/api/messaging.api'
 import { useMessagingRealtime } from '../../../hooks/useMessagingRealtime'
@@ -219,6 +220,8 @@ export default function MessagesScreen() {
   }, [setTotalUnread])
 
   useEffect(() => { fetchAll() }, [fetchAll])
+  // Back from the background or offline: changes made meanwhile never arrived live.
+  useCatchUp(() => { void fetchAll() })
 
   useMessagingRealtime({
     currentUserId,

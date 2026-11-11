@@ -68,6 +68,7 @@ import { queuedIds, flush } from '../../../lib/offlineQueue'
 import { loadResumableNavSession, endNavSession, type NavSession } from '../../../lib/navSession'
 import { startDelivery, type StartOutcome } from '../../../lib/deliveryStart'
 import { useCrewWatch } from '../../../hooks/useCrewWatch'
+import { useLiveSignal } from '../../../hooks/useLiveSignal'
 import { useStopSteps, markArrived, markStepFinished } from '../../../lib/stopSteps'
 import { StopSteps } from './StopSteps'
 import { WheelCard } from './WheelCard'
@@ -461,6 +462,16 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
     }
     onStart(earlyStart)
   }, [starting, bookingId, onStart, load])
+
+  // Real time: the office changed this booking (call time, pause, vehicle or
+  // driver, a step confirmed for the driver, a late confirmation decided), or
+  // its route moved (a stop confirmed, a run loaded). Re-read quietly; the
+  // screen keeps what it shows (memory copy) instead of a spinner. Also on
+  // return to the foreground (signals sent in the background never arrived).
+  useLiveSignal('live:bookings', (ids) => {
+    if (ids.size === 0 || ids.has(bookingId)) void load()
+  }, { debounceMs: 800 })
+  useLiveSignal(`route:booking:${bookingId}`, () => { void load() }, { debounceMs: 800 })
 
   // Handed to another driver while this screen is open: say so and leave, and
   // drop any guidance saved for it so Resume can't reopen it.

@@ -25,6 +25,7 @@ import type { GroupMessageRaw, ReactionTogglePayload, GroupReadReceiptPayload, G
 import { FONTS } from '../../../../lib/config/fonts'
 import { nameWithRole } from '../../../../lib/roles'
 import { cachedData, storeData } from '../../../../lib/query/useApiQuery'
+import { useCatchUp } from '../../../../hooks/useLiveSignal'
 
 const C = {
   bg:       '#0a0a0a',
@@ -370,12 +371,15 @@ export default function GroupChatScreen() {
     if (!groupId || myStatus !== 'accepted') return
     try {
       const rawMsgs = await messagingApi.getGroupMessages(groupId, { limit: 60 })
-      setMessages(rawMsgs.map(toItem))
+      // Keep messages still being sent; the fresh list doesn't have them yet.
+      setMessages(prev => [...rawMsgs.map(toItem), ...prev.filter(m => pendingIds.current.has(m.id))])
     } catch { /* silent */ }
     finally { setLoading(false) }
   }, [groupId, myStatus, toItem])
 
   useEffect(() => { fetchMessages() }, [fetchMessages])
+  // Back from the background or offline: messages sent meanwhile never arrived live.
+  useCatchUp(() => { void fetchMessages(); void loadGroup() })
 
   // Marked read only after your last read was taken.
   useEffect(() => {

@@ -5,6 +5,7 @@ import {
   Modal, Keyboard,
 } from 'react-native'
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
+import { useCatchUp } from '../../../hooks/useLiveSignal'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Trash2, ChevronLeft } from 'lucide-react-native'
 import Reanimated, { useSharedValue, useAnimatedStyle, runOnJS } from 'react-native-reanimated'
@@ -233,12 +234,15 @@ export default function DmChatScreen() {
     if (isDraft) { setLoading(false); return }
     try {
       const raw = await messagingApi.getMessages(activeConvId, { limit: 60 })
-      setMessages(raw.map(toItem))
+      // Keep messages still being sent; the fresh list doesn't have them yet.
+      setMessages(prev => [...raw.map(toItem), ...prev.filter(m => pendingIds.current.has(m.id))])
     } catch { /* silent */ }
     finally { setLoading(false) }
   }, [activeConvId, isDraft, toItem])
 
   useEffect(() => { fetchMessages() }, [fetchMessages])
+  // Back from the background or offline: messages sent meanwhile never arrived live.
+  useCatchUp(() => { void fetchMessages() })
 
   useEffect(() => {
     if (isDraft) { setMyLastReadAt(null); return }
