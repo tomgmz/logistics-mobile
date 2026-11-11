@@ -130,6 +130,8 @@ export function flush(): Promise<void> {
     const remaining: QueuedAction[] = []
     let stop = false
     let droppedReassigned = false
+    let droppedNotMain = false
+    let sentToOffice = false
 
     for (const queued of queue) {
       if (stop) { remaining.push(queued); continue }
@@ -160,10 +162,12 @@ export function flush(): Promise<void> {
       }
 
       try {
-        if (item.method === 'post') await api.post(item.url, item.body)
-        else if (item.method === 'put') await api.put(item.url, item.body)
-        else await api.patch(item.url, item.body)
-        // success → drop
+        const res = item.method === 'post' ? await api.post(item.url, item.body)
+          : item.method === 'put' ? await api.put(item.url, item.body)
+          : await api.patch(item.url, item.body)
+        // success → drop. 202 = a late drop-off confirmation (the office swapped
+        // the drivers meanwhile) kept for the office to accept: received, done.
+        if (res?.status === 202) sentToOffice = true
       } catch (e: any) {
         const status: number | undefined = e?.response?.status
         if (status === undefined || status === 401 || status === 429 || status >= 500) {
@@ -180,6 +184,11 @@ export function flush(): Promise<void> {
           // and try again on the next flush.
           stop = true
           remaining.push({ ...item, attempts: item.attempts + 1 })
+        } else if (status === 410 && /Only the main driver/i.test(e?.response?.data?.message ?? '')) {
+          // The office made the other driver the main driver after this was
+          // queued. It can never apply from this phone; drop it and say so once.
+          console.warn(`[offlineQueue] dropping ${item.id}: no longer the main driver.`)
+          droppedNotMain = true
         } else if (status === 403 && /not assigned to this booking/i.test(e?.response?.data?.message ?? '')) {
           // The office handed this booking to another driver (or vehicle) after
           // this was queued. The server checks the crew on every write, so it will
@@ -225,6 +234,20 @@ export function flush(): Promise<void> {
     }
 
     await writeQueue(remaining)
+
+    if (sentToOffice) {
+      Alert.alert(
+        'Sent to the office',
+        'You are no longer the main driver on this delivery, so the office will check your confirmation ' +
+        '(photo and location) and accept it. Nothing else to do.',
+      )
+    } else if (droppedNotMain) {
+      Alert.alert(
+        'You are now the second driver',
+        'The office made the other driver the main driver. Some updates from your phone were not sent; ' +
+        'the main driver records the rest of this delivery.',
+      )
+    }
 
     if (droppedReassigned) {
       Alert.alert(

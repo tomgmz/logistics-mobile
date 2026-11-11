@@ -98,7 +98,14 @@ async function queueStop(
     id,
     kind,
     url,
-    body:     { ...extraBody, ...(uploadedUrl ? { proof_photo_url: uploadedUrl } : {}) },
+    // confirmed_at: when the driver did it (phone clock; the server corrects it
+    // with X-Device-Time). A confirmation that sat in the queue through a driver
+    // swap is judged by this time, not by when it finally arrived.
+    body:     {
+      ...extraBody,
+      confirmed_at: new Date().toISOString(),
+      ...(uploadedUrl ? { proof_photo_url: uploadedUrl } : {}),
+    },
     photoUri: uploadedUrl ? undefined : photoUri,
     stamp:    uploadedUrl ? undefined : stamp,
   })
