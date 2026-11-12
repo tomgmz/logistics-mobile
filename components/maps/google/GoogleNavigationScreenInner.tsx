@@ -37,6 +37,7 @@ import { saveStopOrder, syncStopOrder, loadStopOrder, clearStopOrders, moveEarli
 import { StopOrderReasonModal, type StopOrderReason } from '../shared/StopOrderReasonModal'
 import { setNextStop, stopTracking } from '../../../lib/locationTracking'
 import { useCrewWatch } from '../../../hooks/useCrewWatch'
+import { useLiveSignal } from '../../../hooks/useLiveSignal'
 import { useStopSteps, markArrived, markStepFinished } from '../../../lib/stopSteps'
 import { StopSteps } from '../shared/StopSteps'
 import { saveBookingCache, loadBookingCache, clearBookingCache } from '../../../lib/navCache'
@@ -169,6 +170,8 @@ const SHOW_NATIVE_UI = false
 const MAP_BTN_FILL = '#f2e4e4'
 const MAP_BTN_RED  = '#f62626'
 const MAP_BTN_IDLE = '#818181'
+/** Avoid-highways disc (Figma 1187:130): orange ring + icon; solid orange while on. */
+const MAP_BTN_ORANGE = '#ff7a30'
 
 /**
  * The gap left ABOVE the trip sheet's CLOSED height when declaring the map's
@@ -636,6 +639,14 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
   }, [bookingId])
 
   useEffect(() => { void refreshPause() }, [refreshPause])
+
+  // Live (2026-11-12): a pause the office puts on (or ends) while the driver
+  // is driving reaches this screen within seconds, instead of at the next stop
+  // confirmation; booking_pauses signals live:bookings with the booking id.
+  // Also on return to the foreground or reconnect (useLiveSignal's catch-up).
+  useLiveSignal('live:bookings', (ids) => {
+    if (ids.size === 0 || ids.has(bookingId)) void refreshPause()
+  }, { debounceMs: 1000 })
 
   // While paused, look again every 30 s: the office can end the pause from the
   // web, and the banner should not outlive it until the driver happens to reopen.
@@ -1804,9 +1815,12 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
         accessibilityRole="switch"
         accessibilityState={{ checked: avoidHighways }}
         accessibilityLabel="Avoid highways"
-        style={[MAP_BTN, { top: insets.top + mapBtnSlotTop(1), zIndex: 21, borderColor: avoidHighways ? MAP_BTN_RED : MAP_BTN_IDLE }]}
+        style={[MAP_BTN, {
+          top: insets.top + mapBtnSlotTop(1), zIndex: 21, borderColor: MAP_BTN_ORANGE,
+          ...(avoidHighways ? { backgroundColor: MAP_BTN_ORANGE } : {}),
+        }]}
       >
-        <Signpost size={22} color={avoidHighways ? MAP_BTN_RED : MAP_BTN_IDLE} strokeWidth={1.5} />
+        <Signpost size={22} color={avoidHighways ? MAP_BTN_FILL : MAP_BTN_ORANGE} strokeWidth={1.5} />
       </TouchableOpacity>
       )}
 

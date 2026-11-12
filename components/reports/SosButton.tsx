@@ -20,10 +20,10 @@ import { QuickAlertConfirm } from './QuickAlertConfirm'
  * would otherwise have to thread through.
  */
 
+// Figma 1187:130 (Tracking, in transit): light disc, red ring, red "SOS".
 const D = {
-  red:    '#f62626',
-  redDim: 'rgba(246,38,38,0.85)',
-  white:  '#ffffff',
+  red:  '#f62626',
+  fill: '#f2e4e4',
 }
 
 interface Props {
@@ -70,7 +70,7 @@ export function SosButton({
           ...(top != null ? { top } : { bottom }),
           width: size, height: size, borderRadius: 999,
           alignItems: 'center', justifyContent: 'center',
-          backgroundColor: D.redDim,
+          backgroundColor: D.fill,
           // The 2px ring is what the map's own round controls wear, so the disc
           // sits in that column without looking like a different family.
           borderWidth: 2, borderColor: D.red,
@@ -80,7 +80,7 @@ export function SosButton({
       >
         <Text
           style={{
-            color:         D.white,
+            color:         D.red,
             // Three bold caps have to clear the ring on the smaller disc too.
             fontSize:      size >= 52 ? 15 : 14,
             letterSpacing: 0.5,

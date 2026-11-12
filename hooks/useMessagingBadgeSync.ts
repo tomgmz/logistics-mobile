@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useMessagingRealtime } from './useMessagingRealtime'
 import { useMessagingStore } from '../lib/store/messaging.store'
+import { useCatchUp } from './useLiveSignal'
 
 export function useMessagingBadgeSync(currentUserId: string) {
   const refresh = useMessagingStore(s => s.refresh)
@@ -15,6 +16,9 @@ export function useMessagingBadgeSync(currentUserId: string) {
     if (currentUserId) refresh()
     return () => { if (timer.current) clearTimeout(timer.current) }
   }, [currentUserId, refresh])
+
+  // Back from the background or offline: messages sent meanwhile never arrived live.
+  useCatchUp(() => { if (currentUserId) refresh() }, { enabled: !!currentUserId })
 
   useMessagingRealtime({
     currentUserId,

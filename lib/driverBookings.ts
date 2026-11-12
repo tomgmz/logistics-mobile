@@ -121,7 +121,7 @@ export function awaitingFleetReturn(b: BookingWithRelations): boolean {
 }
 
 const RETURNING_CONFIG = {
-  label: 'Return to Base', badgeCn: 'bg-violet-950', textCn: 'text-violet-400', dotCn: 'bg-violet-400',
+  label: 'Return', badgeCn: 'bg-violet-950', textCn: 'text-violet-400', dotCn: 'bg-violet-400',
 }
 
 /** Badge for a booking, telling a delivered-but-not-returned job apart from a finished one. */

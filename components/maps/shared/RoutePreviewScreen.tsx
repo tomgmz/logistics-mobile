@@ -19,6 +19,7 @@ import { FONTS } from '../../../lib/config/fonts'
 import { PH_MIN_ZOOM, useKeepCameraInPhilippines } from '../../../lib/philippinesMap'
 import { fitZoom } from '../../../lib/mapFit'
 import type { LatLng } from '../../../types/navigation.types'
+import { useLiveSignal } from '../../../hooks/useLiveSignal'
 
 /**
  * The route, to look at — no guidance, no GPS, no confirmations.
@@ -173,6 +174,29 @@ export default function RoutePreviewScreen({ bookingId, onBack }: Props) {
   }, [bookingId])
 
   useEffect(() => { load() }, [load])
+
+  // Live: the office moving, adding or removing a stop redraws the preview.
+  // The road line is a billed Google call, so only a real change to the
+  // points (not every booking signal) reloads it.
+  const stopsKey = (b: any): string => JSON.stringify([
+    b?.origin_latitude, b?.origin_longitude,
+    ((b?.booking_destinations ?? []) as any[])
+      .map((d) => [d.sequence_order, d.latitude, d.longitude, d.status])
+      .sort((x, y) => Number(x[0]) - Number(y[0])),
+  ])
+  const shownKey = useRef<string | null>(null)
+  const checkStops = useCallback(() => {
+    fetchBookingBody(bookingId)
+      .then((data) => {
+        const key = stopsKey(data?.data)
+        if (shownKey.current === null) { shownKey.current = key; return }
+        if (key !== shownKey.current) { shownKey.current = key; void load() }
+      })
+      .catch(() => {})
+  }, [bookingId, load])
+  useEffect(() => { checkStops() }, [checkStops])
+  useLiveSignal('live:bookings', (ids) => { if (ids.size === 0 || ids.has(bookingId)) checkStops() }, { debounceMs: 1500 })
+  useLiveSignal(`route:booking:${bookingId}`, checkStops, { debounceMs: 1500 })
 
   // Markers and the line go on once, when both the map and the booking are in
   // hand. Adding them twice would stack duplicates on the same coordinates.

@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useNotificationStore } from '../lib/store/notification.store'
 import type { AppNotification } from '../lib/api/notification.api'
+import { useCatchUp } from './useLiveSignal'
 
 /**
  * Subscribes the signed-in user to their personal notification channel and keeps
@@ -35,4 +36,8 @@ export function useNotificationsRealtime(currentUserId: string): void {
       supabase.removeChannel(channel)
     }
   }, [currentUserId, hydrate, pushNew])
+
+  // Back from the background or offline: notifications sent meanwhile never
+  // arrived on the channel, so re-read the list and the bell's count.
+  useCatchUp(() => { if (currentUserId) hydrate() }, { enabled: !!currentUserId })
 }

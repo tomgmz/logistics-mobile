@@ -7,6 +7,7 @@ import { cachedFetch } from '../../../lib/query/useApiQuery'
 import { qk } from '../../../lib/query/keys'
 import { enqueue, flush } from '../../../lib/offlineQueue'
 import { readCurrentFix } from '../../../lib/stopGeofence'
+import { useLiveSignal } from '../../../hooks/useLiveSignal'
 
 /**
  * Who is at the wheel, on a booking with a second driver. Either crew member
@@ -49,6 +50,8 @@ export function WheelCard({ bookingId, myName }: { bookingId: string; myName: st
     } catch { /* offline: the last answer (or this phone's tap) stands */ }
   }, [bookingId])
   useEffect(() => { void load() }, [load])
+  // Live: the other driver taking the wheel, or an office swap, shows at once.
+  useLiveSignal('live:bookings', () => { void load() }, { debounceMs: 1500 })
 
   async function takeWheel() {
     const at = new Date().toISOString()
