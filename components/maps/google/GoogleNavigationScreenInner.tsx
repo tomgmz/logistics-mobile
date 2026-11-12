@@ -38,7 +38,8 @@ import { StopOrderReasonModal, type StopOrderReason } from '../shared/StopOrderR
 import { setNextStop, stopTracking } from '../../../lib/locationTracking'
 import { useCrewWatch } from '../../../hooks/useCrewWatch'
 import { useLiveSignal } from '../../../hooks/useLiveSignal'
-import { useStopSteps, markArrived, markStepFinished } from '../../../lib/stopSteps'
+import { useStopSteps, markArrived, markStepProof, stepTimes, ARRIVAL_RADIUS_M, type StepTarget } from '../../../lib/stopSteps'
+import { StopStepModal } from '../shared/StopStepModal'
 import { StopSteps } from '../shared/StopSteps'
 import { saveBookingCache, loadBookingCache, clearBookingCache } from '../../../lib/navCache'
 import {
@@ -67,7 +68,7 @@ import { currentPause, type TripPause } from '../../../lib/tripPause'
 import { groupCargoByDestination, itemName, manifestFor, manifestForTripStop } from '../../../lib/cargoManifest'
 import { applyLocalLoads, lineTotal, planCoversCargo, type CargoLine } from '../../../lib/tripCargo'
 import type { LoadLine, LoadedQuantities } from '../shared/StopProofModal'
-import { legCoordinates } from '../../../lib/stopGeofence'
+import { legCoordinates, readCurrentFix, distanceInMetres } from '../../../lib/stopGeofence'
 import { GoogleNavSheet, SHEET_PEEK_H } from './GoogleNavSheet'
 import { OfflineRoutePreview } from './OfflineRoutePreview'
 import { C } from '../../../theme/navigation.theme'
@@ -342,22 +343,49 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
   const [proofFor, setProofFor] = useState<{ idx: number; auto: boolean } | null>(null)
   // The drop-off the driver tapped "Go here next" on, while they pick a reason.
   const [reasonFor, setReasonFor] = useState<number | null>(null)
-  // The truck is at the stop whose proof popup opened — by navigation's arrival
-  // (the usual case) or the driver's button when the SDK missed it. That is the
-  // stop's arrival time; the driver never taps it. First one wins.
-  useEffect(() => {
-    if (!proofFor) return
-    const leg = legsRef.current[proofFor.idx]
-    if (!leg) return
-    void markArrived(bookingId, leg.type === 'pickup'
-      ? { tripId: leg.tripId }
-      : { tripId: leg.tripId, tripStopId: leg.tripStopId })
-  }, [proofFor, bookingId])
+  // The stop whose step popup is open (arrived → start → finished, then the
+  // proof). Null when closed. See StopStepModal (user 2026-11-12).
+  const [stepFor, setStepFor] = useState<number | null>(null)
   // Set once the driver marks the whole delivery done — shows the closing card.
   const [completed, setCompleted]   = useState(false)
   // The pause the office put on the delivery (weather, breakdown, closed stop…).
   // The driver can't pause or resume; only the office can.
   const [pause, setPause]         = useState<TripPause | null>(null)
+  // Read by the confirm paths below, which are callbacks.
+  const pauseRef = useRef<TripPause | null>(null)
+  pauseRef.current = pause
+  /**
+   * No new progress while the office has the delivery paused (user 2026-11-12):
+   * the proof popup and "Mark as done" don't open. An arrival while paused
+   * opens nothing (silent); a tap says why. The server refuses it too
+   * (403 BOOKING_PAUSED) for anything that slips through.
+   */
+  const blockedByPause = useCallback((tapped: boolean): boolean => {
+    if (!pauseRef.current) return false
+    if (tapped) {
+      Alert.alert(
+        'Delivery paused by the office',
+        'You can’t confirm a pickup or drop-off while the delivery is paused. Ask the Operations Manager or the Company Administrator to end the pause.',
+      )
+    }
+    return true
+  }, [])
+
+  const targetOf = (leg: { type: string; tripId: string; tripStopId?: string | null }): StepTarget =>
+    leg.type === 'pickup' ? { tripId: leg.tripId } : { tripId: leg.tripId, tripStopId: leg.tripStopId }
+
+  /**
+   * A stop's confirm (button, stop list, arrival): the step popup until
+   * Loading/Unloading finished is recorded, then the proof popup. No step is
+   * skipped (user 2026-11-12).
+   */
+  const openStepsOrProof = useCallback(async (idx: number, auto: boolean) => {
+    const leg = legsRef.current[idx]
+    if (!leg) return
+    const times = await stepTimes(bookingId, targetOf(leg))
+    if (times.finished && !times.proof) setProofFor({ idx, auto })
+    else setStepFor(idx)
+  }, [bookingId])
   // Bumped by the error screen's Retry button to re-run init (e.g. after the
   // driver turns GPS on).
   const [retry, setRetry] = useState(0)
@@ -885,7 +913,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
       : confirmTripStop(leg.tripStopId, photoUri, proof, nextStop)
     persist.catch(() => {})
     // The confirmation is the stop's finish: Departed is the next step to tap.
-    void markStepFinished(bookingId, leg.type === 'pickup'
+    void markStepProof(bookingId, leg.type === 'pickup'
       ? { tripId: leg.tripId }
       : { tripId: leg.tripId, tripStopId: leg.tripStopId })
 
@@ -983,8 +1011,21 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
     const idx = legIndexRef.current
     if (idx >= legsRef.current.length || processedRef.current.has(idx)) return
     setArrivedIdx(idx)
-    setProofFor({ idx, auto: true })
-  }, [])
+    if (blockedByPause(false)) return
+    const leg  = legsRef.current[idx]
+    const here = legCoordinates(leg)
+    void (async () => {
+      // The arrival is logged at detection, if the phone agrees it is within
+      // 300 m; otherwise the popup offers "I've arrived" once it is.
+      const fix = await Promise.race([
+        readCurrentFix().catch(() => null),
+        new Promise<null>((r) => setTimeout(() => r(null), 5000)),
+      ])
+      const near = !!fix && (!here || distanceInMetres(fix, here) - Math.min(Math.max(fix.accuracy_m ?? 0, 0), 100) <= ARRIVAL_RADIUS_M)
+      if (near) await markArrived(bookingId, targetOf(leg))
+      await openStepsOrProof(idx, true)
+    })()
+  }, [blockedByPause, bookingId, openStepsOrProof])
 
   /**
    * The driver picked drop-off `idx` to do next, ahead of the one guidance is
@@ -1112,6 +1153,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
     const legs = legsRef.current
     const allStopsDone = legs.length > 0 && idx >= legs.length
 
+    if (blockedByPause(true)) return
     if (allStopsDone || nothingToNavigateRef.current) {
       Alert.alert(
         'Mark delivery as done?',
@@ -1125,8 +1167,8 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
     }
 
     if (!legs[idx]) return
-    setProofFor({ idx, auto: false })
-  }, [completeDelivery])
+    void openStepsOrProof(idx, false)
+  }, [completeDelivery, blockedByPause, openStepsOrProof])
 
   useEffect(() => {
     let cancelled = false
@@ -1628,6 +1670,25 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
    * in a dead zone is the case the offline queue exists for, and the preview
    * would be a poor substitute if it could only be looked at.
    */
+  const stepLeg   = stepFor !== null ? legsRef.current[stepFor] : undefined
+  const stepModal = stepFor !== null && stepLeg ? (
+    <StopStepModal
+      visible
+      kind={stepLeg.type === 'pickup' ? 'pickup' : 'dropoff'}
+      label={stops[stepFor]?.label ?? (stepLeg.type === 'pickup' ? 'Pickup' : 'Drop-off')}
+      times={stopSteps.timesFor(targetOf(stepLeg))}
+      stop={(() => { const at = legCoordinates(stepLeg); return at ? { latitude: at.latitude, longitude: at.longitude } : null })()}
+      onRecord={(stage) => stopSteps.record(targetOf(stepLeg), stage)}
+      onProof={() => {
+        const idx = stepFor
+        setStepFor(null)
+        if (blockedByPause(true)) return
+        setProofFor({ idx, auto: false })
+      }}
+      onClose={() => setStepFor(null)}
+    />
+  ) : null
+
   const proofModal = proofFor !== null && stops[proofFor.idx] ? (
     <StopProofModal
       visible
@@ -1685,7 +1746,8 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
               )
               return
             }
-            setProofFor({ idx, auto: false })
+            if (blockedByPause(true)) return
+            void openStepsOrProof(idx, false)
           }}
         />
 
@@ -1704,6 +1766,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
         )}
 
         {proofModal}
+      {stepModal}
       </View>
     )
   }
@@ -1936,7 +1999,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
           etaSeconds={navInfo?.nextEtaS}
           distanceM={navInfo?.nextDistanceM}
           totalEtaSeconds={navInfo?.finalEtaS}
-          onConfirmStop={(idx) => setProofFor({ idx, auto: false })}
+          onConfirmStop={(idx) => { if (!blockedByPause(true)) void openStepsOrProof(idx, false) }}
           onChooseNext={confirming || rerouting ? undefined : (idx: number) => setReasonFor(idx)}
           renderSteps={(idx, state) => {
             const leg = legsRef.current[idx]
@@ -1953,7 +2016,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
                 times={times}
                 // Start on the stop being driven to (or reached) only.
                 showButton={state === 'current'}
-                onRecord={(stage) => { void stopSteps.record(target, stage) }}
+                onNext={() => { if (!blockedByPause(true)) void openStepsOrProof(idx, false) }}
               />
             )
           }}
@@ -1962,6 +2025,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
       )}
 
       {proofModal}
+      {stepModal}
 
       <StopOrderReasonModal
         visible={reasonFor != null}

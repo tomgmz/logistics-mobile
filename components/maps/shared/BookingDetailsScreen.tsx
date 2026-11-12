@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
@@ -69,7 +69,8 @@ import { loadResumableNavSession, endNavSession, type NavSession } from '../../.
 import { startDelivery, type StartOutcome } from '../../../lib/deliveryStart'
 import { useCrewWatch } from '../../../hooks/useCrewWatch'
 import { useLiveSignal } from '../../../hooks/useLiveSignal'
-import { useStopSteps, markArrived, markStepFinished } from '../../../lib/stopSteps'
+import { useStopSteps, markStepProof, stepTimes, type StepTarget } from '../../../lib/stopSteps'
+import { StopStepModal } from './StopStepModal'
 import { StopSteps } from './StopSteps'
 import { WheelCard } from './WheelCard'
 import { currentPause, type TripPause } from '../../../lib/tripPause'
@@ -303,6 +304,19 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
   const [uploading, setUploading] = useState<string | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
 
+  // The step popup (arrived → start → finished, then the proof) for one visit.
+  const [stepFor, setStepFor] = useState<{
+    target: StepTarget
+    kind:   'pickup' | 'dropoff'
+    label:  string
+    stop?:  TripStop
+    coords: { latitude: number; longitude: number } | null
+  } | null>(null)
+  const dropoffCoords = (stop: TripStop): { latitude: number; longitude: number } | null => {
+    const d = stop.booking_destinations as { latitude?: number | null; longitude?: number | null } | null | undefined
+    return d?.latitude != null && d?.longitude != null ? { latitude: Number(d.latitude), longitude: Number(d.longitude) } : null
+  }
+
   // Which end-of-job confirmation is open, if any.
   const [dialog, setDialog] = useState<'complete' | 'return' | null>(null)
   const [dialogBusy, setDialogBusy] = useState(false)
@@ -320,6 +334,8 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
   // The pause the office put on the delivery (weather, breakdown, closed stop…).
   // The driver can't pause or resume; only the office can.
   const [pause, setPause]         = useState<TripPause | null>(null)
+  const pauseRef = useRef<TripPause | null>(null)
+  pauseRef.current = pause
 
   const headerTarget  = useCoachTarget('booking.header')
   const routeTarget   = useCoachTarget('booking.route')
@@ -620,10 +636,19 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
   const openProof = useCallback((stop: TripStop, label: string) => {
     setUploadError(null)
     if (stop.status === 'pending') {
-      // Confirming from here means the truck is at the drop-off: that is its
-      // arrival, if navigation hasn't recorded one already.
-      void markArrived(bookingId, { tripId: stop.trip_id, tripStopId: stop.trip_stop_id })
-      setProofFor({ stop, label, mode: 'confirm' })
+      // Paused by the office: no new progress (the server refuses it too).
+      if (pauseRef.current) {
+        Alert.alert('Delivery paused by the office',
+          'You can’t confirm a drop-off while the delivery is paused. Ask the Operations Manager or the Company Administrator to end the pause.')
+        return
+      }
+      // No step skipped (user 2026-11-12): the steps first (I've arrived within
+      // 300 m, Start unloading, Unloading finished), then the proof.
+      const target = { tripId: stop.trip_id, tripStopId: stop.trip_stop_id }
+      void stepTimes(bookingId, target).then((times) => {
+        if (times.finished && !times.proof) setProofFor({ stop, label, mode: 'confirm' })
+        else setStepFor({ target, kind: 'dropoff', label, stop, coords: dropoffCoords(stop) })
+      })
       return
     }
     // Confirmed already — only the evidence is outstanding, so skip the modal
@@ -692,7 +717,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
       .catch(() => {})
       .finally(() => { void refreshQueued() })
     // The confirmation is the stop's finish: Departed is the next step to tap.
-    void markStepFinished(bookingId, { tripId: target.stop.trip_id, tripStopId: target.stop.trip_stop_id })
+    void markStepProof(bookingId, { tripId: target.stop.trip_id, tripStopId: target.stop.trip_stop_id })
     void recordLocalProgress(bookingId, { confirmedStopId: target.stop.trip_stop_id })
 
     setTrips((prev) => prev.map((t) => ({
@@ -1078,7 +1103,15 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
                       kind="pickup"
                       times={stopSteps.timesFor({ tripId: trip.trip_id })}
                       showButton={canTap}
-                      onRecord={(stage) => { void stopSteps.record({ tripId: trip.trip_id }, stage) }}
+                      onNext={() => pause ? Alert.alert('Delivery paused by the office', 'Steps can’t be recorded while the delivery is paused.') : setStepFor({
+                        target: { tripId: trip.trip_id }, kind: 'pickup', label: `Pickup · ${booking.origin}`,
+                        coords: (() => {
+                          // Sent by the booking read (navigation builds the pickup leg from them).
+                          const o = booking as unknown as { origin_latitude?: number | null; origin_longitude?: number | null }
+                          return o.origin_latitude != null && o.origin_longitude != null
+                            ? { latitude: Number(o.origin_latitude), longitude: Number(o.origin_longitude) } : null
+                        })(),
+                      })}
                     />
                   </View>
                   {visits.map((stop) => {
@@ -1101,7 +1134,11 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
                           times={stopSteps.timesFor(target)}
                           // Loading first: a drop-off's steps start once the run is loaded.
                           showButton={canTap && trip.status === 'in_transit'}
-                          onRecord={(stage) => { void stopSteps.record(target, stage) }}
+                          onNext={() => pause ? Alert.alert('Delivery paused by the office', 'Steps can’t be recorded while the delivery is paused.') : setStepFor({
+                            target, kind: 'dropoff', stop,
+                            label: `Drop-off ${n || '?'}${stop.booking_destinations?.address ? ` · ${stop.booking_destinations.address}` : ''}`,
+                            coords: dropoffCoords(stop),
+                          })}
                         />
                       </View>
                     )
@@ -1355,6 +1392,23 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
       {/* Confirming a stop from here rather than from the map: same modal, so a
           stop confirmed in the yard carries the same photo AND position as one
           confirmed on the road. */}
+      {stepFor && (
+        <StopStepModal
+          visible
+          kind={stepFor.kind}
+          label={stepFor.label}
+          times={stopSteps.timesFor(stepFor.target)}
+          stop={stepFor.coords}
+          onRecord={(stage) => stopSteps.record(stepFor.target, stage)}
+          onProof={() => {
+            const f = stepFor
+            setStepFor(null)
+            if (f.kind === 'dropoff' && f.stop) { setProofFor({ stop: f.stop, label: f.label, mode: 'confirm' }); return }
+            Alert.alert('Proof of pickup', 'Take the proof of pickup from the navigation map (Start or Resume Navigation).')
+          }}
+          onClose={() => setStepFor(null)}
+        />
+      )}
       <StopProofModal
         visible={!!proofFor}
         title={proofFor?.label ?? 'Drop-off'}

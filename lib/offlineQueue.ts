@@ -189,6 +189,13 @@ export function flush(): Promise<void> {
           // queued. It can never apply from this phone; drop it and say so once.
           console.warn(`[offlineQueue] dropping ${item.id}: no longer the main driver.`)
           droppedNotMain = true
+        } else if (status === 403 && e?.response?.data?.code === 'BOOKING_PAUSED') {
+          // The office paused the delivery and this step was done after the pause
+          // started. Hold it (and everything after it, to keep the order) and send
+          // it again on later flushes: it goes through once the office ends the
+          // pause. Never dropped: it is a step the driver really did.
+          stop = true
+          remaining.push({ ...item, attempts: item.attempts + 1 })
         } else if (status === 403 && /not assigned to this booking/i.test(e?.response?.data?.message ?? '')) {
           // The office handed this booking to another driver (or vehicle) after
           // this was queued. The server checks the crew on every write, so it will

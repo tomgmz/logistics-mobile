@@ -1,5 +1,5 @@
 import React from 'react'
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { Clock } from 'lucide-react-native'
 
 import { nextStep, stepLabel, type StepStage, type StepTimes } from '../../../lib/stopSteps'
@@ -17,23 +17,25 @@ function hhmm(iso: string): string {
   return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`
 }
 
-const SHORT: Record<StepStage | 'finished', string> = {
+const SHORT: Record<StepStage | 'proof', string> = {
   arrived:  'Arrived',
   started:  'Start',
-  finished: 'Done',
+  finished: 'Finished',
+  proof:    'Proof',
 }
-const ORDER: Array<StepStage | 'finished'> = ['arrived', 'started', 'finished']
+const ORDER: Array<StepStage | 'proof'> = ['arrived', 'started', 'finished', 'proof']
 
 /**
- * The times at one stop (the arrival is recorded by the app on its own), and
- * the one button: Start loading / Start unloading. The finish is the proof
- * confirmation, done with the stop's own button; this never blocks it, so a
- * driver who forgot to tap Start can still confirm the stop.
+ * The times at one stop visit, and a button for the step it is waiting for
+ * (user 2026-11-12: arrived → start → finished → proof, none skipped). The
+ * button opens the step popup (StopStepModal), which records the step; nothing
+ * is recorded from here directly.
  */
-export function StopSteps({ kind, times, onRecord, compact = false, showButton = true }: {
+export function StopSteps({ kind, times, onNext, compact = false, showButton = true }: {
   kind:       'pickup' | 'dropoff'
   times:      StepTimes
-  onRecord:   (stage: StepStage) => void
+  /** Opens the step popup for this visit. */
+  onNext:     () => void
   compact?:   boolean
   /** False on a stop not yet reached — its times only, no button. */
   showButton?: boolean
@@ -53,16 +55,10 @@ export function StopSteps({ kind, times, onRecord, compact = false, showButton =
       )}
       {next && (
         <TouchableOpacity
-          onPress={() => {
-            const label = stepLabel(next, kind)
-            Alert.alert(label, 'Record this time now?', [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Record', onPress: () => onRecord(next) },
-            ])
-          }}
+          onPress={onNext}
           activeOpacity={0.75}
           accessibilityRole="button"
-          accessibilityLabel={`Record: ${stepLabel(next, kind)}`}
+          accessibilityLabel={stepLabel(next, kind)}
           style={[s.btn, compact && { paddingVertical: 6 }]}
         >
           <Clock size={13} color={D.cyan} />
