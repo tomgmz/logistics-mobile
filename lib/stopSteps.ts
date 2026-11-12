@@ -8,6 +8,7 @@ import { readCurrentFix } from './stopGeofence'
 import { parseLocalId } from './tripCargo'
 import { cachedFetch } from './query/useApiQuery'
 import { qk } from './query/keys'
+import { useCatchUp, useLiveSignal } from '../hooks/useLiveSignal'
 
 /**
  * The steps at each stop visit (user 2026-11-12), in this order, none skipped:
@@ -186,6 +187,13 @@ export function useStopSteps(bookingId: string) {
     void refreshStopSteps(bookingId)
     return () => { alive = false; listeners.delete(onChange) }
   }, [bookingId])
+
+  // Live: a step the office filled in or corrected (stop_milestones signals
+  // live:bookings with the booking id), the other driver's step, or a proof
+  // confirmed for the driver shows without reopening; and once more on return
+  // to the app or when the signal comes back.
+  useLiveSignal('live:bookings', (ids) => { if (ids.has(bookingId)) void refreshStopSteps(bookingId) }, { enabled: !!bookingId })
+  useCatchUp(() => { void refreshStopSteps(bookingId) }, { enabled: !!bookingId })
 
   const timesFor = useCallback((t: StepTarget): StepTimes => all[key(t)] ?? {}, [all])
   // `all` changes whenever a refresh lands, so this re-reads with it.

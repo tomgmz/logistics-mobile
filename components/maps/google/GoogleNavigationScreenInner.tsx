@@ -64,6 +64,7 @@ import {
 import { GoogleTurnCard } from './GoogleTurnCard'
 import { StopProofModal } from '../shared/StopProofModal'
 import { PausedBanner } from '../shared/PausedBanner'
+import { SecondDriverBanner } from '../shared/SecondDriverBanner'
 import { currentPause, type TripPause } from '../../../lib/tripPause'
 import { groupCargoByDestination, itemName, manifestFor, manifestForTripStop } from '../../../lib/cargoManifest'
 import { applyLocalLoads, lineTotal, planCoversCargo, type CargoLine } from '../../../lib/tripCargo'
@@ -354,6 +355,12 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
   // Read by the confirm paths below, which are callbacks.
   const pauseRef = useRef<TripPause | null>(null)
   pauseRef.current = pause
+  // The office swapped the drivers while this phone navigates (2026-11-13):
+  // this driver is now the second driver, and the main driver confirms the
+  // stops. Read with the pause (same booking read, same live signal).
+  const [nowSecond, setNowSecond] = useState<{ leadName: string } | null>(null)
+  const nowSecondRef = useRef<{ leadName: string } | null>(null)
+  nowSecondRef.current = nowSecond
   /**
    * No new progress while the office has the delivery paused (user 2026-11-12):
    * the proof popup and "Mark as done" don't open. An arrival while paused
@@ -361,6 +368,15 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
    * (403 BOOKING_PAUSED) for anything that slips through.
    */
   const blockedByPause = useCallback((tapped: boolean): boolean => {
+    if (nowSecondRef.current) {
+      if (tapped) {
+        Alert.alert(
+          'You are now the second driver',
+          `The office swapped the drivers. ${nowSecondRef.current.leadName || 'The main driver'} confirms the pickup, stops and proof photos now.`,
+        )
+      }
+      return true
+    }
     if (!pauseRef.current) return false
     if (tapped) {
       Alert.alert(
@@ -664,6 +680,14 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
       if (server) saveBookingCache(bookingId, server)
     } catch { /* offline: the phone's own record stands */ }
     setPause(await currentPause(bookingId, server))
+    if (server) {
+      if (server.my_crew_role === 'second') {
+        const lead = (server.driver_assignments ?? []).find((a: any) => a.crew_role !== 'second')?.drivers?.users
+        setNowSecond({ leadName: lead ? `${lead.first_name ?? ''} ${lead.last_name ?? ''}`.trim() : '' })
+      } else {
+        setNowSecond(null)
+      }
+    }
   }, [bookingId])
 
   useEffect(() => { void refreshPause() }, [refreshPause])
@@ -1765,6 +1789,19 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
           />
         )}
 
+        {nowSecond && !pause && (
+          <SecondDriverBanner
+            leadName={nowSecond.leadName}
+            style={{
+              position: 'absolute',
+              left:     14,
+              right:    MAP_BTN_RIGHT + MAP_BTN_SIZE + 12,
+              top:      insets.top + 96,
+              zIndex:   26,
+            }}
+          />
+        )}
+
         {proofModal}
       {stepModal}
       </View>
@@ -1980,6 +2017,18 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
       {!SHOW_NATIVE_UI && pause && !completed && (
         <PausedBanner
           pause={pause}
+          style={{
+            position: 'absolute',
+            left:     16,
+            right:    MAP_BTN_RIGHT + MAP_BTN_SIZE + 12,
+            top:      insets.top + (offline ? 148 : 104),
+            zIndex:   26,
+          }}
+        />
+      )}
+      {!SHOW_NATIVE_UI && nowSecond && !pause && !completed && (
+        <SecondDriverBanner
+          leadName={nowSecond.leadName}
           style={{
             position: 'absolute',
             left:     16,

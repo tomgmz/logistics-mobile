@@ -926,19 +926,13 @@ export default function SignInScreen() {
             transition={{ type: 'timing', duration: 600 }}
             className="px-5 pt-3"
           >
-            <View className="flex-row items-center justify-between">
+            <View className="flex-row items-center">
               <Image
                 source={require('../assets/Final_Logo.png')}
                 style={{ width: 108, height: undefined, aspectRatio: 3.92 }}
                 resizeMode="contain"
                 accessibilityLabel="8338 Logistics Services"
               />
-              <View className="flex-row items-center gap-1 rounded-full px-2.5 py-1 border border-cyan-border bg-cyan-glow">
-                <MaterialIcons name="local-shipping" size={12} color={CYAN} />
-                <Text className="text-[10px] tracking-[1.2px] text-cyan" style={{ fontFamily: FONTS.spartan.semiBold }}>
-                  DRIVER APP
-                </Text>
-              </View>
             </View>
 
             <Text

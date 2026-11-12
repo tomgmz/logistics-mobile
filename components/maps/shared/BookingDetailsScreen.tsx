@@ -1860,7 +1860,6 @@ const s = StyleSheet.create({
   transferCard: {
     gap:             8,
     padding:         14,
-    marginTop:       8,
     borderRadius:    10,
     borderWidth:     1,
     borderColor:     D.amber,
@@ -2132,6 +2131,8 @@ const s = StyleSheet.create({
     bottom:            0,
     paddingHorizontal: 24,
     paddingTop:        12,
+    // One even space between everything in the bar (cards, banners, buttons).
+    gap:               10,
     backgroundColor:   D.bg,
     borderTopWidth:    StyleSheet.hairlineWidth,
     borderTopColor:    D.divider,
@@ -2140,7 +2141,6 @@ const s = StyleSheet.create({
     flexDirection:     'row',
     alignItems:        'center',
     gap:               8,
-    marginBottom:      10,
     paddingVertical:   9,
     paddingHorizontal: 12,
     borderRadius:      12,
@@ -2180,7 +2180,6 @@ const s = StyleSheet.create({
     flexDirection:  'row',
     alignItems:     'center',
     gap:            7,
-    marginBottom:   10,
     justifyContent: 'center',
   },
   lockText: {
@@ -2190,7 +2189,6 @@ const s = StyleSheet.create({
 
   previewBtn: {
     height:         44,
-    marginTop:      8,
     flexDirection:  'row',
     alignItems:     'center',
     justifyContent: 'center',
