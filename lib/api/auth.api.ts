@@ -90,9 +90,22 @@ function processQueue(error: unknown, token: string | null = null) {
   failedQueue = []
 }
 
-let _onSessionExpired: (() => void) | null = null
-export function setSessionExpiredHandler(fn: () => void) {
+/** Why the server ended the session, when it says so (shown to the driver). */
+export interface SessionEndReason { code: string; message: string }
+
+let _onSessionExpired: ((reason?: SessionEndReason) => void) | null = null
+export function setSessionExpiredHandler(fn: (reason?: SessionEndReason) => void) {
   _onSessionExpired = fn
+}
+
+/** The server's code + message on a refused refresh, for the codes worth explaining. */
+const EXPLAINED_CODES = ['NO_ACTIVE_ASSIGNMENT', 'ACCOUNT_INACTIVE', 'SESSION_REPLACED', 'SESSION_REUSED']
+function sessionEndReason(err: unknown): SessionEndReason | undefined {
+  if (!axios.isAxiosError(err)) return undefined
+  const body = err.response?.data as { code?: string; message?: string } | undefined
+  return body?.code && EXPLAINED_CODES.includes(body.code) && body.message
+    ? { code: body.code, message: body.message }
+    : undefined
 }
 
 /**
@@ -261,7 +274,7 @@ api.interceptors.response.use(
         processQueue(refreshError)
         if (!isSessionDead(refreshError)) return Promise.reject(error)
         await TokenStore.clearAll()
-        _onSessionExpired?.()
+        _onSessionExpired?.(sessionEndReason(refreshError))
         return Promise.reject(refreshError)
       } finally {
         isRefreshing = false
