@@ -49,7 +49,8 @@ export function navigationGate(booking: GateInput | null | undefined): Navigatio
 
   // Already on the road: a trip in progress must always be resumable, whatever
   // the date says and whatever the clock knows.
-  if (booking.status === 'in_transit' || booking.status === 'delivered' || booking.status === 'completed') return OPEN
+  // Failed too: nothing was delivered, but the vehicle still has to come back.
+  if (booking.status === 'in_transit' || booking.status === 'delivered' || booking.status === 'completed' || booking.status === 'failed') return OPEN
 
   if (booking.status === 'cancelled') {
     return { locked: true, scheduledFor: null, reason: 'cancelled' }

@@ -25,6 +25,7 @@ import { chooseMessageRemoval, type DeleteScope } from '../../../components/mess
 import type { MessageRow, ReactionTogglePayload } from '../../../types/messaging.types'
 import { FONTS } from '../../../lib/config/fonts'
 import { roleLabel } from '../../../lib/roles'
+import { useMessageDraft } from '../../../lib/messageDraft'
 import { cachedData, storeData } from '../../../lib/query/useApiQuery'
 
 const C = {
@@ -155,7 +156,13 @@ export default function DmChatScreen() {
   const [messages,        setMessages]        = useState<MsgItem[]>([])
   const [loading,         setLoading]         = useState(true)
   const [sending,         setSending]         = useState(false)
-  const [text,            setText]            = useState('')
+  // Unsent text comes back when the chat is reopened. A chat not yet created is
+  // keyed by the other person. (The opening id, not activeConvId, so the key
+  // never changes while the screen is open.)
+  const [text,            setText]            = useMessageDraft(
+    currentUserId,
+    conversationId && conversationId !== 'new' ? `dm:${conversationId}` : participantId ? `dm-user:${participantId}` : '',
+  )
   // "@" opens the booking list; picking one writes its number in.
   const mention = useBookingMentionPicker(text, setText)
   const [replyTo,         setReplyTo]         = useState<MsgItem | null>(null)
@@ -363,6 +370,8 @@ export default function DmChatScreen() {
     } catch {
       pendingIds.current.delete(oid)
       setMessages(prev => prev.filter(m => m.id !== oid))
+      // Not sent: put the text back (unless something new was typed) so it isn't lost.
+      if (!photo) setText(t => t || typed)
     } finally {
       sendingRef.current = false
       setSending(false)
@@ -474,12 +483,16 @@ export default function DmChatScreen() {
             <Text style={styles.headerAvatarText}>{initialsOf(name)}</Text>
             {isOnline && <View style={styles.onlineDot} />}
           </View>
-          <View>
-            <Text style={styles.headerName} numberOfLines={1}>
-              {fullName}
+          <View style={styles.headerText}>
+            <Text style={styles.headerName} numberOfLines={1} ellipsizeMode="tail">
+              {name}
             </Text>
-            <Text style={[styles.headerStatus, isOnline && styles.headerStatusOnline]}>
-              {isTyping ? 'typing…' : isOnline ? 'Active now' : 'Offline'}
+            {/* Role · status on the second line; only the status takes the online colour. */}
+            <Text style={styles.headerStatus} numberOfLines={1} ellipsizeMode="tail">
+              {participantRole ? `${roleLabel(participantRole)} · ` : ''}
+              <Text style={(isOnline || isTyping) && styles.headerStatusOnline}>
+                {isTyping ? 'typing…' : isOnline ? 'Online' : 'Offline'}
+              </Text>
             </Text>
           </View>
         </View>
@@ -588,7 +601,9 @@ const styles = StyleSheet.create({
   flex:      { flex: 1 },
 
   // Figma (Messaging.png): chevron, ringed initials, name + status; no rule.
-  header:    { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 12, backgroundColor: C.bg },
+  header:    { flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 12, paddingRight: 16, paddingTop: 10, paddingBottom: 12, backgroundColor: C.bg },
+  // flex + minWidth 0 give the name a width limit, so numberOfLines can cut it with "…".
+  headerText: { flex: 1, minWidth: 0 },
   backBtn:   { padding: 4 },
   headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
   headerAvatar: { width: 35, height: 35, borderRadius: 17.5, backgroundColor: '#111212', borderWidth: 1, borderColor: '#5a5a5a', alignItems: 'center', justifyContent: 'center', position: 'relative' },

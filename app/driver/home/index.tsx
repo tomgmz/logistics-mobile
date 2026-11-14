@@ -43,10 +43,11 @@ import {
 } from '../../../lib/driverBookings'
 
 const routeMapImg   = require('../../../assets/home/route-map.png')
-const mapIconImg    = require('../../../assets/home/icon-map.png')
-// Still the wrench asset — the module was renamed to Reports, the artwork was not.
-const wrenchIconImg = require('../../../assets/home/icon-maintenance.png')
 const truckIconImg  = require('../../../assets/home/icon-vehicle.png')
+// Quick-action icons: one filled set in the palette (red / green / cyan / yellow).
+const mapIconImg     = require('../../../assets/home/icon-map.png')
+const reportsIconImg = require('../../../assets/home/icon-reports.png')
+const QUICK_ICON_SIZE = { width: 18, height: 18 }
 
 const CYAN     = '#4df9ed'
 const CARD_INK = '#0e1010'
@@ -218,12 +219,12 @@ export default function DriverHome() {
 
           <View ref={quickTarget} collapsable={false} className="flex-row gap-[5px] mt-[9px]">
             <QuickAction
-              icon={<Image source={mapIconImg} style={{ width: 17.5, height: 17.5 }} resizeMode="contain" />}
+              icon={<Image source={mapIconImg} style={QUICK_ICON_SIZE} resizeMode="contain" />}
               label="Maps"
               onPress={() => router.push('/driver/maps')}
             />
             <QuickAction
-              icon={<Image source={wrenchIconImg} style={{ width: 18, height: 18 }} resizeMode="contain" />}
+              icon={<Image source={reportsIconImg} style={QUICK_ICON_SIZE} resizeMode="contain" />}
               label="Reports"
               onPress={() => router.push('/driver/reports')}
             />

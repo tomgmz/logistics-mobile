@@ -110,15 +110,25 @@ async function doRefresh(): Promise<string> {
   const refreshToken = await TokenStore.getRefresh()
   if (!refreshToken) throw Object.assign(new Error('No refresh token stored.'), { noRefreshToken: true })
 
-  const { data } = await axios.post<{ status: string; data: { accessToken: string } }>(
+  // rotate: this build keeps the new refresh token the server hands back
+  // (refresh-token rotation, 2026-11-14); the one just sent stops working. If
+  // the reply is lost on weak signal, resending the old one within 60 s gets the
+  // same new token back, so a retry never signs the driver out.
+  const { data } = await axios.post<{
+    status: string
+    data: { accessToken: string; refreshToken?: string }
+  }>(
     `${getApiUrl()}/auth/refresh`,
-    { refreshToken },
+    { refreshToken, rotate: true },
     { headers: { 'Content-Type': 'application/json' } }
   )
 
   const newToken = data?.data?.accessToken
   if (!newToken) throw new Error('Refresh response missing accessToken.')
 
+  // The refresh token first: it is the one that can't be got back if the app
+  // stops between the two writes.
+  if (data.data.refreshToken) await TokenStore.setRefresh(data.data.refreshToken)
   await TokenStore.setAccess(newToken)
   return newToken
 }

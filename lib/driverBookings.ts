@@ -68,7 +68,7 @@ export interface BookingWithRelations {
   /** When operations wants the driver at the pickup point; null = call_time. */
   driver_call_time?:   string | null
   // 'delivered': every drop-off done, waiting on the client to confirm completion.
-  status:              'pending' | 'assigned' | 'in_transit' | 'delivered' | 'completed' | 'cancelled'
+  status:              'pending' | 'assigned' | 'in_transit' | 'delivered' | 'completed' | 'failed' | 'cancelled'
   /** Set once the driver confirmed the vehicle was back in the company lot.
    *  The booking is only truly finished when this is non-null. */
   fleet_return_at:     string | null
@@ -108,6 +108,8 @@ export const STATUS_CONFIG: Record<StatusKey, {
   in_transit: { label: 'En Route',  badgeCn: 'bg-blue-950',    textCn: 'text-blue-400',    dotCn: 'bg-blue-400'    },
   delivered:  { label: 'Delivered', badgeCn: 'bg-zinc-800',    textCn: 'text-white',       dotCn: 'bg-white'       },
   completed:  { label: 'Completed', badgeCn: 'bg-emerald-950', textCn: 'text-emerald-400', dotCn: 'bg-emerald-400' },
+  // No drop-off delivered (stolen truck, accident…), 2026-11-14.
+  failed:     { label: 'Failed',    badgeCn: 'bg-red-950',     textCn: 'text-red-400',     dotCn: 'bg-red-500'     },
   cancelled:  { label: 'Cancelled', badgeCn: 'bg-red-950',     textCn: 'text-red-400',     dotCn: 'bg-red-500'     },
 }
 
@@ -117,7 +119,7 @@ export const STATUS_CONFIG: Record<StatusKey, {
  * confirmation is still owed — so it stays an active order until then.
  */
 export function awaitingFleetReturn(b: BookingWithRelations): boolean {
-  return (b.status === 'delivered' || b.status === 'completed') && !b.fleet_return_at
+  return (b.status === 'delivered' || b.status === 'completed' || b.status === 'failed') && !b.fleet_return_at
 }
 
 const RETURNING_CONFIG = {
@@ -256,7 +258,7 @@ export function filterBookings(bookings: BookingWithRelations[], filter: FilterK
   switch (filter) {
     case 'Active':    return bookings.filter((b) => b.status === 'in_transit' || b.status === 'assigned' || awaitingFleetReturn(b))
     case 'Pending':   return bookings.filter((b) => b.status === 'pending')
-    case 'Completed': return bookings.filter((b) => ((b.status === 'delivered' || b.status === 'completed') && !awaitingFleetReturn(b)) || b.status === 'cancelled')
+    case 'Completed': return bookings.filter((b) => ((b.status === 'delivered' || b.status === 'completed' || b.status === 'failed') && !awaitingFleetReturn(b)) || b.status === 'cancelled')
     default:          return bookings
   }
 }

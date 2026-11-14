@@ -24,6 +24,7 @@ import { chooseMessageRemoval, type DeleteScope } from '../../../../components/m
 import type { GroupMessageRaw, ReactionTogglePayload, GroupReadReceiptPayload, GroupSystemEvent, GroupMemberRequest } from '../../../../types/messaging.types'
 import { FONTS } from '../../../../lib/config/fonts'
 import { nameWithRole } from '../../../../lib/roles'
+import { useMessageDraft } from '../../../../lib/messageDraft'
 import { cachedData, storeData } from '../../../../lib/query/useApiQuery'
 import { useCatchUp } from '../../../../hooks/useLiveSignal'
 
@@ -214,7 +215,8 @@ export default function GroupChatScreen() {
   const [messages,    setMessages]    = useState<GMsg[]>([])
   const [loading,     setLoading]     = useState(true)
   const [sending,     setSending]     = useState(false)
-  const [text,        setText]        = useState('')
+  // Unsent text comes back when the chat is reopened.
+  const [text,        setText]        = useMessageDraft(currentUserId, groupId ? `group:${groupId}` : '')
   // "@" opens the booking list; picking one writes its number in.
   const mention = useBookingMentionPicker(text, setText)
   const [replyTo,     setReplyTo]     = useState<GMsg | null>(null)
@@ -467,6 +469,8 @@ export default function GroupChatScreen() {
     } catch {
       pendingIds.current.delete(oid)
       setMessages(prev => prev.filter(m => m.id !== oid))
+      // Not sent: put the text back (unless something new was typed) so it isn't lost.
+      if (!photo) setText(t => t || typed)
     } finally { setSending(false) }
   }
 
@@ -548,9 +552,9 @@ export default function GroupChatScreen() {
           <View style={styles.headerAvatar}>
             <Text style={styles.headerAvatarText}>{initialsOf(name)}</Text>
           </View>
-          <View>
-            <Text style={styles.headerName} numberOfLines={1}>{name}</Text>
-            <Text style={[styles.headerStatus, typingUsers.length > 0 && styles.headerStatusTyping]}>
+          <View style={styles.headerText}>
+            <Text style={styles.headerName} numberOfLines={1} ellipsizeMode="tail">{name}</Text>
+            <Text style={[styles.headerStatus, typingUsers.length > 0 && styles.headerStatusTyping]} numberOfLines={1}>
               {typingLabel ?? (myStatus === 'pending' ? 'Invite pending' : 'Group')}
             </Text>
           </View>
@@ -749,6 +753,8 @@ const styles = StyleSheet.create({
   header:       { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 12, backgroundColor: C.bg },
   backBtn:      { padding: 4 },
   headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  // flex + minWidth 0 give the name a width limit, so numberOfLines can cut it with "…".
+  headerText:   { flex: 1, minWidth: 0 },
   headerAvatar: { width: 35, height: 35, borderRadius: 17.5, backgroundColor: '#111212', borderWidth: 1, borderColor: '#5a5a5a', alignItems: 'center', justifyContent: 'center' },
   headerAvatarText: { color: C.white, fontFamily: FONTS.darker.medium, fontSize: 15 },
   headerName:   { color: C.white, fontFamily: FONTS.darker.medium, fontSize: 22, lineHeight: 24 },

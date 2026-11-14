@@ -22,7 +22,7 @@ const STATUS_COLOR: Record<string, string> = {
   assigned: '#A024FF',
   in_transit: '#4DF9ED', arrived: '#4DF9ED',
   delivered: '#FFFFFF', completed: '#3AF626',
-  cancelled: '#F62626',
+  failed: '#F62626', cancelled: '#F62626',
 }
 const statusColor = (s: string) => STATUS_COLOR[s] ?? '#9f9c9c'
 

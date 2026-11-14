@@ -5,6 +5,7 @@ import { endNavSession } from './navSession'
 import { releaseNavigator } from './releaseNavigator'
 import { useAuthStore } from './store/auth.store'
 import { useAvailabilityStore } from './store/availability.store'
+import { clearAllMessageDrafts } from './messageDraft'
 
 /**
  * Sign the driver on this phone out, and leave nothing of theirs running.
@@ -36,5 +37,7 @@ export async function signOutDriver(): Promise<void> {
     // Availability is per driver — drop it so the next sign-in on this device
     // doesn't show the previous driver's switch state.
     useAvailabilityStore.getState().reset()
+    // Unsent chat text belongs to this driver too.
+    await clearAllMessageDrafts()
   }
 }

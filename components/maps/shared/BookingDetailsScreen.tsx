@@ -212,6 +212,7 @@ const STATUS_TAG: Record<string, { label: string; color: string; bg: string }> =
   in_transit: { label: 'IN TRANSIT', color: D.cyan,    bg: D.cyanDim               },
   delivered:  { label: 'DELIVERED',  color: '#ffffff', bg: 'rgba(255,255,255,0.19)' },
   completed:  { label: 'COMPLETED',  color: D.green,   bg: D.greenDim              },
+  failed:     { label: 'FAILED',     color: D.red,     bg: D.redDim                },
   cancelled:  { label: 'CANCELLED',  color: D.red,     bg: D.redDim                },
 }
 
@@ -805,7 +806,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
   /* ── Which face of this screen the driver is looking at ─────────────────── */
 
   // 'delivered' is done from the driver's side; 'completed' only adds the client's confirmation.
-  const isDone     = finished || booking.status === 'delivered' || booking.status === 'completed'
+  const isDone     = finished || booking.status === 'delivered' || booking.status === 'completed' || booking.status === 'failed'
   const inTransit  = !isDone && booking.status === 'in_transit'
   const hasReturned = returned || !!booking.fleet_return_at
 

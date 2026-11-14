@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity,
-  FlatList, StyleSheet, Dimensions, ActivityIndicator,
+  FlatList, StyleSheet, Dimensions, ActivityIndicator, InteractionManager,
 } from 'react-native'
 import { Search } from 'lucide-react-native'
 import { FONTS } from '../../lib/config/fonts'
@@ -17,6 +17,11 @@ interface EmojiEntry {
 interface EmojiDataShape {
   categories: { id: string; emojis: string[] }[]
   emojis: Record<string, EmojiEntry>
+}
+
+/** What the panel draws: per category, the emoji glyphs already cut into rows of COLS. */
+interface Prepared {
+  categories: { id: string; rows: string[][] }[]
 }
 
 const C = {
@@ -47,8 +52,10 @@ const SCREEN_H = Dimensions.get('window').height
 const PANEL_H = Math.round(SCREEN_H * 0.38)
 const CELL = Math.floor((SCREEN_W - 24) / COLS)
 
+// Module-level: read once per app session, shared by every chat screen.
 let _data: EmojiDataShape | null = null
-let _searchIndex: Record<string, string> | null = null
+let _prepared: Prepared | null = null
+let _searchIndex: { native: string; text: string }[] | null = null
 
 function loadData(): EmojiDataShape {
   if (!_data) {
@@ -57,31 +64,73 @@ function loadData(): EmojiDataShape {
   return _data
 }
 
-function getSearchIndex(d: EmojiDataShape): Record<string, string> {
-  if (!_searchIndex) {
-    const idx: Record<string, string> = {}
-    for (const id of Object.keys(d.emojis)) {
-      const e = d.emojis[id]
-      idx[id] = [e.name, ...(e.keywords ?? []), ...(e.emoticons ?? [])]
-        .join(' ')
-        .toLowerCase()
-    }
-    _searchIndex = idx
-  }
-  return _searchIndex
+function toRows(glyphs: string[]): string[][] {
+  const rows: string[][] = []
+  for (let i = 0; i < glyphs.length; i += COLS) rows.push(glyphs.slice(i, i + COLS))
+  return rows
 }
 
 function nativeOf(d: EmojiDataShape, id: string): string {
   return d.emojis[id]?.skins[0]?.native ?? ''
 }
 
-interface CellProps { native: string; onPress: (e: string) => void }
+function prepare(): Prepared {
+  if (!_prepared) {
+    const d = loadData()
+    _prepared = {
+      categories: d.categories.map(cat => ({
+        id: cat.id,
+        rows: toRows(cat.emojis.map(id => nativeOf(d, id)).filter(Boolean)),
+      })),
+    }
+  }
+  return _prepared
+}
 
-const EmojiCell = React.memo(function EmojiCell({ native, onPress }: CellProps) {
+/** Built only when the driver first types in the search box. */
+function getSearchIndex(): { native: string; text: string }[] {
+  if (!_searchIndex) {
+    const d = loadData()
+    const idx: { native: string; text: string }[] = []
+    for (const id of Object.keys(d.emojis)) {
+      const e = d.emojis[id]
+      const native = nativeOf(d, id)
+      if (!native) continue
+      idx.push({ native, text: [e.name, ...(e.keywords ?? []), ...(e.emoticons ?? [])].join(' ').toLowerCase() })
+    }
+    _searchIndex = idx
+  }
+  return _searchIndex
+}
+
+/**
+ * Reads and prepares the emoji list in the background, after the screen's
+ * opening animation, so the first tap on the emoji button doesn't wait for it.
+ */
+function preloadEmojis() {
+  if (_prepared) return
+  InteractionManager.runAfterInteractions(() => {
+    // One more frame so the chat's own first render isn't held up.
+    setTimeout(() => { prepare() }, 300)
+  })
+}
+
+interface RowProps { glyphs: string[]; onPress: (e: string) => void }
+
+/**
+ * One row of emojis: a row container with plain pressable Text cells (no
+ * TouchableOpacity wrapper per emoji, which doubled the native views and added
+ * an animation per cell).
+ */
+const EmojiRow = React.memo(function EmojiRow({ glyphs, onPress }: RowProps) {
   return (
-    <TouchableOpacity onPress={() => onPress(native)} activeOpacity={0.5} style={s.cell}>
-      <Text style={s.cellEmoji}>{native}</Text>
-    </TouchableOpacity>
+    <View style={s.row}>
+      {glyphs.map((g, i) => (
+        <Text key={i} style={s.cell} onPress={() => onPress(g)} suppressHighlighting={false}>
+          {g}
+        </Text>
+      ))}
+    </View>
   )
 })
 
@@ -92,53 +141,54 @@ interface EmojiSheetProps {
 }
 
 export default function EmojiSheet({ visible, onSelect }: EmojiSheetProps) {
-  const [data, setData]         = useState<EmojiDataShape | null>(_data)
+  const [prepared, setPrepared] = useState<Prepared | null>(_prepared)
   const [search, setSearch]     = useState('')
   const [catIndex, setCatIndex] = useState(0)
+  // Once opened, the panel stays mounted (hidden) so reopening is instant.
+  const [everOpened, setEverOpened] = useState(visible)
 
-  // never blocked by it.
+  // Prepare in the background as soon as a chat opens.
+  useEffect(() => { preloadEmojis() }, [])
+
   useEffect(() => {
-    if (visible && !data) {
-      const t = setTimeout(() => setData(loadData()), 0)
+    if (!visible) return
+    setEverOpened(true)
+    if (!prepared) {
+      // Opened before the background preload finished: show the spinner, then prepare.
+      const t = setTimeout(() => setPrepared(prepare()), 0)
       return () => clearTimeout(t)
     }
-  }, [visible, data])
+  }, [visible, prepared])
 
-  const items = useMemo(() => {
-    if (!data) return []
-    const q = search.trim().toLowerCase()
-    let ids: string[]
-    if (!q) {
-      ids = data.categories[catIndex]?.emojis ?? []
-    } else {
-      const idx = getSearchIndex(data)
-      ids = Object.keys(data.emojis).filter(id => idx[id].includes(q))
-    }
-    const out: { id: string; native: string }[] = []
-    for (const id of ids) {
-      const native = nativeOf(data, id)
-      if (native) out.push({ id, native })
-    }
-    return out
-  }, [data, search, catIndex])
+  const q = search.trim().toLowerCase()
+
+  const rows = useMemo(() => {
+    if (!prepared) return []
+    if (!q) return prepared.categories[catIndex]?.rows ?? []
+    return toRows(getSearchIndex().filter(e => e.text.includes(q)).map(e => e.native))
+  }, [prepared, q, catIndex])
 
   const onSelectRef = useRef(onSelect)
   useEffect(() => { onSelectRef.current = onSelect }, [onSelect])
   const handlePress = useCallback((native: string) => onSelectRef.current(native), [])
 
   const renderItem = useCallback(
-    ({ item }: { item: { id: string; native: string } }) => (
-      <EmojiCell native={item.native} onPress={handlePress} />
-    ),
+    ({ item }: { item: string[] }) => <EmojiRow glyphs={item} onPress={handlePress} />,
     [handlePress],
   )
 
-  const keyExtractor = useCallback((item: { id: string }) => item.id, [])
+  const keyExtractor = useCallback((_: string[], index: number) => `${catIndex}:${q}:${index}`, [catIndex, q])
 
-  if (!visible) return null
+  const listRef = useRef<FlatList<string[]>>(null)
+  const pickCategory = useCallback((i: number) => {
+    setCatIndex(i)
+    listRef.current?.scrollToOffset({ offset: 0, animated: false })
+  }, [])
+
+  if (!visible && !everOpened) return null
 
   return (
-    <View style={[s.panel, { height: PANEL_H }]}>
+    <View style={[s.panel, { height: PANEL_H }, !visible && s.hidden]}>
       {/* grab handle */}
       <View style={s.handle} />
 
@@ -156,12 +206,12 @@ export default function EmojiSheet({ visible, onSelect }: EmojiSheetProps) {
         />
       </View>
 
-      {!search.trim() && (
+      {!q && (
         <View style={s.tabs}>
-          {(data?.categories ?? []).map((cat, i) => (
+          {(prepared?.categories ?? []).map((cat, i) => (
             <TouchableOpacity
               key={cat.id}
-              onPress={() => setCatIndex(i)}
+              onPress={() => pickCategory(i)}
               activeOpacity={0.7}
               style={[s.tab, catIndex === i && s.tabActive]}
             >
@@ -172,33 +222,29 @@ export default function EmojiSheet({ visible, onSelect }: EmojiSheetProps) {
       )}
 
       {/* grid */}
-      {!data ? (
+      {!prepared ? (
         <View style={s.empty}>
           <ActivityIndicator size="small" color={C.cyan} />
         </View>
-      ) : items.length === 0 ? (
+      ) : rows.length === 0 ? (
         <View style={s.empty}>
           <Text style={s.emptyText}>No emoji found</Text>
         </View>
       ) : (
         <FlatList
-          data={items}
+          ref={listRef}
+          data={rows}
           keyExtractor={keyExtractor}
           renderItem={renderItem}
-          numColumns={COLS}
           style={s.grid}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
-          removeClippedSubviews
-          initialNumToRender={40}
-          maxToRenderPerBatch={24}
-          updateCellsBatchingPeriod={50}
-          windowSize={9}
-          getItemLayout={(_, index) => ({
-            length: CELL,
-            offset: CELL * Math.floor(index / COLS),
-            index,
-          })}
+          // Enough rows to fill the panel at once, then larger batches while scrolling.
+          initialNumToRender={Math.ceil(PANEL_H / CELL) + 1}
+          maxToRenderPerBatch={8}
+          updateCellsBatchingPeriod={16}
+          windowSize={11}
+          getItemLayout={(_, index) => ({ length: CELL, offset: CELL * index, index })}
         />
       )}
     </View>
@@ -207,6 +253,7 @@ export default function EmojiSheet({ visible, onSelect }: EmojiSheetProps) {
 
 const s = StyleSheet.create({
   panel:       { backgroundColor: C.bg, paddingHorizontal: 12, paddingTop: 8, borderTopWidth: 1, borderTopColor: C.border },
+  hidden:      { display: 'none' },
   handle:      { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.18)', marginBottom: 10 },
 
   searchRow:   { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.field, borderWidth: 1, borderColor: C.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 8 },
@@ -218,8 +265,8 @@ const s = StyleSheet.create({
   tabIcon:     { fontFamily: FONTS.alegreyaSans.regular, fontSize: 18 },
 
   grid:        { flex: 1 },
-  cell:        { width: CELL, height: CELL, alignItems: 'center', justifyContent: 'center' },
-  cellEmoji:   { fontSize: 26 },
+  row:         { flexDirection: 'row', height: CELL },
+  cell:        { width: CELL, height: CELL, lineHeight: CELL, fontSize: 26, textAlign: 'center', textAlignVertical: 'center' },
 
   empty:       { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emptyText:   { color: 'rgba(255,255,255,0.25)', fontFamily: FONTS.alegreyaSans.regular, fontSize: 13 },
