@@ -48,8 +48,8 @@ export interface StopFix {
  * The driver's position right now, or null if it can't be read.
  *
  * Null is a real answer, not a failure to handle later: GPS dies inside most
- * warehouse docks, and the confirmation flow has to keep working there — it
- * asks the driver for a reason instead.
+ * warehouse docks. The confirmation is then refused; the driver checks again
+ * or asks the office to confirm the step.
  */
 /** How long to wait for a fresh GPS fix before using the last known one. */
 const FIX_TIMEOUT_MS = 8_000
@@ -83,7 +83,7 @@ export async function readCurrentFix(): Promise<StopFix | null> {
 }
 
 export interface ProximityCheck {
-  /** Whether the stop can be confirmed without the driver giving a reason. */
+  /** Whether the stop can be confirmed (within the radius, or not measurable). */
   withinRadius: boolean
   /** Null when there was no fix, or the stop has no coordinates to measure to. */
   distanceM:    number | null
@@ -110,7 +110,7 @@ export async function checkStopProximity(
       withinRadius: false,
       distanceM:    null,
       fix:          null,
-      message:      `Your location could not be read, so we can't confirm you're at the ${stopLabel}. Turn location on and try again, or confirm anyway with a reason.`,
+      message:      `Your location could not be read, so we can't confirm you're at the ${stopLabel}. Turn location on and try again, or ask the office to confirm it.`,
     }
   }
 
@@ -127,7 +127,7 @@ export async function checkStopProximity(
     withinRadius: false,
     distanceM,
     fix,
-    message: `You're about ${distanceM} m from the ${stopLabel}. Move within ${STOP_PROOF_RADIUS_M} m to confirm it, or confirm anyway with a reason.`,
+    message: `You're about ${distanceM} m from the ${stopLabel}. Move within ${STOP_PROOF_RADIUS_M} m to confirm it.`,
   }
 }
 

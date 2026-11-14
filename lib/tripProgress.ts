@@ -44,17 +44,15 @@ function stopUrl(tripStopId: string): string {
  * in a dead zone is synced on reconnect. The queue drains FIFO, which matches the
  * order the backend enforces (run 1's pickup → run 1's stops → run 2's pickup → …).
  *
- * Each confirmation carries the position captured AT THE STOP, plus the driver's
- * reason when they confirmed one the distance gate would have refused. It has to
+ * Each confirmation carries the position captured AT THE STOP. It has to
  * be captured here and travel with the entry: by the time the queue drains, the
  * driver may be hours and miles away, so a position read at send time would
  * describe the wrong place entirely.
  */
 
-/** Where the driver was when they confirmed, and why if they were too far. */
+/** Where the driver was when they confirmed. */
 export interface StopProofContext {
-  fix:             StopFix | null
-  overrideReason?: string | null
+  fix: StopFix | null
 }
 
 function stopProofBody(proof?: StopProofContext): Record<string, unknown> {
@@ -65,7 +63,6 @@ function stopProofBody(proof?: StopProofContext): Record<string, unknown> {
       longitude:  proof.fix.longitude,
       ...(proof.fix.accuracy_m != null ? { accuracy_m: proof.fix.accuracy_m } : {}),
     } : {}),
-    ...(proof.overrideReason ? { override_reason: proof.overrideReason } : {}),
   }
 }
 

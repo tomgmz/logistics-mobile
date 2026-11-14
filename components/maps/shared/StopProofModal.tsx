@@ -97,7 +97,6 @@ export function StopProofModal({
 
   const [proximity, setProximity] = useState<ProximityCheck | null>(null)
   const [locating, setLocating]   = useState(false)
-  const [reason, setReason]       = useState('')
 
   const stopLabel = kind === 'pickup' ? 'pickup point' : 'drop-off'
 
@@ -110,7 +109,6 @@ export function StopProofModal({
       setPermissionBlocked(false)
       setBusy(false)
       setProximity(null)
-      setReason('')
       setLoads(Object.fromEntries((loadPlan ?? []).map((l) => [l.item_id, l.planned])))
     }
     // Only on opening: a re-render with a fresh loadPlan array must not undo
@@ -121,8 +119,7 @@ export function StopProofModal({
   // Depend on the numbers, never on the object holding them. The caller builds
   // `stopCoordinates` fresh on every render, so using it as a dependency gave
   // `measure` a new identity each time, which re-ran the effect, which set state,
-  // which rendered again — the position read looping forever and tearing the
-  // reason box out from under the driver every time it did.
+  // which rendered again — the position read looping forever.
   const stopLat = stopCoordinates?.latitude ?? null
   const stopLon = stopCoordinates?.longitude ?? null
 
@@ -166,14 +163,11 @@ export function StopProofModal({
   const isPickup   = kind === 'pickup'
   const proofLabel = isPickup ? 'proof of pickup' : 'proof of delivery'
 
-  // Out of range (or no fix) and the driver has written a reason: they are
-  // forcing this one through, and the button says so.
-  const overriding = proximity != null && !proximity.withinRadius && reason.trim().length >= 3
-  // Only the very first read blanks the panel; a re-check refreshes in place so
-  // the driver keeps whatever they were part-way through typing.
+  // Only the very first read blanks the panel; a re-check refreshes in place.
   const measuring  = locating && proximity == null
-  // Confirm needs an answer about where they are — but any answer will do, as
-  // long as it is either close enough or accompanied by a reason.
+  // Confirm needs the driver at the stop. There is no "confirm anyway" (the
+  // reason override was for testing, removed 2026-11-14); a driver who really is
+  // there with no usable GPS asks the office to confirm the step.
   const plan       = isPickup ? loadPlan ?? [] : []
   const loadedSum  = plan.reduce((n, l) => n + (loads[l.item_id] ?? 0), 0)
   const changed    = plan.some((l) => Math.abs((loads[l.item_id] ?? 0) - l.planned) > 1e-9)
@@ -183,10 +177,9 @@ export function StopProofModal({
   }
   // A trip has to carry something; leaving everything is not a trip.
   const loadOk     = plan.length === 0 || loadedSum > 0
-  const canConfirm = !!photoUri && proximity != null && (proximity.withinRadius || overriding) && loadOk
+  const canConfirm = !!photoUri && proximity != null && proximity.withinRadius && loadOk
 
-  // The override reason sits at the bottom, right above the buttons: keep both
-  // above the keyboard (useKeyboardHeight), and let the card scroll on a short
+  // The load quantities can raise the keyboard: keep the card (useKeyboardHeight), and let the card scroll on a short
   // screen with the photo, the manifest and the keyboard all showing.
   const keyboardH = useKeyboardHeight()
   const scrollRef = useRef<ScrollView>(null)
@@ -430,21 +423,6 @@ export function StopProofModal({
                   {locating ? 'Checking…' : 'Check again'}
                 </Text>
               </TouchableOpacity>
-
-              {/* The way past, and deliberately a little effortful: it is
-                  recorded against the stop and reviewed by operations. */}
-              <TextInput
-                value={reason}
-                onChangeText={setReason}
-                placeholder="Why confirm from here? (required to override)"
-                placeholderTextColor={C.dimmer}
-                multiline
-                style={{
-                  color: C.white, fontSize: 13, minHeight: 44, paddingHorizontal: 10,
-                  paddingVertical: 8, borderRadius: 10, backgroundColor: C.surface,
-                  borderWidth: 1, borderColor: C.border, textAlignVertical: 'top',
-                }}
-              />
             </View>
           )}
 
@@ -464,7 +442,7 @@ export function StopProofModal({
                 if (!canConfirm || !photoUri) return
                 onConfirm(
                   photoUri,
-                  { fix: proximity?.fix ?? null, overrideReason: overriding ? reason.trim() : null },
+                  { fix: proximity?.fix ?? null },
                   changed ? plan.map((l) => ({ item_id: l.item_id, quantity: loads[l.item_id] ?? 0 })) : null,
                 )
               }}
@@ -472,14 +450,14 @@ export function StopProofModal({
               style={{
                 flex: 1.3, paddingVertical: 14, borderRadius: 14,
                 flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-                backgroundColor: !canConfirm ? C.surfaceHi : overriding ? C.orange : C.green,
-                borderWidth: 1, borderColor: !canConfirm ? C.border : overriding ? C.orange : C.green,
+                backgroundColor: !canConfirm ? C.surfaceHi : C.green,
+                borderWidth: 1, borderColor: !canConfirm ? C.border : C.green,
                 opacity: canConfirm ? 1 : 0.55,
               }}
             >
               <CheckCircle2 size={17} color={canConfirm ? '#000' : C.dimmer} />
               <Text style={{ color: canConfirm ? '#000' : C.dimmer, fontSize: 14, fontWeight: '800' }}>
-                {overriding ? 'Confirm anyway' : 'Yes, done'}
+                Yes, done
               </Text>
             </TouchableOpacity>
           </View>
