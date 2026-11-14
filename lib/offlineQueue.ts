@@ -132,6 +132,7 @@ export function flush(): Promise<void> {
     let droppedReassigned = false
     let droppedNotMain = false
     let sentToOffice = false
+    const refused: Array<{ kind: 'pickup' | 'delivery' | 'complete'; why: string }> = []
 
     for (const queued of queue) {
       if (stop) { remaining.push(queued); continue }
@@ -236,6 +237,13 @@ export function flush(): Promise<void> {
           // Other 4xx (404, or a 409 that outlived its retries) → nothing more we
           // can do with it; drop rather than retry forever.
           console.warn(`[offlineQueue] dropping ${item.id} on ${status} (treated as already applied).`)
+          // A pickup, drop-off or completion the driver did and saw as done:
+          // never let it vanish without a word (BK-202611-00189, 2026-11-14: a
+          // pickup refused for the scheduled day was dropped silently).
+          if (item.kind === 'pickup' || item.kind === 'delivery' || item.kind === 'complete') {
+            const why = e?.response?.data?.message
+            refused.push({ kind: item.kind, why: typeof why === 'string' && why ? why : `Server answered ${status}.` })
+          }
         }
       }
     }
@@ -261,6 +269,15 @@ export function flush(): Promise<void> {
         'Delivery handed to another driver',
         'Some of your updates for a booking were not sent: the office assigned it to another driver or vehicle. ' +
         'Pull down on your bookings to see your current work.',
+      )
+    }
+
+    if (refused.length > 0) {
+      const label = { pickup: 'Pickup', delivery: 'Drop-off', complete: 'Delivery completion' } as const
+      Alert.alert(
+        refused.length === 1 ? `${label[refused[0].kind]} not accepted` : 'Some confirmations were not accepted',
+        refused.map((r) => `${label[r.kind]}: ${r.why}`).join('\n\n') +
+        '\n\nIt was not recorded. Call the office so they can record it for you.',
       )
     }
   })
