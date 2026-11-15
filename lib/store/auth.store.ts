@@ -82,8 +82,13 @@ export const useAuthStore = create<AuthStore>()(
                 drivers:               state.user.drivers ?? null,
                 clients:               state.user.clients ?? null,
               },
-              accessToken:  state.accessToken,
-              refreshToken: state.refreshToken,
+              // Tokens are NOT saved here: TokenStore (secure storage) is their
+              // only home and is updated on every refresh. A copy saved here
+              // went stale at the first rotation and was restored over the
+              // live one (2026-11-16 fix). Older installs' saved copies are
+              // dropped at the next write.
+              accessToken:  null,
+              refreshToken: null,
             }
           : { user: null, accessToken: null, refreshToken: null },
 

@@ -10,7 +10,7 @@ import '../global.css'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from '../lib/query/client'
 import { useAuthStore, useAuthHydrated } from '../lib/store/auth.store'
-import { getMe, setSessionExpiredHandler, TokenStore } from '../lib/api/auth.api'
+import { getMe, setSessionExpiredHandler } from '../lib/api/auth.api'
 import { APP_FONTS } from '../lib/config/fonts'
 import { syncServerTime } from '../lib/serverTime'
 import { registerForPushNotifications, initPushResponders, ensureNotificationChannels } from '../lib/push'
@@ -51,10 +51,12 @@ export default function RootLayout() {
   useEffect(() => {
     if (!authReady) return
 
-    const { accessToken, refreshToken } = useAuthStore.getState()
-
-    if (accessToken)  TokenStore.setAccess(accessToken)
-    if (refreshToken) TokenStore.setRefresh(refreshToken)
+    // The tokens live only in TokenStore (secure storage), which every sign-in
+    // and every refresh writes. This used to copy the store's tokens back over
+    // it on every start, but the store only ever held the SIGN-IN tokens: with
+    // refresh-token rotation (2026-11-14) that put a retired refresh token back,
+    // the next refresh looked like a stolen token, and the driver was signed out
+    // on every device (seen 2026-11-15 on driver plmnkoijb1243).
 
     if (!user) return
 
