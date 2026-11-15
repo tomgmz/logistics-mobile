@@ -18,7 +18,7 @@ import { BookingMentionCards, BookingMentionMenu, MentionText, type BookingMenti
  *   ( their message, grey pill )
  *   [time]
  *
- * Pill bubbles; the time (and "seen" on yours) only under the last bubble of
+ * Pill bubbles; the time (and "Seen" on yours) only under the last bubble of
  * a run; a reaction chip on the bubble's lower corner. A direct chat shows no
  * avatar or name (hideIdentity); a group keeps the sender's avatar and name.
  * Behaviour unchanged: swipe to reply, long press for the react / remove sheet.
@@ -244,13 +244,13 @@ export function MessageItem({
             {/* A mentioned booking's important details, under the message. */}
             <BookingMentionCards text={msg.content} alignEnd={isMine} />
 
-            {/* Last bubble of a run: (name ·) time, and "seen" on yours. */}
+            {/* Last bubble of a run: (name ·) time, and "Seen" on yours. */}
             {showName && (
               <View style={[s.meta, isMine ? s.metaMine : s.metaTheirs]}>
                 {!hideIdentity && !isMine && <Text style={s.name} numberOfLines={1}>{senderName}</Text>}
                 {!hideIdentity && !isMine && <Text style={s.dot}>·</Text>}
                 <Text style={s.time}>{pending ? 'sending…' : time}</Text>
-                {isMine && seen && !pending && <Text style={s.seen}>seen</Text>}
+                {isMine && seen && !pending && <Text style={s.seen}>Seen</Text>}
               </View>
             )}
           </View>
