@@ -67,12 +67,13 @@ export interface BookingWithRelations {
   call_time:           string
   /** When operations wants the driver at the pickup point; null = call_time. */
   driver_call_time?:   string | null
+  /** Its day (booking day or the day before); null = the booking day. */
+  driver_call_date?:   string | null
   // 'delivered': every drop-off done, waiting on the client to confirm completion.
   status:              'pending' | 'assigned' | 'in_transit' | 'delivered' | 'completed' | 'failed' | 'cancelled'
   /** Set once the driver confirmed the vehicle was back in the company lot.
    *  The booking is only truly finished when this is non-null. */
   fleet_return_at:     string | null
-  total_cost:          number | null
   estimated_delivery:  string | null
   required_volume_cbm: number | null
   required_weight_kg:  number | null

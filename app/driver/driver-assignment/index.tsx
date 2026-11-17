@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
+import { callDayNote } from '../../../lib/driverCallDay'
 import {
   View,
   Text,
@@ -144,7 +145,7 @@ function BookingCard({ booking, onPress, index }: BookingCardProps) {
 
           <View className="bg-surface-elevated rounded-lg px-2 py-1">
             <Text className="text-[11px] font-semibold text-ink-muted">
-              {formatTime(booking.driver_call_time || booking.call_time)}
+              {formatTime(booking.driver_call_time || booking.call_time)}{callDayNote(booking)}
             </Text>
           </View>
         </View>
@@ -199,7 +200,7 @@ function BookingCard({ booking, onPress, index }: BookingCardProps) {
           </View>
         )}
 
-        {/* Row 5 — Truck chip + cost + arrow */}
+        {/* Row 5 — Truck chip + arrow */}
         <View className="flex-row items-center gap-2">
           <View className="flex-1 bg-surface-elevated rounded-lg px-2.5 py-1.5 flex-row items-center gap-1.5">
             <Truck size={12} color="#818181" />
@@ -207,12 +208,6 @@ function BookingCard({ booking, onPress, index }: BookingCardProps) {
               {truckLabel}
             </Text>
           </View>
-
-          {booking.total_cost != null && (
-            <Text className="text-sm font-black text-ink-primary">
-              ₱{Number(booking.total_cost).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-            </Text>
-          )}
 
           <View className="w-7 h-7 rounded-full bg-ink-primary items-center justify-center">
             <Text
