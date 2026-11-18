@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { View, Text, Pressable } from 'react-native'
+import { View, Text, TouchableOpacity } from 'react-native'
 
 import { useAvailabilityStore } from '../../lib/store/availability.store'
 import AvailabilityCalendarModal from './AvailabilityCalendarModal'
@@ -56,12 +56,12 @@ export default function AvailabilityToggle() {
     <>
     {/* The whole pill opens the calendar — it is the only thing here to do, so
         there is no smaller target to hunt for. */}
-    <Pressable
+    <TouchableOpacity
       onPress={() => setCalendarOpen(true)}
       accessibilityRole="button"
       accessibilityLabel={`${label}. Set the days you can be assigned to a delivery`}
       accessibilityHint="Opens your availability calendar"
-      style={({ pressed }) => ({ opacity: pressed ? 0.75 : 1 })}
+      activeOpacity={0.75}
       className={`flex-row items-center gap-3 rounded-2xl px-4 py-3 ${tone.bg}`}
     >
       <View className={`w-2.5 h-2.5 rounded-full ${tone.dot}`} />
@@ -72,7 +72,7 @@ export default function AvailabilityToggle() {
       </View>
 
       <PencilUpIcon size={16} color="#4df9ed" />
-    </Pressable>
+    </TouchableOpacity>
 
     <AvailabilityCalendarModal open={calendarOpen} onClose={() => setCalendarOpen(false)} />
     </>

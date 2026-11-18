@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   ActivityIndicator,
-  Pressable,
+  TouchableOpacity,
   Text,
   View,
 } from 'react-native'
@@ -111,20 +111,20 @@ export default function ResetPasswordScreen() {
           Link expired
         </Text>
         <Text style={{ color: MUTED, fontSize: 13, textAlign: 'center', lineHeight: 19 }}>
-          This reset link is invalid or has already been used. Ask the Company Administrator to
+          This reset link is invalid or has already been used. Ask the IT Administrator to
           send you a new one.
         </Text>
-        <Pressable
+        <TouchableOpacity
           onPress={() => router.replace('/sign-in')}
+          activeOpacity={0.8}
           accessibilityRole="button"
           className="flex-row items-center justify-center self-stretch h-12 mt-2 rounded-full border border-cyan-border bg-black"
-          style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
         >
           <MaterialIcons name="arrow-back" size={18} color={CYAN} style={{ marginRight: 8 }} />
           <Text className="text-[15px] text-cyan" style={{ fontFamily: FONTS.spartan.semiBold }}>
             Back to sign in
           </Text>
-        </Pressable>
+        </TouchableOpacity>
       </View>
     )
   }
@@ -265,7 +265,7 @@ function PrimaryButton({
   disabled?: boolean
 }) {
   return (
-    <Pressable
+    <TouchableOpacity
       onPress={onPress}
       disabled={loading || disabled}
       accessibilityRole="button"
@@ -273,8 +273,9 @@ function PrimaryButton({
       className={`flex-row items-center justify-center self-stretch gap-2 rounded-full h-12 ${
         disabled ? 'bg-[#1b1b1b] border border-[#424242]' : 'bg-cyan'
       }`}
-      style={({ pressed }) => ({
-        opacity: loading ? 0.7 : pressed ? 0.85 : 1,
+      activeOpacity={0.85}
+      style={{
+        opacity: loading ? 0.7 : 1,
         ...(disabled ? null : {
           shadowColor:   CYAN,
           shadowOpacity: 0.25,
@@ -282,7 +283,7 @@ function PrimaryButton({
           shadowOffset:  { width: 0, height: 4 },
           elevation:     4,
         }),
-      })}
+      }}
     >
       {loading ? (
         <ActivityIndicator size="small" color="#080808" />
@@ -297,6 +298,6 @@ function PrimaryButton({
           <MaterialIcons name={icon} size={18} color={disabled ? '#555555' : '#080808'} />
         </>
       )}
-    </Pressable>
+    </TouchableOpacity>
   )
 }

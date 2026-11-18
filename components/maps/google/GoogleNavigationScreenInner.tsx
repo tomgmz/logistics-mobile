@@ -64,6 +64,7 @@ import {
 import { GoogleTurnCard } from './GoogleTurnCard'
 import { StopProofModal } from '../shared/StopProofModal'
 import { PausedBanner } from '../shared/PausedBanner'
+import { DelayedBanner, isDelayedNow } from '../shared/DelayedBanner'
 import { SecondDriverBanner } from '../shared/SecondDriverBanner'
 import { currentPause, type TripPause } from '../../../lib/tripPause'
 import { groupCargoByDestination, itemName, manifestFor, manifestForTripStop } from '../../../lib/cargoManifest'
@@ -352,6 +353,9 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
   // The pause the office put on the delivery (weather, breakdown, closed stop…).
   // The driver can't pause or resume; only the office can.
   const [pause, setPause]         = useState<TripPause | null>(null)
+  // The server's delay flag (delay.scheduler), read with the pause: the
+  // "Running late" banner shows here as on the booking screen.
+  const [delayInfo, setDelayInfo] = useState<object | null>(null)
   // Read by the confirm paths below, which are callbacks.
   const pauseRef = useRef<TripPause | null>(null)
   pauseRef.current = pause
@@ -681,6 +685,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
     } catch { /* offline: the phone's own record stands */ }
     setPause(await currentPause(bookingId, server))
     if (server) {
+      setDelayInfo(isDelayedNow(server) ? server : null)
       if (server.my_crew_role === 'second') {
         const lead = (server.driver_assignments ?? []).find((a: any) => a.crew_role !== 'second')?.drivers?.users
         setNowSecond({ leadName: lead ? `${lead.first_name ?? ''} ${lead.last_name ?? ''}`.trim() : '' })
@@ -1802,6 +1807,20 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
           />
         )}
 
+        {/* Running late: same slot; a pause or the second-driver note wins. */}
+        {!pause && !nowSecond && delayInfo && (
+          <DelayedBanner
+            booking={delayInfo}
+            style={{
+              position: 'absolute',
+              left:     14,
+              right:    MAP_BTN_RIGHT + MAP_BTN_SIZE + 12,
+              top:      insets.top + 96,
+              zIndex:   26,
+            }}
+          />
+        )}
+
         {proofModal}
       {stepModal}
       </View>
@@ -2029,6 +2048,20 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
       {!SHOW_NATIVE_UI && nowSecond && !pause && !completed && (
         <SecondDriverBanner
           leadName={nowSecond.leadName}
+          style={{
+            position: 'absolute',
+            left:     16,
+            right:    MAP_BTN_RIGHT + MAP_BTN_SIZE + 12,
+            top:      insets.top + (offline ? 148 : 104),
+            zIndex:   26,
+          }}
+        />
+      )}
+      {/* Running late (the server's delay flag), as on the booking screen. A
+          pause or the second-driver note takes the slot first. */}
+      {!SHOW_NATIVE_UI && delayInfo && !nowSecond && !pause && !completed && (
+        <DelayedBanner
+          booking={delayInfo}
           style={{
             position: 'absolute',
             left:     16,

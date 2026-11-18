@@ -1025,17 +1025,18 @@ export default function SignInScreen() {
                       <View className="flex-1 h-px bg-[#424242]" />
                     </View>
 
-                    <Pressable
+                    <TouchableOpacity
                       onPress={handlePasskeySignIn}
                       disabled={loading}
                       className="flex-row items-center justify-center h-12 rounded-full border border-cyan-border bg-black"
-                      style={({ pressed }) => ({ opacity: loading ? 0.6 : pressed ? 0.8 : 1 })}
+                      activeOpacity={0.8}
+                      style={{ opacity: loading ? 0.6 : 1 }}
                     >
                       <MaterialIcons name="fingerprint" size={20} color={CYAN} style={{ marginRight: 8 }} />
                       <Text className="text-[15px] text-cyan" style={{ fontFamily: FONTS.spartan.semiBold }}>
                         Sign in with a passkey
                       </Text>
-                    </Pressable>
+                    </TouchableOpacity>
                   </>
                 )}
               </MotiView>

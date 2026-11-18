@@ -4,6 +4,7 @@ import {
   View,
   Text,
   Pressable,
+  TouchableOpacity,
   ActivityIndicator,
   StyleSheet,
   BackHandler,
@@ -251,16 +252,16 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
             >
               {/* The same title slot as the pill it grew out of. */}
               <View style={styles.header}>
-                <Pressable
+                <TouchableOpacity
                   onPress={requestDiscard}
                   disabled={savingDays}
                   hitSlop={12}
                   accessibilityRole="button"
                   accessibilityLabel="Close without saving"
-                  style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+                  activeOpacity={0.6}
                 >
                   <X size={16} color={COLORS.cyan} strokeWidth={2.4} />
-                </Pressable>
+                </TouchableOpacity>
 
                 <View style={styles.headerText}>
                   <Text style={styles.title}>Your Availability</Text>
@@ -272,15 +273,15 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
                 {savingDays ? (
                   <ActivityIndicator size="small" color={COLORS.cyan} />
                 ) : (
-                  <Pressable
+                  <TouchableOpacity
                     onPress={requestCommit}
                     hitSlop={12}
                     accessibilityRole="button"
                     accessibilityLabel="Save your availability"
-                    style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+                    activeOpacity={0.6}
                   >
                     <PencilCheckIcon size={16} color={COLORS.cyan} />
-                  </Pressable>
+                  </TouchableOpacity>
                 )}
               </View>
 
