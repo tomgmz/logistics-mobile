@@ -39,6 +39,32 @@ const C = {
 
 export const QUICK_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '😡']
 
+/**
+ * Someone whose account is no longer active (2026-11-18, same as the web): a
+ * tag by their name, and a one-to-one chat can't be replied to. Colours are
+ * User Management's for the same statuses.
+ */
+export function isAccountClosed(status?: string | null): status is 'inactive' | 'archived' {
+  return status === 'inactive' || status === 'archived'
+}
+export function closedChatNotice(firstName: string | null | undefined, status: 'inactive' | 'archived'): string {
+  const who = firstName?.trim() ? `${firstName.trim()}'s account` : 'This account'
+  return `You can't reply. ${who} is ${status === 'archived' ? 'archived' : 'inactive'}.`
+}
+const TAG_TONE = {
+  inactive: { label: 'Inactive', color: '#8a38f5', bg: 'rgba(138,56,245,0.12)' },
+  archived: { label: 'Archived', color: '#ffea00', bg: 'rgba(255,234,0,0.2)' },
+} as const
+export function AccountStatusTag({ status }: { status?: string | null }) {
+  if (!isAccountClosed(status)) return null
+  const t = TAG_TONE[status]
+  return (
+    <View style={[s.statusTag, { borderColor: t.color, backgroundColor: t.bg }]}>
+      <Text style={[s.statusTagText, { color: t.color }]}>{t.label}</Text>
+    </View>
+  )
+}
+
 interface ReactionGroup { emoji: string; count: number; reacted: boolean }
 
 function groupReactions(reactions: { emoji: string; user_id: string }[], userId: string): ReactionGroup[] {
@@ -121,7 +147,7 @@ export interface MessageItemData {
 
 export function MessageItem({
   msg, isMine, currentUserId, senderName, showName, initials, online, time, seen,
-  replyName, onLongPress, onReact, onReply, footer, hideIdentity = false,
+  replyName, onLongPress, onReact, onReply, footer, hideIdentity = false, senderTag,
 }: {
   msg:           MessageItemData
   isMine:        boolean
@@ -143,6 +169,8 @@ export function MessageItem({
   footer?:       React.ReactNode
   /** A direct chat: no avatar or name beside the other person's bubbles. */
   hideIdentity?: boolean
+  /** After the name: a group member whose account is inactive or archived. */
+  senderTag?:    React.ReactNode
 }) {
   const translateX = useSharedValue(0)
   const triggered  = useSharedValue(false)
@@ -248,6 +276,7 @@ export function MessageItem({
             {showName && (
               <View style={[s.meta, isMine ? s.metaMine : s.metaTheirs]}>
                 {!hideIdentity && !isMine && <Text style={s.name} numberOfLines={1}>{senderName}</Text>}
+                {!hideIdentity && !isMine && senderTag}
                 {!hideIdentity && !isMine && <Text style={s.dot}>·</Text>}
                 <Text style={s.time}>{pending ? 'sending…' : time}</Text>
                 {isMine && seen && !pending && <Text style={s.seen}>Seen</Text>}
@@ -274,7 +303,7 @@ export function MessageItem({
  */
 export function MessageComposer({
   inputRef, value, onChangeText, onFocus, onSend, sending, emojiOpen, onToggleEmoji, onPhoto,
-  replyTo, onCancelReply, mention, showJumpToLatest = false, onJumpToLatest,
+  replyTo, onCancelReply, mention, showJumpToLatest = false, onJumpToLatest, closedNotice,
 }: {
   inputRef:      React.RefObject<TextInput | null>
   value:         string
@@ -292,8 +321,23 @@ export function MessageComposer({
   /** The newest message is out of view: the arrow-down above the box. */
   showJumpToLatest?: boolean
   onJumpToLatest?:   () => void
+  /** The other person's account is inactive or archived: this line replaces the box. */
+  closedNotice?:     string | null
 }) {
   const canSend = !!value.trim() && !sending
+  if (closedNotice) return (
+    <View style={s.composerBar}>
+      {showJumpToLatest && onJumpToLatest && (
+        <View style={s.jumpWrap} pointerEvents="box-none">
+          <TouchableOpacity onPress={onJumpToLatest} activeOpacity={0.8} style={s.jumpBtn}
+            accessibilityRole="button" accessibilityLabel="Go to the latest message">
+            <ArrowDown size={18} color="rgba(255,255,255,0.85)" />
+          </TouchableOpacity>
+        </View>
+      )}
+      <Text style={s.closedNotice} accessibilityRole="text">{closedNotice}</Text>
+    </View>
+  )
   return (
     <View style={s.composerBar}>
       {mention && <BookingMentionMenu picker={mention} />}
@@ -426,6 +470,9 @@ const s = StyleSheet.create({
   // Input bar: emoji, photo, the pill field, round send.
   jumpWrap:      { position: 'absolute', left: 0, right: 0, bottom: '100%', marginBottom: 10, alignItems: 'center', zIndex: 30 },
   jumpBtn:       { width: 38, height: 38, borderRadius: 19, backgroundColor: '#222', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', elevation: 8, shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
+  statusTag:     { height: 18, paddingHorizontal: 6, borderRadius: 9, borderWidth: 1, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  statusTagText: { fontFamily: FONTS.darker.bold, fontSize: 11, lineHeight: 13 },
+  closedNotice:  { color: 'rgba(255,255,255,0.55)', fontFamily: FONTS.darker.semiBold, fontSize: 15, textAlign: 'center', paddingVertical: 6 },
   composerBar:   { paddingHorizontal: 16, paddingTop: 13, paddingBottom: 12, backgroundColor: C.bg, borderTopWidth: 1, borderTopColor: '#2f2f2f' },
   composer:      {},
   composerRow:   { flexDirection: 'row', alignItems: 'center', gap: 8 },

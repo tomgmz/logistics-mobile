@@ -3,6 +3,7 @@ import {
   View, Text, TouchableOpacity, TextInput, Modal, FlatList, ScrollView,
   StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native'
+import { AccountStatusTag } from './MessageItem'
 import { Users, UserPlus, Pencil, Inbox, UserMinus, Check, X, Search } from 'lucide-react-native'
 import { messagingApi } from '../../lib/api/messaging.api'
 import { roleLabel, matchesPersonSearch } from '../../lib/roles'
@@ -32,6 +33,7 @@ export interface SheetMember {
   last_name:  string
   role:       string
   status:     'pending' | 'accepted' | 'declined'
+  account_status?: string
 }
 
 const REQUEST_SENT = 'Request sent. The group creator will approve or decline it.'
@@ -146,6 +148,7 @@ function MembersSheet({ groupId, members, createdBy, currentUserId, canAct, onCl
           <Text style={s.personName} numberOfLines={1}>{m.first_name} {m.last_name}</Text>
           <Text style={s.personRole} numberOfLines={1}>{roleLabel(m.role)}</Text>
         </View>
+        <AccountStatusTag status={m.account_status} />
         {right}
         {canRemove && (busyId === m.user_id
           ? <ActivityIndicator size="small" color={C.muted} />

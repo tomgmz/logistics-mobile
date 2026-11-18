@@ -4,6 +4,7 @@ import {
   TextInput, ActivityIndicator, RefreshControl,
   StyleSheet, Animated,
 } from 'react-native'
+import { AccountStatusTag } from '../../../components/messaging/MessageItem'
 import { useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Search, MessageCircle, Plus, ChevronLeft } from 'lucide-react-native'
@@ -103,9 +104,12 @@ function DmRow({ item, currentUserId, isOnline, onPress, index }: {
 
         <View style={styles.rowBody}>
           <View style={styles.rowTop}>
-            <Text style={[styles.rowName, hasUnread && styles.rowNameUnread]} numberOfLines={1}>
-              {nameWithRole(u.first_name, u.last_name, u.role)}
-            </Text>
+            <View style={styles.rowNameWrap}>
+              <Text style={[styles.rowName, hasUnread && styles.rowNameUnread]} numberOfLines={1}>
+                {nameWithRole(u.first_name, u.last_name, u.role)}
+              </Text>
+              <AccountStatusTag status={u.account_status} />
+            </View>
             {last && <Text style={styles.rowTime}>{formatTime(last.sent_at)}</Text>}
           </View>
           <Text style={[styles.rowPreview, hasUnread && styles.rowPreviewUnread]} numberOfLines={1}>
@@ -376,6 +380,7 @@ export default function MessagesScreen() {
                       participantName: `${item.data.other_user.first_name ?? ''} ${item.data.other_user.last_name ?? ''}`.trim(),
                       participantRole: item.data.other_user.role ?? '',
                       participantId: item.data.other_user.user_id,
+                      participantStatus: item.data.other_user.account_status ?? 'active',
                     },
                   })
                 }}
@@ -521,7 +526,8 @@ const styles = StyleSheet.create({
   },
   rowBody: { flex: 1, gap: 2 },
   rowTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 },
-  rowName: { flex: 1, color: C.white, fontSize: 18, fontFamily: DG.medium, lineHeight: 21 },
+  rowNameWrap: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  rowName: { flexShrink: 1, color: C.white, fontSize: 18, fontFamily: DG.medium, lineHeight: 21 },
   rowNameUnread: { color: C.cyan, fontFamily: DG.bold },
   rowTime: { color: C.muted, fontSize: 12, fontFamily: DG.medium, flexShrink: 0, lineHeight: 15 },
   rowPreview: { color: C.muted, fontSize: 13, fontFamily: DG.medium, lineHeight: 15 },

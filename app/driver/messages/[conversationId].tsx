@@ -18,7 +18,7 @@ import { useStickToEnd } from '../../../hooks/useStickToEnd'
 import { setActiveChat } from '../../../lib/push'
 import EmojiSheet from '../../../components/messaging/EmojiSheet'
 import ChatPhotoSheet from '../../../components/messaging/ChatPhotoSheet'
-import { MessageItem, MessageDateDivider, TypingMessage, MessageComposer, QUICK_EMOJIS, initialsOf } from '../../../components/messaging/MessageItem'
+import { MessageItem, MessageDateDivider, TypingMessage, MessageComposer, QUICK_EMOJIS, initialsOf, AccountStatusTag, isAccountClosed, closedChatNotice } from '../../../components/messaging/MessageItem'
 import { useBookingMentionPicker } from '../../../components/messaging/BookingMention'
 import { PHOTO_PLACEHOLDER } from '../../../lib/chatPhoto'
 import { chooseMessageRemoval, type DeleteScope } from '../../../components/messaging/ReadTicks'
@@ -134,12 +134,14 @@ export default function DmChatScreen() {
   const { user }      = useAuthStore()
   const currentUserId = user?.user_id ?? ''
 
-  const { conversationId, participantName, participantRole, participantId, bookingId } = useLocalSearchParams<{
+  const { conversationId, participantName, participantRole, participantId, bookingId, participantStatus } = useLocalSearchParams<{
     conversationId:  string
     participantName: string
     participantRole?: string
     participantId:   string
     bookingId?:      string
+    /** users.status from the list; inactive / archived closes the chat. */
+    participantStatus?: string
   }>()
 
   const [activeConvId, setActiveConvId] = useState(conversationId)
@@ -484,9 +486,12 @@ export default function DmChatScreen() {
             {isOnline && <View style={styles.onlineDot} />}
           </View>
           <View style={styles.headerText}>
-            <Text style={styles.headerName} numberOfLines={1} ellipsizeMode="tail">
-              {name}
-            </Text>
+            <View style={styles.headerNameRow}>
+              <Text style={[styles.headerName, styles.headerNameShrink]} numberOfLines={1} ellipsizeMode="tail">
+                {name}
+              </Text>
+              <AccountStatusTag status={participantStatus} />
+            </View>
             {/* Role · status on the second line; only the status takes the online colour. */}
             <Text style={styles.headerStatus} numberOfLines={1} ellipsizeMode="tail">
               {participantRole ? `${roleLabel(participantRole)} · ` : ''}
@@ -564,6 +569,7 @@ export default function DmChatScreen() {
           mention={mention}
           showJumpToLatest={!stick.atEnd}
           onJumpToLatest={() => stick.jumpToEnd()}
+          closedNotice={isAccountClosed(participantStatus) ? closedChatNotice(name.split(/\s+/)[0], participantStatus) : null}
         />
 
         <ChatPhotoSheet
@@ -609,6 +615,8 @@ const styles = StyleSheet.create({
   headerAvatar: { width: 35, height: 35, borderRadius: 17.5, backgroundColor: '#111212', borderWidth: 1, borderColor: '#5a5a5a', alignItems: 'center', justifyContent: 'center', position: 'relative' },
   headerAvatarText: { color: C.white, fontFamily: FONTS.darker.medium, fontSize: 15 },
   onlineDot: { position: 'absolute', bottom: -1, right: -1, width: 10, height: 10, borderRadius: 5, backgroundColor: '#3af626', borderWidth: 2, borderColor: C.bg },
+  headerNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 },
+  headerNameShrink: { flexShrink: 1 },
   headerName: { color: C.white, fontFamily: FONTS.darker.medium, fontSize: 22, lineHeight: 24 },
   headerStatus: { color: C.muted, fontFamily: FONTS.darker.medium, fontSize: 13, lineHeight: 15 },
   headerStatusOnline: { color: '#3af626' },

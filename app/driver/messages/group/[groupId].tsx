@@ -16,7 +16,7 @@ import { setActiveChat } from '../../../../lib/push'
 import EmojiSheet from '../../../../components/messaging/EmojiSheet'
 import { useStickToEnd } from '../../../../hooks/useStickToEnd'
 import ChatPhotoSheet from '../../../../components/messaging/ChatPhotoSheet'
-import { MessageItem, MessageDateDivider, TypingMessage, MessageComposer, QUICK_EMOJIS, initialsOf } from '../../../../components/messaging/MessageItem'
+import { MessageItem, MessageDateDivider, TypingMessage, MessageComposer, QUICK_EMOJIS, initialsOf, AccountStatusTag } from '../../../../components/messaging/MessageItem'
 import { useBookingMentionPicker } from '../../../../components/messaging/BookingMention'
 import { PHOTO_PLACEHOLDER } from '../../../../lib/chatPhoto'
 import GroupSheets, { type GroupSheetView, type SheetMember } from '../../../../components/messaging/GroupSheets'
@@ -342,6 +342,7 @@ export default function GroupChatScreen() {
         last_name:    m.user.last_name ?? '',
         role:         m.user.role,
         status:       m.status,
+        account_status: m.user.account_status ?? 'active',
         last_read_at: m.last_read_at ?? null,
       })))
       setTitle(found.name)
@@ -644,6 +645,7 @@ export default function GroupChatScreen() {
                   isMine={isMine}
                   currentUserId={currentUserId}
                   senderName={senderLabel(item.msg.sender_id)}
+                  senderTag={<AccountStatusTag status={members.find(x => x.user_id === item.msg.sender_id)?.account_status} />}
                   showName={item.showName}
                   initials={initialsOf(memberName(item.msg.sender_id))}
                   time={formatMsgTime(item.msg.sent_at)}

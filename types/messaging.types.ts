@@ -1,3 +1,4 @@
+export type AccountStatus = 'active' | 'inactive' | 'archived'
 export interface MessageReaction { emoji: string; user_id: string }
 export interface MessageReplyTo  { message_id: string; content: string; sender_id: string }
 
@@ -27,6 +28,8 @@ export interface ConversationWithDetails {
     last_name:  string | null
     role:       string
     email:      string
+    /** users.status: inactive / archived closes the chat (2026-11-18). */
+    account_status?: AccountStatus
   }
   last_message: { message_id: string; content: string; sent_at: string; sender_id: string } | null
   unread_count: number
@@ -85,6 +88,7 @@ export interface GroupMemberRaw {
     last_name:  string | null
     role:       string
     email:      string
+    account_status?: AccountStatus
   }
 }
 
