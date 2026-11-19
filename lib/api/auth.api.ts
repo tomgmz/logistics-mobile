@@ -294,7 +294,7 @@ export interface AuthStatusResponse {
   locked:        boolean
   permanent?:    boolean
   locked_until?: string
-  role:          string
+  // No role since 2026-11-19 (security review F-03).
 }
 
 export interface AuthUser {

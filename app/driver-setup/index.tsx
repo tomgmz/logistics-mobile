@@ -257,8 +257,8 @@ export default function DriverSetupScreen() {
         {firstName ? `Hi ${firstName}. ` : ''}
         You will unlock this app with your fingerprint, face, or phone PIN.
         {'\n\n'}
-        There is no password to remember, and nothing is sent to us — the key
-        stays on this phone.
+        Nothing about the unlock is sent to us — the key stays on this phone.
+        Your password and emailed sign-in code keep working too.
       </Text>
 
       {email && (

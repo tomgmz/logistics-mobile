@@ -56,15 +56,11 @@ type Step      = 'email' | 'method' | 'otp' | 'password'
 type Method    = 'otp' | 'password'
 type ResetState = 'idle' | 'sending' | 'sent'
 
-/**
- * Which admin approves this person's reset. Mirrors handlerGroupFor() on the
- * backend: drivers and clients are the Company Admin's, office staff the IT
- * Admin's. On this app it is nearly always a driver, but the label stays honest
- * if another role ever signs in here.
- */
-function approverLabel(role?: string | null): string {
-  if (!role)                                  return 'Administrator'
-  if (role === 'driver' || role === 'client') return 'Company Administrator'
+/** Which admin approves this person's reset. Mirrors handlerGroupFor() on the backend. */
+function approverLabel(): string {
+  // Every reset request goes to the IT Administrator (handlerGroupFor on the
+  // server, since 2026-10-24), and the role is no longer known before sign-in
+  // anyway (/auth/status stopped returning it, security review 2026-11-19).
   return 'IT Administrator'
 }
 
@@ -190,13 +186,11 @@ function ResendTimer({
 function LockBanner({
   lockState,
   lockRemaining,
-  role,
   resetState,
   onRequestReset,
 }: {
   lockState:       LockState
   lockRemaining:   number
-  role?:           string | null
   resetState:      ResetState
   onRequestReset:  () => void
 }) {
@@ -223,13 +217,13 @@ function LockBanner({
 
         {resetState === 'sent' ? (
           <Text className="text-[12px] leading-5" style={{ color: 'rgba(246,38,38,0.75)' }}>
-            Your {approverLabel(role)} has been notified. They will email you a reset link —
+            Your {approverLabel()} has been notified. They will email you a reset link —
             open it to set a new password and unlock your account.
           </Text>
         ) : (
           <>
             <Text className="text-[12px] leading-5 mb-3" style={{ color: 'rgba(246,38,38,0.75)' }}>
-              Too many failed attempts. Request a reset and your {approverLabel(role)} will email
+              Too many failed attempts. Request a reset and your {approverLabel()} will email
               you a link to set a new password.
             </Text>
             <TouchableOpacity
@@ -537,7 +531,6 @@ export default function SignInScreen() {
   const setTokens = useAuthStore(s => s.setTokens)
 
   const [step,     setStep]     = useState<Step>('email')
-  const [role,     setRole]     = useState<string | null>(null)
   const [method,   setMethod]   = useState<Method | null>(null)
   const [email,    setEmail]    = useState('')
   const [otp,      setOtp]      = useState('')
@@ -652,33 +645,19 @@ export default function SignInScreen() {
     try {
       const status = await getAuthStatus(trimmed)
 
+      // Everyone chooses between a password and an emailed code: the server no
+      // longer says what role an email has before sign-in (security review
+      // 2026-11-19), and this app is for drivers, who have both.
       if (status.permanent) {
         setLockState('permanent')
-        setEmail(trimmed)
-        setRole(status.role)
-        setStep(status.role === 'driver' ? 'method' : 'otp')
-        return
-      }
-
-      if (status.locked_until) {
+      } else if (status.locked_until) {
         lockExpiresAt.current = new Date(status.locked_until).getTime()
         setLockState('temporary')
-        setEmail(trimmed)
-        setRole(status.role)
-        setStep(status.role === 'driver' ? 'method' : 'otp')
-        return
-      }
-
-      setEmail(trimmed)
-      setRole(status.role)
-      setLockState('none')
-
-      if (status.role === 'driver') {
-        setStep('method')
       } else {
-        await requestOtp(trimmed)
-        setStep('otp')
+        setLockState('none')
       }
+      setEmail(trimmed)
+      setStep('method')
     } catch (err: any) {
       setError(extractMessage(err, 'Something went wrong. Try again.'))
     } finally {
@@ -865,7 +844,7 @@ export default function SignInScreen() {
     // lead to a different one, so clear it rather than let it follow along.
     setResetState('idle')
     if (step === 'method')   setStep('email')
-    if (step === 'otp')      setStep(role === 'driver' ? 'method' : 'email')
+    if (step === 'otp')      setStep('method')
     if (step === 'password') setStep('method')
   }
 
@@ -882,11 +861,10 @@ export default function SignInScreen() {
   const hasOtpError = !!error && step === 'otp'    && lockState === 'none'
   const isLocked    = lockState !== 'none'
 
-  const stepTotal = role && role !== 'driver' ? 2 : 3
+  const stepTotal = 3
   const stepIndex =
     step === 'email'  ? 0 :
     step === 'method' ? 1 :
-    step === 'otp'    ? (role === 'driver' ? 2 : 1) :
                         2
 
   // No key in here: React wants it passed directly, so each step sets its own.
@@ -1107,7 +1085,6 @@ export default function SignInScreen() {
                   <LockBanner
                     lockState={lockState}
                     lockRemaining={lockRemaining}
-                    role={role}
                     resetState={resetState}
                     onRequestReset={handleRequestReset}
                   />
@@ -1200,7 +1177,6 @@ export default function SignInScreen() {
                   <LockBanner
                     lockState={lockState}
                     lockRemaining={lockRemaining}
-                    role={role}
                     resetState={resetState}
                     onRequestReset={handleRequestReset}
                   />
@@ -1222,7 +1198,7 @@ export default function SignInScreen() {
                     <View className="flex-row items-start gap-2 rounded-2xl px-4 py-3 mt-4 bg-[#1b1b1b] border border-[#424242]">
                       <MaterialIcons name="mark-email-read" size={16} color={CYAN} style={{ marginTop: 2 }} />
                       <Text className="flex-1 text-[13px] leading-5 text-ink-secondary">
-                        Your {approverLabel(role)} has been notified. Check your email for the reset link.
+                        Your {approverLabel()} has been notified. Check your email for the reset link.
                       </Text>
                     </View>
                   ) : (
@@ -1266,7 +1242,7 @@ export default function SignInScreen() {
       <ConfirmDialog
         visible={confirmReset}
         title="Reset your password?"
-        message={`We'll ask your ${approverLabel(role)} to email a password reset link to ${email}.`}
+        message={`We'll ask your ${approverLabel()} to email a password reset link to ${email}.`}
         confirmLabel="Send request"
         busy={resetState === 'sending'}
         onConfirm={async () => {
