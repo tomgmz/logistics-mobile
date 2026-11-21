@@ -146,6 +146,8 @@ interface CargoItem {
   length_cm?:      number | null
   width_cm?:       number | null
   height_cm?:      number | null
+  /** Unit the client typed the size in; sizes are stored in cm. null = cm. */
+  dimension_unit?: string | null
 }
 
 interface Booking {
@@ -240,10 +242,15 @@ function codeLabel(code: HandlingCode | null | undefined, text: string | null | 
   return text || null
 }
 
+const CM_PER_UNIT = { cm: 1, m: 100, in: 2.54 } as const
+
+/** The size as the client typed it (stored in cm, shown back in their unit; same as the web's lib/cargo/units). */
 function dimensions(c: CargoItem): string | null {
   const { length_cm: l, width_cm: w, height_cm: h } = c
   if (l == null || w == null || h == null) return null
-  return `${l} × ${w} × ${h} cm`
+  const unit = c.dimension_unit === 'm' || c.dimension_unit === 'in' ? c.dimension_unit : 'cm'
+  const show = (cm: number) => Math.round((Number(cm) / CM_PER_UNIT[unit]) * 1e4) / 1e4
+  return `${show(l)} × ${show(w)} × ${show(h)} ${unit}`
 }
 
 /** First-visit tour of a delivery, shown the first time a driver opens one. */
