@@ -202,10 +202,13 @@ export function ReportForm({
   const missingType = !type
   const missingDesc = !description.trim()
   const missingSub  = !subType
+  // Marked required on screen, but submit never checked it: a report could go
+  // in with no answer (found 2026-11-21). The server refuses it too now.
+  const missingContinue = canContinue === null
 
   const submit = () => {
     setTouched(true)
-    if (missingType || missingDesc || missingSub) return
+    if (missingType || missingDesc || missingSub || missingContinue) return
 
     onSubmit({
       source:            'detailed',
@@ -426,6 +429,7 @@ export function ReportForm({
             disabled={busy}
           />
         </View>
+        {touched && missingContinue ? <FieldError>Choose whether the trip can continue.</FieldError> : null}
       </Section>
 
       {error ? <FieldError>{error}</FieldError> : null}

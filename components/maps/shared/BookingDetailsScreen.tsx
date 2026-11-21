@@ -31,7 +31,6 @@ import {
   Road,
   Truck,
   User,
-  UserCheck,
   Warehouse,
   WifiOff,
 } from 'lucide-react-native'
@@ -68,12 +67,12 @@ import { readCurrentFix } from '../../../lib/stopGeofence'
 import { queuedIds, flush } from '../../../lib/offlineQueue'
 import { loadResumableNavSession, endNavSession, type NavSession } from '../../../lib/navSession'
 import { startDelivery, type StartOutcome } from '../../../lib/deliveryStart'
+import { claimNavigation, heardAgo, type NavigatorState } from '../../../lib/navigationClaim'
 import { useCrewWatch } from '../../../hooks/useCrewWatch'
 import { useLiveSignal } from '../../../hooks/useLiveSignal'
 import { useStopSteps, markStepProof, stepTimes, type StepTarget } from '../../../lib/stopSteps'
 import { StopStepModal } from './StopStepModal'
 import { StopSteps } from './StopSteps'
-import { WheelCard } from './WheelCard'
 import { currentPause, type TripPause } from '../../../lib/tripPause'
 import { PausedBanner } from './PausedBanner'
 import { DelayedBanner } from './DelayedBanner'
@@ -404,7 +403,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
       // drops before/at start.
       saveBookingCache(bookingId, data.data)
       setPause(await currentPause(bookingId, data.data))
-      if (data.data?.status === 'in_transit' && data.data?.my_crew_role !== 'second') {
+      if (data.data?.status === 'in_transit') {
         api.get(`/driver/bookings/${bookingId}/load-transfer`)
           .then(({ data: t }) => setTransfer(t.data ?? null))
           .catch(() => {})
@@ -457,15 +456,24 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
    * this driver's; anything else (cancelled, vehicle pulled) is the server's
    * sentence. Offline the start is queued and the map opens as before.
    */
+  // A ref, not the `starting` state: a second tap in the same frame reads the
+  // old state from its closure and would start (and prompt) twice.
+  const beginBusyRef = useRef(false)
   const beginDelivery = useCallback(async (earlyStart: boolean, resuming = false) => {
-    if (starting) return
+    if (beginBusyRef.current) return
+    beginBusyRef.current = true
     setStarting(true)
-    let outcome: StartOutcome
     try {
-      outcome = await startDelivery(bookingId, earlyStart)
+      await beginDeliveryInner(earlyStart, resuming)
     } finally {
+      beginBusyRef.current = false
       setStarting(false)
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookingId, onStart, load])
+
+  const beginDeliveryInner = async (earlyStart: boolean, resuming: boolean) => {
+    const outcome: StartOutcome = await startDelivery(bookingId, earlyStart)
     if (typeof outcome === 'object') {
       if (outcome.reassigned) {
         // Guidance left over from before the hand-over must not resume either.
@@ -480,8 +488,26 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
       }
       return
     }
+
+    // One phone navigates at a time (2026-11-21). Claimed before the map opens,
+    // so a driver who decides not to take over never starts Google guidance.
+    // Offline: the map opens anyway; the map screen claims once online.
+    const claim = await claimNavigation(bookingId)
+    if (claim.kind === 'refused') {
+      Alert.alert('Can’t navigate this delivery', claim.message)
+      return
+    }
+    if (claim.kind === 'held') {
+      const takeOver = await askTakeOver(claim.state)
+      if (!takeOver) return
+      const again = await claimNavigation(bookingId, true)
+      if (again.kind === 'refused') {
+        Alert.alert('Can’t navigate this delivery', again.message)
+        return
+      }
+    }
     onStart(earlyStart)
-  }, [starting, bookingId, onStart, load])
+  }
 
   // Real time: the office changed this booking (call time, pause, vehicle or
   // driver, a step confirmed for the driver, a late confirmation decided), or
@@ -505,24 +531,49 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
     )
   }, [onBack]))
 
-  /** The offline caveat, asked last so it wraps whichever start we're doing. */
-  const startWithOfflineCheck = useCallback((earlyStart: boolean) => {
+  // Held from the tap until the start runs or its question is answered: fast
+  // repeated taps on Start (or on "Start early") used to stack the same pop-up
+  // again and again, one per tap.
+  const startBusyRef = useRef(false)
+  const releaseStart = useCallback(() => { startBusyRef.current = false }, [])
+
+  /**
+   * The offline caveat, asked last so it wraps whichever start we're doing.
+   * Returns true when it left a question on screen (its buttons release the guard).
+   */
+  const startWithOfflineCheck = useCallback((earlyStart: boolean): boolean => {
     if (offline) {
       Alert.alert(
         'You’re offline',
         'A new route can’t be started without a connection — the map provider needs network to build it. ' +
         'If this trip is already in progress, guidance will keep running on the route it already loaded.',
         [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Try anyway', style: 'default', onPress: () => void beginDelivery(earlyStart) },
+          { text: 'Cancel', style: 'cancel', onPress: releaseStart },
+          { text: 'Try anyway', style: 'default', onPress: () => { releaseStart(); void beginDelivery(earlyStart) } },
         ],
+        { cancelable: true, onDismiss: releaseStart },
       )
-      return
+      return true
     }
     void beginDelivery(earlyStart)
-  }, [offline, beginDelivery])
+    return false
+  }, [offline, beginDelivery, releaseStart])
 
   const handleStart = useCallback(async () => {
+    if (startBusyRef.current || beginBusyRef.current) return
+    startBusyRef.current = true
+    let asking = false
+    try {
+      asking = await handleStartInner()
+    } finally {
+      // A question on screen releases the guard from its own buttons.
+      if (!asking) startBusyRef.current = false
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentGate, offline, bookingId])
+
+  /** Returns true when it left a question on screen (its buttons release the guard). */
+  const handleStartInner = async (): Promise<boolean> => {
     // The screen was loaded once, maybe long before this tap — and the Fleet
     // Manager may have pulled the vehicle since. Re-read the booking first when
     // online, so the gate below decides on what is true now. Offline, the copy
@@ -543,7 +594,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
     // something an override should be able to talk its way past.
     if (gate.reason === 'cancelled') {
       Alert.alert('Booking cancelled', 'This booking has been cancelled and can’t be delivered.')
-      return
+      return false
     }
 
     if (gate.reason === 'vehicle_out_of_service') {
@@ -552,7 +603,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
         'The Fleet Manager took this vehicle out of service. Don’t drive or load it — ' +
         'the Operations Manager will assign another vehicle, and navigation opens once they do.',
       )
-      return
+      return false
     }
 
     if (gate.reason === 'not_assigned') {
@@ -560,7 +611,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
         'Not ready to start',
         'This booking hasn’t been assigned for delivery yet. It will open once the Operations Manager releases it.',
       )
-      return
+      return false
     }
 
     // Scheduled for a later day. Startable, but the driver has to mean it, and
@@ -571,19 +622,23 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
         'Starting now puts the delivery in transit ahead of the scheduled day, and that gets flagged on the booking. ' +
         'Only do this if the job really has moved up.',
         [
-          { text: 'Cancel', style: 'cancel' },
+          { text: 'Cancel', style: 'cancel', onPress: releaseStart },
           {
             text: 'Start early',
             style: 'destructive',
-            onPress: () => startWithOfflineCheck(true),
+            // The offline question (if any) takes the guard over.
+            onPress: () => { if (!startWithOfflineCheck(true)) releaseStart() },
           },
         ],
+        // Android: tapping outside closes it without a button.
+        { cancelable: true, onDismiss: releaseStart },
       )
-      return
+      return true
     }
 
-    startWithOfflineCheck(false)
-  }, [currentGate, offline, bookingId, startWithOfflineCheck])
+    return startWithOfflineCheck(false)
+  }
+
 
   /**
    * Back to a navigation that is already under way on this phone.
@@ -813,18 +868,9 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
   const inTransit  = !isDone && booking.status === 'in_transit'
   const hasReturned = returned || !!booking.fleet_return_at
 
-  // The second driver rides along: the main driver confirms pickup, stops and
-  // proof, and only their phone sends the truck's position. The server refuses
-  // those writes from the second driver anyway; this keeps the buttons away.
-  const isSecondDriver = booking.my_crew_role === 'second'
-  const leadUser = booking.driver_assignments?.find((a) => a.crew_role !== 'second')?.drivers?.users
-  const leadName = leadUser ? `${leadUser.first_name ?? ''} ${leadUser.last_name ?? ''}`.trim() : ''
-  // With a second driver the two swap at the wheel; either records it (WheelCard)
-  // while the truck is on the road, the drive back to the lot included.
-  const hasSecondDriver = !!booking.driver_assignments?.some((a) => a.crew_role === 'second')
-  const myUser = booking.driver_assignments?.find((a) => (a.crew_role === 'second') === isSecondDriver)?.drivers?.users
-  const myName = myUser ? `${myUser.first_name ?? ''} ${myUser.last_name ?? ''}`.trim() : ''
-  const onTheRoad = inTransit || (isDone && !hasReturned)
+  // Main and second driver have the same buttons (2026-11-21): either may be
+  // the one with a free phone. The server checks each write (on the crew, 100 m,
+  // photo, phone with the truck) and the first confirmation of a stop wins.
 
   const shuttle = isMultiTrip(trips)
   const counts  = tripProgressCounts(trips)
@@ -1061,7 +1107,6 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
                       return manifestForTripStop(grouped, stop).items.map(itemLine).join(', ') || null
                     }}
                     shuttle={shuttle}
-                    readOnly={isSecondDriver}
                     label={label}
                     uploading={uploading}
                     sending={sendingStops}
@@ -1090,7 +1135,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
         {(inTransit || isDone) && trips.length > 0 && (
           <Card icon={<Clock size={16} color={D.cyan} />} title="STOP TIMES">
             {trips.map((trip) => {
-              const canTap = !isSecondDriver && inTransit && trip.status !== 'completed'
+              const canTap = inTransit && trip.status !== 'completed'
               const total  = stopSteps.totalFor(trip.trip_id)
               const visits = [...(trip.booking_trip_stops ?? [])].sort((a, b) => a.sequence_order - b.sequence_order)
               return (
@@ -1223,33 +1268,6 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
             is in there is exactly one thing the driver should do next, and a
             phone in a cab is the worst place to offer a choice between similar
             green buttons. */}
-        {hasSecondDriver && onTheRoad && <WheelCard bookingId={bookingId} myName={myName} />}
-        {isSecondDriver ? (
-          <>
-            <View style={s.doneNote}>
-              <UserCheck size={15} color={D.cyan} strokeWidth={2} />
-              <Text style={s.doneNoteText}>
-                {`You are the second driver on this booking. ${leadName || 'The main driver'} confirms the pickup, stops and proof photos in the app.`}
-              </Text>
-            </View>
-            {/* Only the office pauses and resumes; both drivers just see it. */}
-            {pause && !isDone && <PausedBanner pause={pause} />}
-            {!pause && !isDone && <DelayedBanner booking={booking} />}
-            {onPreview && (
-              <TouchableOpacity
-                activeOpacity={0.75}
-                onPress={onPreview}
-                accessibilityRole="button"
-                accessibilityLabel="View the route on a map, view only"
-                style={s.previewBtn}
-              >
-                <Eye size={16} color={D.white} strokeWidth={2} />
-                <Text style={s.previewText}>View route</Text>
-              </TouchableOpacity>
-            )}
-          </>
-        ) : (
-        <>
         {isDone && hasReturned ? (
           <View style={s.doneNote}>
             <Check size={15} color={D.green} strokeWidth={3} />
@@ -1389,8 +1407,6 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
             <Text style={s.previewText}>Preview route</Text>
           </TouchableOpacity>
         )}
-        </>
-        )}
       </View>
 
       {/* Confirming a stop from here rather than from the map: same modal, so a
@@ -1471,9 +1487,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
         onCancel={() => setDialog(null)}
       />
 
-      {/* The second driver's screen has none of the main driver's actions, so
-          the tour waits for a booking they are the main driver on. */}
-      <CoachMarkTour tourId="booking-details" steps={DETAILS_TOUR} ready={!isSecondDriver} />
+      <CoachMarkTour tourId="booking-details" steps={DETAILS_TOUR} ready />
     </View>
   )
 }
@@ -2208,3 +2222,20 @@ const s = StyleSheet.create({
     fontWeight: '600',
   },
 })
+
+/** "Pedro's phone is navigating. Take over?" Resolves true on Take over. */
+function askTakeOver(state: NavigatorState): Promise<boolean> {
+  const who = state.driver_name || 'The other driver'
+  return new Promise((resolve) => {
+    Alert.alert(
+      `${who}’s phone is navigating`,
+      `Only one phone navigates at a time. ${who}’s phone was ${heardAgo(state.last_heard_at)}. ` +
+      `Take over navigation on this phone? ${who}’s phone will stop guiding.`,
+      [
+        { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+        { text: 'Take over', onPress: () => resolve(true) },
+      ],
+      { cancelable: true, onDismiss: () => resolve(false) },
+    )
+  })
+}

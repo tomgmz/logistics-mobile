@@ -240,8 +240,10 @@ async function considerFix(location: Location.LocationObject): Promise<void> {
     // first, or sits in the offline queue), and stopping on those switched
     // tracking off at the start of every trip.
     //
-    // `not_lead` is final too: this phone belongs to the booking's second driver,
-    // and only the main driver's phone is the truck's position.
+    // `other_phone` (2026-11-21) is transient: the other driver's phone is
+    // navigating and is the truck's position. This phone keeps reporting so the
+    // server can fall back to it if that phone goes silent. `not_lead` is no
+    // longer sent by the server; still final here for safety.
     if (res.status === 202) {
       const reason = res.data?.reason
       if (reason === 'booking_ended' || reason === 'not_lead') { await stopTracking(); return }

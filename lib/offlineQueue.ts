@@ -253,14 +253,14 @@ export function flush(): Promise<void> {
     if (sentToOffice) {
       Alert.alert(
         'Sent to the office',
-        'You are no longer the main driver on this delivery, so the office will check your confirmation ' +
-        '(photo and location) and accept it. Nothing else to do.',
+        'The office will check your confirmation (photo and location) before it counts: you are no longer ' +
+        'on this delivery, or your phone was not with the truck when you confirmed. Nothing else to do.',
       )
     } else if (droppedNotMain) {
       Alert.alert(
-        'You are now the second driver',
-        'The office made the other driver the main driver. Some updates from your phone were not sent; ' +
-        'the main driver records the rest of this delivery.',
+        'Some updates were not sent',
+        'Some updates from your phone were no longer accepted for this delivery; ' +
+        'the other driver or the office records the rest.',
       )
     }
 
