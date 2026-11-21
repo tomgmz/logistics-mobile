@@ -34,6 +34,15 @@ export interface TripPause {
   /** When the office expects it to move again: YYYY-MM-DD + the driver's call time (HH:MM). */
   continuesOn?:   string | null
   continuesCall?: string | null
+  /** The crew's latest "Ready to continue", and the office's latest "Not yet" (ISO). */
+  requestedAt?:   string | null
+  declinedAt?:    string | null
+}
+
+/** A "Ready to continue" is with the office, waiting for its answer. */
+export function resumeRequestOpen(p: TripPause | null | undefined): boolean {
+  if (!p?.requestedAt) return false
+  return !p.declinedAt || Date.parse(p.declinedAt) < Date.parse(p.requestedAt)
 }
 
 const storageKey = (bookingId: string) => `trip_pause_${bookingId}`
@@ -64,7 +73,13 @@ export async function currentPause(
   serverBooking?: {
     paused_at?: string | null
     pause_reason?: string | null
-    pauses?: Array<{ expected_resume_date: string | null; expected_resume_call_time: string | null; resumed_at: string | null }> | null
+    pauses?: Array<{
+      expected_resume_date: string | null
+      expected_resume_call_time: string | null
+      resumed_at: string | null
+      resume_requested_at?: string | null
+      resume_declined_at?: string | null
+    }> | null
   } | null,
 ): Promise<TripPause | null> {
   if (!serverBooking) return readLocal(bookingId)
@@ -74,13 +89,15 @@ export async function currentPause(
     return null
   }
 
-  // The open pause's continuation, if the office has set one.
-  const open = (serverBooking.pauses ?? []).find((p) => !p.resumed_at && p.expected_resume_date)
+  // The open pause: its continuation (if the office has set one) and the request state.
+  const open = (serverBooking.pauses ?? []).find((p) => !p.resumed_at)
   const server: TripPause = {
     reason:   (serverBooking.pause_reason ?? 'other') as PauseReason,
     pausedAt: serverBooking.paused_at,
     continuesOn:   open?.expected_resume_date?.slice(0, 10) ?? null,
     continuesCall: open?.expected_resume_call_time?.slice(0, 5) ?? null,
+    requestedAt:   open?.resume_requested_at ?? null,
+    declinedAt:    open?.resume_declined_at ?? null,
   }
   await writeLocal(bookingId, server)
   return server

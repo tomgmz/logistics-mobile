@@ -45,7 +45,9 @@ const MAX_CONFLICT_ATTEMPTS = 5
 
 export interface QueuedAction {
   id:        string                    // 'pickup:<bookingId>' | 'delivery:<stopId>' | 'complete:<bookingId>' | 'pause:/resume:<bookingId>:<ms>' (older builds only)
-  kind:      'pickup' | 'delivery' | 'complete' | 'pause' | 'resume' | 'start' | 'wheel' | 'order'
+  // 'resume_request': the driver's "Ready to continue" on a paused delivery. Depends
+  // on nothing before it, so it is sent even past an entry held for the pause.
+  kind:      'pickup' | 'delivery' | 'complete' | 'pause' | 'resume' | 'start' | 'wheel' | 'order' | 'resume_request'
   url:       string                    // '/driver/bookings/:id/pickup' | '.../destinations/:id/delivered' | '.../complete'
   // PATCH unless said otherwise; Start Navigation ('start:<bookingId>') is a POST.
   method?:   'patch' | 'post' | 'put'
@@ -129,13 +131,18 @@ export function flush(): Promise<void> {
     const me = useAuthStore.getState().user?.user_id ?? null
     const remaining: QueuedAction[] = []
     let stop = false
+    // Why the drain stopped: no working connection (nothing else can go either),
+    // or an entry the server is holding (an independent request still can).
+    let stopNetwork = false
     let droppedReassigned = false
     let droppedNotMain = false
     let sentToOffice = false
     const refused: Array<{ kind: 'pickup' | 'delivery' | 'complete'; why: string }> = []
 
     for (const queued of queue) {
-      if (stop) { remaining.push(queued); continue }
+      // A "Ready to continue" still goes out past a step held because the delivery
+      // is paused: that step waits for the very resume this request asks for.
+      if (stop && (stopNetwork || queued.kind !== 'resume_request')) { remaining.push(queued); continue }
       // Another driver's work, or nobody is signed in: hold it untouched for its
       // owner. Different drivers' entries are for different bookings, so skipping
       // past them cannot reorder anything that depends on them.
@@ -157,6 +164,7 @@ export function flush(): Promise<void> {
           // and everything after it in order, and retry on the next flush.
           console.warn(`[offlineQueue] proof upload failed for ${item.id}; will retry.`, uploadErr?.message)
           stop = true
+          stopNetwork = true
           remaining.push({ ...item, attempts: item.attempts + 1 })
           continue
         }
@@ -178,6 +186,7 @@ export function flush(): Promise<void> {
           // stop; retry on the next flush. A 429 is never a refusal of the
           // update itself, so dropping it would lose a stop the driver confirmed.
           stop = true
+          stopNetwork = true
           remaining.push({ ...item, attempts: item.attempts + 1 })
         } else if (status === 409 && item.attempts + 1 < MAX_CONFLICT_ATTEMPTS) {
           // Out-of-order transition — the entry this one depends on hasn't been

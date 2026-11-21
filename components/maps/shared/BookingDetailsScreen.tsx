@@ -1390,7 +1390,17 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
 
         {/* The office paused the delivery. Read-only: only Operations or the
             Company Administrator can resume it. */}
-        {pause && !isDone && <PausedBanner pause={pause} />}
+        {pause && !isDone && (
+          <PausedBanner
+            pause={pause}
+            bookingId={bookingId}
+            onChanged={() => {
+              fetchBookingBody(bookingId)
+                .then(async (data) => setPause(await currentPause(bookingId, data.data)))
+                .catch(() => {})
+            }}
+          />
+        )}
         {/* Running late (the server's delay flag); a pause explains itself instead. */}
         {!pause && !isDone && <DelayedBanner booking={booking} />}
 

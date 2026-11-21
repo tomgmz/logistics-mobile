@@ -1793,6 +1793,8 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
         {pause && (
           <PausedBanner
             pause={pause}
+            bookingId={bookingId}
+            onChanged={() => void refreshPause()}
             style={{
               position: 'absolute',
               left:     14,
@@ -2033,6 +2035,8 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
       {!SHOW_NATIVE_UI && pause && !completed && (
         <PausedBanner
           pause={pause}
+          bookingId={bookingId}
+          onChanged={() => void refreshPause()}
           style={{
             position: 'absolute',
             left:     16,
