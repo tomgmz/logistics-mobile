@@ -223,13 +223,13 @@ export default function ReportDetailScreen() {
             />
           )}
 
-          {report.blowbagets_check && (() => {
+          {report.blowbagets_check?.items && (() => {
             // A tick means the driver LOOKED AT that item, not that it passed —
             // they tick only what they actually checked, and anything wrong goes
             // in the description. So an unticked item must not be rendered as a
             // failure: that would turn "I didn't get to the brakes" into "the
             // brakes failed", which is a very different report.
-            const entries  = Object.entries(report.blowbagets_check.items)
+            const entries  = Object.entries(report.blowbagets_check!.items)
             const checked  = entries.filter(([, on]) => on).map(([k]) => k)
             const skipped  = entries.filter(([, on]) => !on).map(([k]) => k)
 
