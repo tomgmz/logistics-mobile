@@ -480,12 +480,6 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
                 ))}
               </View>
 
-              {weekLocked && (
-                <Text style={styles.note}>
-                  This week is fixed because you already have days set in it. Call the Operations
-                  Manager if you cannot work a day you set.
-                </Text>
-              )}
               {hasNext && nextName && (
                 <Text style={styles.note}>
                   {`You can now set the first week of ${nextName}. `}
@@ -495,12 +489,26 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
                 </Text>
               )}
 
-              {!!hint && (
-                <Text style={styles.hint} accessibilityLiveRegion="polite">{hint}</Text>
-              )}
-
               {!!error && <Text style={styles.error}>{error}</Text>}
             </MotiView>
+          </MotiView>
+        )}
+      </AnimatePresence>
+
+      {/* Toast: why a tapped day can't be changed. Floats over the screen, above
+          the calendar, and never takes taps. */}
+      <AnimatePresence>
+        {open && !!hint && (
+          <MotiView
+            key="hint-toast"
+            pointerEvents="none"
+            from={{ opacity: 0, translateY: -12 }}
+            animate={{ opacity: 1, translateY: 0 }}
+            exit={{ opacity: 0, translateY: -12 }}
+            transition={{ type: 'timing', duration: 180 }}
+            style={[styles.toast, { top: insets.top + 12 }]}
+          >
+            <Text style={styles.toastText} accessibilityLiveRegion="polite">{hint}</Text>
           </MotiView>
         )}
       </AnimatePresence>
@@ -648,12 +656,26 @@ const styles = StyleSheet.create({
     marginHorizontal: 13,
   },
 
-  hint: {
-    color:            COLORS.selected,
-    fontSize:         12,
-    lineHeight:       14,
-    marginTop:        10,
-    marginHorizontal: 13,
+  toast: {
+    position:          'absolute',
+    left:              24,
+    right:             24,
+    backgroundColor:   '#1a1a1a',
+    borderWidth:       1,
+    borderColor:       COLORS.selected,
+    borderRadius:      10,
+    paddingHorizontal: 14,
+    paddingVertical:   12,
+    elevation:         8,
+    shadowColor:       '#000',
+    shadowOpacity:     0.35,
+    shadowRadius:      8,
+    shadowOffset:      { width: 0, height: 4 },
+  },
+  toastText: {
+    color:      COLORS.white,
+    fontSize:   13,
+    lineHeight: 17,
   },
 
   error: {
