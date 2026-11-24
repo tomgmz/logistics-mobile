@@ -488,9 +488,10 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
               )}
               {hasNext && nextName && (
                 <Text style={styles.note}>
+                  {`You can now set the first week of ${nextName}. `}
                   {showingNext
-                    ? `Only the first week of ${nextName} can be set now. The rest of ${nextName} opens on ${nextName} 1.`
-                    : `You can now set the first week of ${nextName}. Tap › to go to ${nextName}.`}
+                    ? `The rest of ${nextName} opens on ${nextName} 1.`
+                    : `Tap › to go to ${nextName}.`}
                 </Text>
               )}
 
