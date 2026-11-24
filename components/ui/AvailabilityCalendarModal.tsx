@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Modal,
   View,
@@ -146,6 +146,10 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
   // Which month page is showing: this month, or next month (only while next
   // month's first week is open). One draft covers both; one save sends both.
   const [onNextPage, setOnNextPage] = useState(false)
+  // Why the day just tapped can't be changed (cleared after a few seconds).
+  const [hint, setHint] = useState<string | null>(null)
+  const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (hintTimer.current) clearTimeout(hintTimer.current) }, [])
 
   const now      = new Date()
   const year     = now.getFullYear()
@@ -161,6 +165,7 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
     setDirty(false)
     setConfirming(null)
     setOnNextPage(false)
+    setHint(null)
     void loadDays(monthKey)
   }, [open, monthKey, loadDays])
 
@@ -254,6 +259,26 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
   const weekFrom = weekStartOf(today)
   const weekTo   = addDays(weekFrom, 6)
   const nextName = nextMonth ? MONTHS[Number(nextMonth.month.slice(5, 7)) - 1] : null
+
+  /** Why a day can't be changed, in the driver's words (same rules as the server). */
+  const lockedReason = (day: string): string => {
+    if (day < today) return 'This day has already passed.'
+    if (weekLocked && day >= weekFrom && day <= weekTo) {
+      return 'This week is fixed because you already have days set in it. '
+        + 'Call the Operations Manager if you cannot work a day you set.'
+    }
+    if (nextMonth && day.startsWith(nextMonth.month) && nextName) {
+      return `Only the first week of ${nextName} can be set now. The rest opens on ${nextName} 1.`
+    }
+    return 'This day cannot be changed now.'
+  }
+
+  // The reason shows under the calendar for a few seconds, then goes.
+  const showHint = (text: string) => {
+    if (hintTimer.current) clearTimeout(hintTimer.current)
+    setHint(text)
+    hintTimer.current = setTimeout(() => setHint(null), 4000)
+  }
 
   // Says what confirming actually does, in the driver's terms. Clearing the
   // month is called out separately: it is the one answer that takes them out of
@@ -409,8 +434,13 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
                         <Pressable
                           key={cell.key}
                           style={styles.cell}
-                          disabled={!editable}
-                          onPress={() => { if (cell.day) toggle(cell.day) }}
+                          // A locked day stays tappable so it can say why it is locked.
+                          disabled={cell.day == null}
+                          onPress={() => {
+                            if (!cell.day) return
+                            if (editable) { setHint(null); toggle(cell.day) }
+                            else showHint(lockedReason(cell.day))
+                          }}
                           accessibilityRole={editable ? 'checkbox' : undefined}
                           accessibilityState={{ checked: isSelected, disabled: !editable }}
                           accessibilityLabel={cell.day
@@ -462,6 +492,10 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
                     ? `Only the first week of ${nextName} can be set now. The rest of ${nextName} opens on ${nextName} 1.`
                     : `You can now set the first week of ${nextName}. Tap › to go to ${nextName}.`}
                 </Text>
+              )}
+
+              {!!hint && (
+                <Text style={styles.hint} accessibilityLiveRegion="polite">{hint}</Text>
               )}
 
               {!!error && <Text style={styles.error}>{error}</Text>}
@@ -607,6 +641,14 @@ const styles = StyleSheet.create({
 
   note: {
     color:            COLORS.muted,
+    fontSize:         12,
+    lineHeight:       14,
+    marginTop:        10,
+    marginHorizontal: 13,
+  },
+
+  hint: {
+    color:            COLORS.selected,
     fontSize:         12,
     lineHeight:       14,
     marginTop:        10,
