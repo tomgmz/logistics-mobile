@@ -44,6 +44,18 @@ export interface DriverAvailabilityMonth {
   days: string[]
   /** Today in Philippine time — the server's day, not the device's. */
   today: string
+  /**
+   * The days of this month the driver may change right now; every other day is
+   * read-only. Optional: an older backend doesn't send it (then today onward).
+   */
+  editable?: string[]
+  /** This week (Sunday to Saturday) already has a set day, so it is fixed. */
+  week_locked?: boolean
+  /**
+   * Next month, when its first week is open (from the second-to-last week of
+   * this month). Only on a read of the current month.
+   */
+  next?: DriverAvailabilityMonth | null
 }
 
 export const driverApi = {
@@ -59,7 +71,8 @@ export const driverApi = {
 
   // The whole month is sent, not a diff — the calendar screen holds the month,
   // so a save means "these are my days". Days already past are ignored server
-  // side, so a stale screen can never rewrite history.
+  // side, so a stale screen can never rewrite history; a change to any other
+  // locked day (a fixed week, next month too early) is refused with the reason.
   setAvailabilityDays: async (month: string, days: string[]): Promise<DriverAvailabilityMonth> => {
     const { data } = await api.put('/driver/availability/days', { month, days })
     return data.data

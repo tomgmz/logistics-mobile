@@ -27,9 +27,15 @@ import { ConfirmDialog } from './ConfirmDialog'
  * schedules against. It opens upward from the pill and covers it, because it is
  * the same control expanded — not a separate screen.
  *
- * Two kinds of day cannot be ticked, and both are drawn in the muted grey the
- * design uses: days outside this month, and days already past (the driver cannot
- * re-plan yesterday). Sundays are tickable — transit runs seven days a week.
+ * Which days can be changed is the server's rule (`editable` on the month read),
+ * and every other day is drawn in the muted grey the design uses:
+ *   - days already past (the driver cannot re-plan yesterday);
+ *   - this week (Sunday to Saturday) once it has a set day: it is fixed, and the
+ *     driver calls the Operations Manager to drop a day;
+ *   - next month, except its first week from this month's second-to-last week
+ *     on. Those days are the grey trailing cells of the last row, which turn
+ *     tickable then (or a row added under a month that ends on a Saturday).
+ * Sundays are tickable — transit runs seven days a week.
  *
  * A ticked day is a circle once it is saved and a square while it is only in
  * the draft, so the driver can see what still needs saving. The X discards the
@@ -59,16 +65,35 @@ function toDay(year: number, month: number, day: number): string {
   return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 }
 
+/** The Sunday that starts `day`'s calendar row, as 'YYYY-MM-DD'. */
+function weekStartOf(day: string): string {
+  const d = new Date(`${day}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() - d.getUTCDay())
+  return d.toISOString().slice(0, 10)
+}
+
+function addDays(day: string, n: number): string {
+  const d = new Date(`${day}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + n)
+  return d.toISOString().slice(0, 10)
+}
+
 interface Cell {
   key:     string
   /** null on the leading/trailing days of the neighbouring months. */
   day:     string | null
   label:   number
   weekday: number
+  /** Month index of `label`, for the screen-reader label. */
+  monthIndex: number
 }
 
-/** Weeks of cells, Sunday-first, with the neighbouring months filled in. */
-function buildMonth(year: number, month: number): Cell[] {
+/**
+ * Weeks of cells, Sunday-first, with the neighbouring months filled in. With
+ * `withNext`, next month's first week is real days: the trailing cells of the
+ * last row, or a row of its own when this month ends on a Saturday.
+ */
+function buildMonth(year: number, month: number, withNext: boolean): Cell[] {
   const firstWeekday = new Date(year, month, 1).getDay()
   const daysInMonth  = new Date(year, month + 1, 0).getDate()
   const daysBefore   = new Date(year, month, 0).getDate()
@@ -77,18 +102,30 @@ function buildMonth(year: number, month: number): Cell[] {
   // that ends on a Saturday.
   const total  = Math.ceil((firstWeekday + daysInMonth) / 7) * 7
   const cells: Cell[] = []
+  const nextYear  = month === 11 ? year + 1 : year
+  const nextMonth = (month + 1) % 12
 
   for (let i = 0; i < total; i++) {
     const offset  = i - firstWeekday
     const weekday = i % 7
 
     if (offset < 0) {
-      cells.push({ key: `lead-${i}`, day: null, label: daysBefore + offset + 1, weekday })
+      cells.push({ key: `lead-${i}`, day: null, label: daysBefore + offset + 1, weekday, monthIndex: (month + 11) % 12 })
     } else if (offset >= daysInMonth) {
-      cells.push({ key: `trail-${i}`, day: null, label: offset - daysInMonth + 1, weekday })
+      const label = offset - daysInMonth + 1
+      const day   = withNext ? toDay(nextYear, nextMonth, label) : null
+      cells.push({ key: day ?? `trail-${i}`, day, label, weekday, monthIndex: nextMonth })
     } else {
       const label = offset + 1
-      cells.push({ key: toDay(year, month, label), day: toDay(year, month, label), label, weekday })
+      cells.push({ key: toDay(year, month, label), day: toDay(year, month, label), label, weekday, monthIndex: month })
+    }
+  }
+
+  // Ends on a Saturday: next month's first week is a whole row of its own.
+  if (withNext && total === firstWeekday + daysInMonth) {
+    for (let label = 1; label <= 7; label++) {
+      const day = toDay(nextYear, nextMonth, label)
+      cells.push({ key: day, day, label, weekday: label - 1, monthIndex: nextMonth })
     }
   }
 
@@ -106,6 +143,9 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
   const storedDays  = useAvailabilityStore((s) => s.days)
   const storedMonth = useAvailabilityStore((s) => s.month)
   const serverToday = useAvailabilityStore((s) => s.today)
+  const editableDays = useAvailabilityStore((s) => s.editable)
+  const weekLocked  = useAvailabilityStore((s) => s.weekLocked)
+  const nextMonth   = useAvailabilityStore((s) => s.next)
   const loadingDays = useAvailabilityStore((s) => s.loadingDays)
   const savingDays  = useAvailabilityStore((s) => s.savingDays)
   const error       = useAvailabilityStore((s) => s.error)
@@ -138,8 +178,16 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
   // Fold server state into the draft until the driver starts editing.
   useEffect(() => {
     if (!open || dirty) return
-    if (storedMonth === monthKey) setDraft(storedDays)
-  }, [open, dirty, storedDays, storedMonth, monthKey])
+    if (storedMonth === monthKey) setDraft([...storedDays, ...(nextMonth?.days ?? [])].sort())
+  }, [open, dirty, storedDays, storedMonth, monthKey, nextMonth])
+
+  // Next month's first week rides on this month's draft; a save splits it again.
+  const nextKey   = nextMonth?.month ?? null
+  const draftThis = useMemo(() => draft.filter((d) => d.startsWith(monthKey)), [draft, monthKey])
+  const draftNext = useMemo(
+    () => (nextKey ? draft.filter((d) => d.startsWith(nextKey)) : []),
+    [draft, nextKey],
+  )
 
   /**
    * The actual write. Only reached once the driver has said yes.
@@ -148,11 +196,14 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
    * save surfaces the next time the calendar opens and re-reads the month.
    */
   const performCommit = useCallback(() => {
-    void saveDays(monthKey, draft).catch(() => {})
+    const before      = nextMonth?.days ?? []
+    const nextChanged = !!nextMonth
+      && (before.length !== draftNext.length || draftNext.some((d) => !before.includes(d)))
+    void saveDays(monthKey, draftThis, nextChanged ? draftNext : null).catch(() => {})
     setDirty(false)
     setConfirming(null)
     onClose()
-  }, [draft, monthKey, saveDays, onClose])
+  }, [draftThis, draftNext, nextMonth, monthKey, saveDays, onClose])
 
   /** The X: leave without saving. The next open re-reads the saved month. */
   const performDiscard = useCallback(() => {
@@ -189,13 +240,27 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
     return () => sub.remove()
   }, [open, requestCommit])
 
-  const cells    = useMemo(() => buildMonth(year, month), [year, month])
+  const showNext = storedMonth === monthKey && !!nextMonth
+  const cells    = useMemo(() => buildMonth(year, month, showNext), [year, month, showNext])
   const selected = useMemo(() => new Set(draft), [draft])
   // What the server holds — those ticks are circles; draft-only ticks are squares.
   const saved    = useMemo(
-    () => new Set(storedMonth === monthKey ? storedDays : []),
-    [storedDays, storedMonth, monthKey],
+    () => new Set(storedMonth === monthKey ? [...storedDays, ...(nextMonth?.days ?? [])] : []),
+    [storedDays, storedMonth, monthKey, nextMonth],
   )
+  // The server's rule for what can change now. An older backend sends none:
+  // then it is this month, today onward, as before.
+  const editableSet = useMemo(
+    () => (editableDays == null ? null : new Set([...editableDays, ...(nextMonth?.editable ?? [])])),
+    [editableDays, nextMonth],
+  )
+  const canEdit = (day: string) => (editableSet
+    ? editableSet.has(day)
+    : day.startsWith(monthKey) && day >= today)
+
+  const weekFrom = weekStartOf(today)
+  const weekTo   = addDays(weekFrom, 6)
+  const nextName = nextMonth ? MONTHS[Number(nextMonth.month.slice(5, 7)) - 1] : null
 
   // Says what confirming actually does, in the driver's terms. Clearing the
   // month is called out separately: it is the one answer that takes them out of
@@ -205,9 +270,16 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
     if (draft.length === 0) {
       return `You are clearing every day in ${label}. You will not be assignable to any delivery until you tick a day.`
     }
-    return `You can be assigned a delivery on ${draft.length} day${draft.length === 1 ? '' : 's'} in ${label}. `
+    // Saving a day in this week fixes the week; say so before it happens.
+    const fixesWeek = !weekLocked && draft.some((d) => d >= today && d >= weekFrom && d <= weekTo)
+    const plural    = (n: number) => `${n} day${n === 1 ? '' : 's'}`
+    const nextPart  = draftNext.length > 0 && nextName
+      ? ` and ${plural(draftNext.length)} in the first week of ${nextName}`
+      : ''
+    return `You can be assigned a delivery on ${plural(draftThis.length)} in ${label}${nextPart}. `
       + 'The Operations Manager can assign you on any of them.'
-  }, [draft, month, year])
+      + (fixesWeek ? ' Once saved, this week is fixed and cannot be changed in the app.' : '')
+  }, [draft, draftThis, draftNext, nextName, month, year, weekLocked, weekFrom, weekTo, today])
 
   const toggle = (day: string) => {
     setDirty(true)
@@ -306,7 +378,7 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
                     {week.map((cell) => {
                       const isSelected = cell.day != null && selected.has(cell.day)
                       const isPast     = cell.day != null && cell.day < today
-                      const editable   = cell.day != null && !isPast
+                      const editable   = cell.day != null && canEdit(cell.day)
                       const isSaved    = isSelected && saved.has(cell.day!)
                       const shape      = !isSelected ? 'plain' : isSaved ? 'saved' : 'draft'
 
@@ -319,7 +391,7 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
                           accessibilityRole={editable ? 'checkbox' : undefined}
                           accessibilityState={{ checked: isSelected, disabled: !editable }}
                           accessibilityLabel={cell.day
-                            ? `${MONTHS[month]} ${cell.label}${editable ? '' : ', not selectable'}`
+                            ? `${MONTHS[cell.monthIndex]} ${cell.label}${editable ? '' : ', not selectable'}`
                             : undefined}
                         >
                           {({ pressed }) => (
@@ -354,6 +426,18 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
                   </View>
                 ))}
               </View>
+
+              {weekLocked && (
+                <Text style={styles.note}>
+                  This week is fixed because you already have days set in it. Call the Operations
+                  Manager if you cannot work a day you set.
+                </Text>
+              )}
+              {showNext && nextName && (
+                <Text style={styles.note}>
+                  You can now set the first week of {nextName}. The rest of {nextName} opens on {nextName} 1.
+                </Text>
+              )}
 
               {!!error && <Text style={styles.error}>{error}</Text>}
             </MotiView>
@@ -482,6 +566,14 @@ const styles = StyleSheet.create({
   },
   dayMuted:    { color: COLORS.dim },
   daySelected: { color: COLORS.selected, fontWeight: '700' },
+
+  note: {
+    color:            COLORS.muted,
+    fontSize:         12,
+    lineHeight:       14,
+    marginTop:        10,
+    marginHorizontal: 13,
+  },
 
   error: {
     color:            COLORS.error,

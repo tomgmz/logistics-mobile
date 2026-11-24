@@ -1,5 +1,12 @@
 import { create } from 'zustand'
-import { driverApi, DriverAvailabilityStatus } from '../api/driver.api'
+import { driverApi, DriverAvailabilityMonth, DriverAvailabilityStatus } from '../api/driver.api'
+
+/** Next month's first week, when it is open (from this month's second-to-last week). */
+export interface NextMonthDays {
+  month:    string
+  days:     string[]
+  editable: string[]
+}
 
 /**
  * The driver's availability for delivery work, mirrored from the server.
@@ -25,13 +32,32 @@ interface AvailabilityStore {
   month:       string | null
   days:        string[]
   today:       string | null
+  // The days of `month` the driver may change now (server's rule); null from an
+  // older backend, which means "today onward".
+  editable:    string[] | null
+  // This week already has a set day, so the whole week is fixed.
+  weekLocked:  boolean
+  next:        NextMonthDays | null
   loadingDays: boolean
   savingDays:  boolean
 
   refresh:      () => Promise<void>
   loadDays:     (month: string) => Promise<void>
-  saveDays:     (month: string, days: string[]) => Promise<void>
+  /** Saves the month; `nextDays` (next month's first week) only when it changed. */
+  saveDays:     (month: string, days: string[], nextDays?: string[] | null) => Promise<void>
   reset:        () => void
+}
+
+/** The calendar fields of a month read, as store state. */
+function monthState(m: DriverAvailabilityMonth) {
+  return {
+    month:      m.month,
+    days:       m.days,
+    today:      m.today,
+    editable:   m.editable ?? null,
+    weekLocked: m.week_locked ?? false,
+    next:       m.next ? { month: m.next.month, days: m.next.days, editable: m.next.editable ?? [] } : null,
+  }
 }
 
 export const useAvailabilityStore = create<AvailabilityStore>((set, get) => ({
@@ -44,6 +70,9 @@ export const useAvailabilityStore = create<AvailabilityStore>((set, get) => ({
   month:       null,
   days:        [],
   today:       null,
+  editable:    null,
+  weekLocked:  false,
+  next:        null,
   loadingDays: false,
   savingDays:  false,
 
@@ -64,7 +93,7 @@ export const useAvailabilityStore = create<AvailabilityStore>((set, get) => ({
       ])
       set({
         status: next.status, onDelivery: next.on_delivery, inTransit: next.in_transit ?? false, error: null,
-        month: month.month, days: month.days, today: month.today,
+        ...monthState(month),
       })
     } catch {
       // Offline or no driver profile — leave the last known state in place so the
@@ -78,10 +107,11 @@ export const useAvailabilityStore = create<AvailabilityStore>((set, get) => ({
   loadDays: async (month) => {
     // Switching months blanks the grid rather than showing the previous month's
     // ticks against the new month's dates.
-    set({ loadingDays: true, days: get().month === month ? get().days : [], month })
+    const same = get().month === month
+    set({ loadingDays: true, days: same ? get().days : [], next: same ? get().next : null, month })
     try {
       const next = await driverApi.getAvailabilityDays(month)
-      set({ month: next.month, days: next.days, today: next.today, error: null })
+      set({ ...monthState(next), error: null })
     } catch {
       set({ error: 'Could not load your calendar' })
     } finally {
@@ -89,14 +119,21 @@ export const useAvailabilityStore = create<AvailabilityStore>((set, get) => ({
     }
   },
 
-  saveDays: async (month, days) => {
+  saveDays: async (month, days, nextDays) => {
     // Optimistic: the calendar closes on the driver's tap, so the ticks they
     // just made have to survive the round trip. A failure re-reads the month on
     // the next open, which is the server's truth either way.
-    set({ savingDays: true, month, days })
+    const pending = get().next
+    set({
+      savingDays: true, month, days,
+      next: pending && nextDays ? { ...pending, days: nextDays } : pending,
+    })
     try {
+      // Next month first, then this month: the reply to this month's save
+      // carries both months (and whether this week is now fixed).
+      if (pending && nextDays) await driverApi.setAvailabilityDays(pending.month, nextDays)
       const next = await driverApi.setAvailabilityDays(month, days)
-      set({ month: next.month, days: next.days, today: next.today, error: null })
+      set({ ...monthState(next), error: null })
     } catch (err: any) {
       set({ error: err?.response?.data?.message ?? 'Could not save your calendar' })
       throw err
@@ -107,6 +144,7 @@ export const useAvailabilityStore = create<AvailabilityStore>((set, get) => ({
 
   reset: () => set({
     status: null, onDelivery: false, inTransit: false, loading: false, error: null,
-    month: null, days: [], today: null, loadingDays: false, savingDays: false,
+    month: null, days: [], today: null, editable: null, weekLocked: false, next: null,
+    loadingDays: false, savingDays: false,
   }),
 }))
