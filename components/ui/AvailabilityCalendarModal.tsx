@@ -12,7 +12,7 @@ import {
 import { MotiView, AnimatePresence } from 'moti'
 import { Easing } from 'react-native-reanimated'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { X } from 'lucide-react-native'
+import { ChevronLeft, ChevronRight, X } from 'lucide-react-native'
 
 import { useAvailabilityStore } from '../../lib/store/availability.store'
 import { PencilCheckIcon } from './icons/AvailabilityIcons'
@@ -33,8 +33,9 @@ import { ConfirmDialog } from './ConfirmDialog'
  *   - this week (Sunday to Saturday) once it has a set day: it is fixed, and the
  *     driver calls the Operations Manager to drop a day;
  *   - next month, except its first week from this month's second-to-last week
- *     on. Those days are the grey trailing cells of the last row, which turn
- *     tickable then (or a row added under a month that ends on a Saturday).
+ *     on. Then a ‹ › pair by the month name pages to next month, where only
+ *     that first week can be ticked. One draft covers both pages; one save
+ *     sends both months.
  * Sundays are tickable — transit runs seven days a week.
  *
  * A ticked day is a circle once it is saved and a square while it is only in
@@ -88,12 +89,8 @@ interface Cell {
   monthIndex: number
 }
 
-/**
- * Weeks of cells, Sunday-first, with the neighbouring months filled in. With
- * `withNext`, next month's first week is real days: the trailing cells of the
- * last row, or a row of its own when this month ends on a Saturday.
- */
-function buildMonth(year: number, month: number, withNext: boolean): Cell[] {
+/** Weeks of cells, Sunday-first, with the neighbouring months filled in (grey). */
+function buildMonth(year: number, month: number): Cell[] {
   const firstWeekday = new Date(year, month, 1).getDay()
   const daysInMonth  = new Date(year, month + 1, 0).getDate()
   const daysBefore   = new Date(year, month, 0).getDate()
@@ -102,8 +99,6 @@ function buildMonth(year: number, month: number, withNext: boolean): Cell[] {
   // that ends on a Saturday.
   const total  = Math.ceil((firstWeekday + daysInMonth) / 7) * 7
   const cells: Cell[] = []
-  const nextYear  = month === 11 ? year + 1 : year
-  const nextMonth = (month + 1) % 12
 
   for (let i = 0; i < total; i++) {
     const offset  = i - firstWeekday
@@ -112,20 +107,10 @@ function buildMonth(year: number, month: number, withNext: boolean): Cell[] {
     if (offset < 0) {
       cells.push({ key: `lead-${i}`, day: null, label: daysBefore + offset + 1, weekday, monthIndex: (month + 11) % 12 })
     } else if (offset >= daysInMonth) {
-      const label = offset - daysInMonth + 1
-      const day   = withNext ? toDay(nextYear, nextMonth, label) : null
-      cells.push({ key: day ?? `trail-${i}`, day, label, weekday, monthIndex: nextMonth })
+      cells.push({ key: `trail-${i}`, day: null, label: offset - daysInMonth + 1, weekday, monthIndex: (month + 1) % 12 })
     } else {
       const label = offset + 1
       cells.push({ key: toDay(year, month, label), day: toDay(year, month, label), label, weekday, monthIndex: month })
-    }
-  }
-
-  // Ends on a Saturday: next month's first week is a whole row of its own.
-  if (withNext && total === firstWeekday + daysInMonth) {
-    for (let label = 1; label <= 7; label++) {
-      const day = toDay(nextYear, nextMonth, label)
-      cells.push({ key: day, day, label, weekday: label - 1, monthIndex: nextMonth })
     }
   }
 
@@ -158,6 +143,9 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
   const [dirty, setDirty] = useState(false)
   // Which "are you sure" card is up over the calendar: saving, or discarding.
   const [confirming, setConfirming] = useState<'save' | 'discard' | null>(null)
+  // Which month page is showing: this month, or next month (only while next
+  // month's first week is open). One draft covers both; one save sends both.
+  const [onNextPage, setOnNextPage] = useState(false)
 
   const now      = new Date()
   const year     = now.getFullYear()
@@ -172,6 +160,7 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
     if (!open) return
     setDirty(false)
     setConfirming(null)
+    setOnNextPage(false)
     void loadDays(monthKey)
   }, [open, monthKey, loadDays])
 
@@ -240,8 +229,12 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
     return () => sub.remove()
   }, [open, requestCommit])
 
-  const showNext = storedMonth === monthKey && !!nextMonth
-  const cells    = useMemo(() => buildMonth(year, month, showNext), [year, month, showNext])
+  const hasNext  = storedMonth === monthKey && !!nextMonth
+  // Next month closed under the driver (a reload): back to this month.
+  const showingNext = onNextPage && hasNext
+  const viewYear  = showingNext ? Number(nextMonth!.month.slice(0, 4)) : year
+  const viewMonth = showingNext ? Number(nextMonth!.month.slice(5, 7)) - 1 : month
+  const cells    = useMemo(() => buildMonth(viewYear, viewMonth), [viewYear, viewMonth])
   const selected = useMemo(() => new Set(draft), [draft])
   // What the server holds — those ticks are circles; draft-only ticks are squares.
   const saved    = useMemo(
@@ -358,8 +351,38 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
               </View>
 
               <View style={styles.monthRow}>
-                <Text style={styles.month}>{MONTHS[month]} {year}</Text>
+                <Text style={styles.month}>{MONTHS[viewMonth]} {viewYear}</Text>
                 {loadingDays && <ActivityIndicator size="small" color={COLORS.muted} />}
+
+                {/* Only while next month's first week is open: this month ‹ › next. */}
+                {hasNext && (
+                  <View style={styles.monthNav}>
+                    <TouchableOpacity
+                      onPress={() => setOnNextPage(false)}
+                      disabled={!showingNext}
+                      hitSlop={10}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Show ${MONTHS[month]}`}
+                      accessibilityState={{ disabled: !showingNext }}
+                      activeOpacity={0.6}
+                      style={styles.monthNavButton}
+                    >
+                      <ChevronLeft size={20} color={showingNext ? COLORS.cyan : COLORS.dim} strokeWidth={2.4} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => setOnNextPage(true)}
+                      disabled={showingNext}
+                      hitSlop={10}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Show ${nextName}`}
+                      accessibilityState={{ disabled: showingNext }}
+                      activeOpacity={0.6}
+                      style={styles.monthNavButton}
+                    >
+                      <ChevronRight size={20} color={showingNext ? COLORS.dim : COLORS.cyan} strokeWidth={2.4} />
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
 
               <View style={styles.grid}>
@@ -433,9 +456,11 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
                   Manager if you cannot work a day you set.
                 </Text>
               )}
-              {showNext && nextName && (
+              {hasNext && nextName && (
                 <Text style={styles.note}>
-                  You can now set the first week of {nextName}. The rest of {nextName} opens on {nextName} 1.
+                  {showingNext
+                    ? `Only the first week of ${nextName} can be set now. The rest of ${nextName} opens on ${nextName} 1.`
+                    : `You can now set the first week of ${nextName}. Tap › to go to ${nextName}.`}
                 </Text>
               )}
 
@@ -462,7 +487,7 @@ export default function AvailabilityCalendarModal({ open, onClose }: Availabilit
       <ConfirmDialog
         visible={confirming === 'discard'}
         title="DISCARD YOUR CHANGES?"
-        message={`The days you changed in ${MONTHS[month]} ${year} will not be saved. Your schedule stays as it was.`}
+        message={`The days you changed${hasNext && nextName ? ` in ${MONTHS[month]} and ${nextName}` : ` in ${MONTHS[month]} ${year}`} will not be saved. Your schedule stays as it was.`}
         confirmLabel="Discard"
         cancelLabel="Keep editing"
         tone="red"
@@ -521,6 +546,19 @@ const styles = StyleSheet.create({
     color:      COLORS.cyan,
     fontSize:   14,
     fontWeight: '500',
+  },
+  monthNav: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           4,
+    marginLeft:    'auto',
+    marginRight:   9,
+  },
+  monthNavButton: {
+    width:          32,
+    height:         32,
+    alignItems:     'center',
+    justifyContent: 'center',
   },
 
   grid: {
