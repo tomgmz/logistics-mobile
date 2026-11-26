@@ -159,7 +159,7 @@ interface Booking {
   fleet_return_at?:  string | null
   schedule_date:     string
   call_time:         string
-  /** Set by operations; the driver follows it over the client's call_time. */
+  /** Set by operations: when the driver leaves so the truck is at the pickup by call_time. */
   driver_call_time?: string | null
   /** Its day (booking day or the day before); null = the booking day. */
   driver_call_date?: string | null
@@ -939,9 +939,8 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
           </Text>
           <Text style={s.schedule} numberOfLines={1}>
             {fmtDate(booking.schedule_date)}
-            {(booking.driver_call_time || booking.call_time)
-              ? ` · ${fmtTime(booking.driver_call_time || booking.call_time)}${callDayNote(booking)}`
-              : ''}
+            {booking.driver_call_time ? ` · Leave ${fmtTime(booking.driver_call_time)}${callDayNote(booking)}` : ''}
+            {booking.call_time ? ` · Pick-up ${fmtTime(booking.call_time)}` : ''}
           </Text>
 
           <View style={[s.tag, { backgroundColor: tag.bg, borderColor: tag.color }]}>

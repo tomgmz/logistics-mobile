@@ -10,6 +10,19 @@ interface CallDayFields {
   driver_call_date?: string | null
 }
 
+/**
+ * What the chip shows (user 2026-11-26): the driver call time (when to leave),
+ * never the client's time in its place. Not set yet → the client's pick-up
+ * time, labelled as such, so the driver still knows when the truck is due.
+ */
+export function callChip(
+  b: CallDayFields & { call_time?: string | null },
+  fmt: (t: string) => string,
+): string {
+  if (b.driver_call_time) return `${fmt(b.driver_call_time)}${callDayNote(b)}`
+  return b.call_time ? `Pick-up ${fmt(b.call_time)}` : 'Call time not set'
+}
+
 export function callDayNote(b: CallDayFields): string {
   if (!b.driver_call_time || !b.driver_call_date) return ''
   const day = b.driver_call_date.slice(0, 10)

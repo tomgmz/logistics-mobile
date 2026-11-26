@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
-import { callDayNote } from '../../../lib/driverCallDay'
+import { callChip } from '../../../lib/driverCallDay'
 import {
   View,
   Text,
@@ -145,7 +145,7 @@ function BookingCard({ booking, onPress, index }: BookingCardProps) {
 
           <View className="bg-surface-elevated rounded-lg px-2 py-1">
             <Text className="text-[11px] font-semibold text-ink-muted">
-              {formatTime(booking.driver_call_time || booking.call_time)}{callDayNote(booking)}
+              {callChip(booking, formatTime)}
             </Text>
           </View>
         </View>

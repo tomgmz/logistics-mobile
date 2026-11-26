@@ -7,7 +7,7 @@
  * beyond that lives in My Assignments — the card opens it on the Active tab,
  * "See All" opens it on All.
  */
-import { callDayNote } from '../../../lib/driverCallDay'
+import { callChip } from '../../../lib/driverCallDay'
 import React, { useCallback, useState } from 'react'
 import {
   View,
@@ -430,7 +430,7 @@ function ActiveOrderCard({
           style={{ backgroundColor: CARD_INK }}
         >
           <Text className="text-xs font-medium text-[#d9d9d9]">
-            {formatTime(booking.driver_call_time || booking.call_time)}{callDayNote(booking)}
+            {callChip(booking, formatTime)}
           </Text>
         </View>
       </View>
