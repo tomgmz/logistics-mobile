@@ -113,7 +113,12 @@ export default {
       [
         "expo-notifications",
         {
-          icon: "./assets/mobile-icon.png",
+          // Android draws the status-bar / notification icon from the image's
+          // ALPHA channel only and tints it. The full-colour app icon is an
+          // opaque square, so stock-style Android (Android Go, Infinix, Tecno,
+          // realme…) showed a plain blob. This is a white-on-transparent copy of
+          // the logo's three chevrons. Samsung/Xiaomi swap in the app icon anyway.
+          icon: "./assets/notification-icon.png",
           color: "#00BCD4",
           // Bundled into the app (Android res/raw, iOS main bundle) so a push can
           // name it: the backend sends sound 'notify.wav' on the 'alerts' channel.
