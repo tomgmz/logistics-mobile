@@ -402,7 +402,7 @@ export default function DriverBookingList() {
     <View className="flex-1 bg-surface-bg">
 
 
-      {/* "My Assignments" now lives in the top bar, so this is just the heading
+      {/* "Assignments" now lives in the top bar, so this is just the heading
           and the running total, per node 2734:1475. */}
       <View className="flex-row items-center justify-between px-6 pt-3.5 pb-4">
         <Text

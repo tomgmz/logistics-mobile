@@ -45,7 +45,8 @@ const HOME_ROUTE = '/driver/home'
  * wordmark and just gains a back chevron.
  */
 const TITLES: Record<string, string> = {
-  '/driver/driver-assignment': 'My Assignments',
+  // "Assignments", not "My Assignments" (user 2026-11-27).
+  '/driver/driver-assignment': 'Assignments',
   // "Maintenance" was the wrong name for this: most of what a driver raises
   // mid-route is an accident, a hold-up or a colleague who has collapsed, and
   // filing those under maintenance told them the screen was not for them.
