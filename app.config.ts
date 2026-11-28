@@ -25,7 +25,7 @@ export default {
     scheme: 'logistics-mobile',
     name: '8338 Logistics',
     slug: 'logistics-mobile',
-    version: '1.0.0',
+    version: '1.1.0',
     runtimeVersion: {
       policy: 'appVersion',
     },
@@ -59,7 +59,7 @@ export default {
     android: {
       ...androidGoogleServices,
       package: 'ph.logistics8338.mobile',
-      versionCode: 1,
+      versionCode: 2,
       "ndkVersion": "27.1.12297006",
       softwareKeyboardLayoutMode: "resize",
       adaptiveIcon: {

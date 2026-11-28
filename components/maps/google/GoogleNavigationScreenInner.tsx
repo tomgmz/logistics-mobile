@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { ActivityIndicator, Alert, Linking, PixelRatio, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, Linking, PixelRatio, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Signpost, CheckCircle2, PackageCheck, WifiOff, Volume2, VolumeX } from 'lucide-react-native'
@@ -74,6 +74,7 @@ import { legCoordinates, readCurrentFix, distanceInMetres } from '../../../lib/s
 import { GoogleNavSheet, SHEET_PEEK_H } from './GoogleNavSheet'
 import { OfflineRoutePreview } from './OfflineRoutePreview'
 import { C } from '../../../theme/navigation.theme'
+import { appAlert } from '../../../lib/appAlert'
 
 /**
  * Real Google Navigation SDK screen. Loaded lazily by GoogleNavigationScreen
@@ -371,7 +372,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
   const blockedByPause = useCallback((tapped: boolean): boolean => {
     if (!pauseRef.current) return false
     if (tapped) {
-      Alert.alert(
+      appAlert(
         'Delivery paused by the office',
         'You can’t confirm a pickup or drop-off while the delivery is paused. Ask the Operations Manager or the Company Administrator to end the pause.',
       )
@@ -1065,7 +1066,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
     if (!leg || leg.type !== 'dropoff' || idx <= target) return
 
     if (offlineRef.current && guidingRef.current) {
-      Alert.alert(
+      appAlert(
         'Can’t change the order while offline',
         'Navigation needs a connection to plan the new route. Try again once you have a signal.',
       )
@@ -1160,7 +1161,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
     guidingRef.current = false
     navigationController.stopGuidance().catch(() => {})
     navigationController.cleanup().catch(() => {})
-    Alert.alert(
+    appAlert(
       `Navigation moved to ${nav.driver_name || 'the other driver'}’s phone`,
       'Only one phone navigates at a time, so guidance stopped on this phone. You can still confirm stops from the booking. ' +
       'To navigate on this phone again, tap Resume Navigation and take over.',
@@ -1177,7 +1178,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
     navigationController.stopGuidance().catch(() => {})
     navigationController.cleanup().catch(() => {})
     void stopTracking().catch(() => {})
-    Alert.alert(
+    appAlert(
       'Delivery handed to another driver',
       'The office assigned this booking to another driver or vehicle. Navigation has stopped.',
       [{ text: 'OK', onPress: () => router.back() }],
@@ -1193,7 +1194,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
 
     if (blockedByPause(true)) return
     if (allStopsDone || nothingToNavigateRef.current) {
-      Alert.alert(
+      appAlert(
         'Mark delivery as done?',
         'This closes the booking. Only do this once every drop-off has been completed.',
         [
@@ -1778,7 +1779,7 @@ function GoogleNavInner({ bookingId, routeToken, earlyStart = false, onBack }: P
             // photo taken here would have nowhere to go — so say that plainly
             // rather than opening a popup that silently loses the driver's work.
             if (!legsRef.current[idx]) {
-              Alert.alert(
+              appAlert(
                 'Can’t confirm while offline',
                 'This booking’s details were never saved on this phone, so the stop can’t be recorded yet. It will work as soon as you have a signal.',
               )

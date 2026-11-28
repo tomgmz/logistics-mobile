@@ -42,6 +42,8 @@ export interface TripStop {
   delivered_at:   string | null
   proof_photo_url: string | null
   proof_at:        string | null
+  /** "Confirmed by the office: …" when the office recorded the stop for the driver. */
+  proof_override_reason?: string | null
   booking_destinations: TripStopDestination | null
   /** How much of each cargo line this stop unloads on this trip. Absent on older plans. */
   booking_trip_cargo?: TripCargo[]
@@ -63,6 +65,8 @@ export interface Trip {
   status:      TripStatus
   pickup_proof_photo_url: string | null
   pickup_proof_at:        string | null
+  /** "Confirmed by the office: …" when the office recorded the loading for the driver. */
+  pickup_proof_override_reason?: string | null
   notes:       string | null
   booking_trip_stops: TripStop[]
 }

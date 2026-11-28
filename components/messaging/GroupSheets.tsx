@@ -1,7 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import {
-  View, Text, TouchableOpacity, TextInput, Modal, FlatList, ScrollView,
-  StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
+  View,
+  Text,
+  TouchableOpacity,
+  TextInput,
+  Modal,
+  FlatList,
+  ScrollView,
+  StyleSheet,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native'
 import { AccountStatusTag } from './MessageItem'
 import { Users, UserPlus, Pencil, Inbox, UserMinus, Check, X, Search } from 'lucide-react-native'
@@ -10,6 +19,7 @@ import { roleLabel, matchesPersonSearch } from '../../lib/roles'
 import { FONTS } from '../../lib/config/fonts'
 import { useKeyboardHeight } from '../../hooks/useKeyboardHeight'
 import type { GroupMemberRequest, MessagableUser } from '../../types/messaging.types'
+import { appAlert } from '../../lib/appAlert'
 
 const C = {
   bg:       '#0a0a0a',
@@ -117,7 +127,7 @@ function MembersSheet({ groupId, members, createdBy, currentUserId, canAct, onCl
 
   const remove = (m: SheetMember) => {
     const who = `${m.first_name} ${m.last_name}`.trim()
-    Alert.alert(
+    appAlert(
       isCreator ? `Remove ${who}?` : `Ask to remove ${who}?`,
       isCreator ? 'They will leave the group and lose access to it.' : 'The group creator will approve or decline it.',
       [
@@ -128,10 +138,10 @@ function MembersSheet({ groupId, members, createdBy, currentUserId, canAct, onCl
             setBusyId(m.user_id)
             try {
               const r = await messagingApi.removeGroupMember(groupId, m.user_id)
-              if (r?.requested) Alert.alert('Request sent', REQUEST_SENT)
+              if (r?.requested) appAlert('Request sent', REQUEST_SENT)
               onChanged()
             } catch (err) {
-              Alert.alert('Could not remove', errorText(err, 'Please try again.'))
+              appAlert('Could not remove', errorText(err, 'Please try again.'))
             } finally { setBusyId(null) }
           },
         },
@@ -207,10 +217,10 @@ function AddSheet({ groupId, members, isCreator, onClose, onDone }: {
     setSaving(true)
     try {
       const r = await messagingApi.addGroupMembers(groupId, [...selected])
-      if (r?.requested) Alert.alert('Request sent', REQUEST_SENT)
+      if (r?.requested) appAlert('Request sent', REQUEST_SENT)
       onDone()
     } catch (err) {
-      Alert.alert('Could not add people', errorText(err, 'Please try again.'))
+      appAlert('Could not add people', errorText(err, 'Please try again.'))
       setSaving(false)
     }
   }
@@ -272,7 +282,7 @@ function RenameSheet({ groupId, currentName, onClose, onDone }: {
       await messagingApi.renameGroup(groupId, name.trim())
       onDone()
     } catch (err) {
-      Alert.alert('Could not rename the group', errorText(err, 'Please try again.'))
+      appAlert('Could not rename the group', errorText(err, 'Please try again.'))
       setSaving(false)
     }
   }
@@ -300,7 +310,7 @@ function RequestsSheet({ groupId, requests, onClose, onChanged }: {
       await messagingApi.decideGroupMemberRequest(groupId, r.request_id, approve)
       onChanged()
     } catch (err) {
-      Alert.alert('Could not save your decision', errorText(err, 'Please try again.'))
+      appAlert('Could not save your decision', errorText(err, 'Please try again.'))
     } finally { setBusyId(null) }
   }
   return (

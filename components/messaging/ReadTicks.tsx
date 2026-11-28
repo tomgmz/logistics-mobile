@@ -1,5 +1,5 @@
-import { Alert } from 'react-native'
 import { Check, CheckCheck } from 'lucide-react-native'
+import { appAlert } from '../../lib/appAlert'
 
 /**
  * Read status on your own messages: a double check once it has been seen, a
@@ -15,12 +15,12 @@ export type DeleteScope = 'me' | 'everyone'
 
 function confirmScope(scope: DeleteScope, onConfirm: (scope: DeleteScope) => void): void {
   if (scope === 'everyone') {
-    Alert.alert('Unsend this message?', 'It will be removed for everyone in this conversation.', [
+    appAlert('Unsend this message?', 'It will be removed for everyone in this conversation.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Unsend', style: 'destructive', onPress: () => onConfirm('everyone') },
     ])
   } else {
-    Alert.alert('Delete this message?', 'It will be deleted for you only. Everyone else in this conversation will still see it.', [
+    appAlert('Delete this message?', 'It will be deleted for you only. Everyone else in this conversation will still see it.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete for me', style: 'destructive', onPress: () => onConfirm('me') },
     ])
@@ -34,7 +34,7 @@ function confirmScope(scope: DeleteScope, onConfirm: (scope: DeleteScope) => voi
  */
 export function chooseMessageRemoval(canUnsend: boolean, onConfirm: (scope: DeleteScope) => void): void {
   if (!canUnsend) { confirmScope('me', onConfirm); return }
-  Alert.alert('Remove this message', undefined, [
+  appAlert('Remove this message', undefined, [
     { text: 'Unsend for everyone', style: 'destructive', onPress: () => confirmScope('everyone', onConfirm) },
     { text: 'Delete for me', onPress: () => confirmScope('me', onConfirm) },
     { text: 'Cancel', style: 'cancel' },

@@ -2,10 +2,11 @@ import * as Location from 'expo-location'
 import * as TaskManager from 'expo-task-manager'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import NetInfo from '@react-native-community/netinfo'
-import { Alert, AppState, Linking } from 'react-native'
+import { AppState, Linking } from 'react-native'
 
 import api from './api/auth.api'
 import { distanceInMetres, type Coordinates } from './stopGeofence'
+import { appAlert } from './appAlert'
 
 /**
  * The driver's position, streamed to the client's map while a booking runs.
@@ -389,7 +390,7 @@ const deniedWarned = new Set<string>()
 export function explainTrackingDenied(bookingId: string): void {
   if (deniedWarned.has(bookingId)) return
   deniedWarned.add(bookingId)
-  Alert.alert(
+  appAlert(
     'Location sharing is off',
     'The customer cannot see where your truck is. To share it, allow location access "All the time" for this app in Settings.',
     [

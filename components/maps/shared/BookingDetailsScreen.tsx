@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { callDayNote } from '../../../lib/driverCallDay'
 import {
   ActivityIndicator,
-  Alert,
+  Modal,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -20,11 +20,14 @@ import {
   Camera,
   Check,
   Clock,
+  ChevronDown,
   ChevronLeft,
+  ChevronUp,
   Eye,
-  FileText,
+  ImageUp,
   Lock,
   MapPin,
+  MapPinCheck,
   Navigation,
   PackageCheck,
   Repeat,
@@ -33,15 +36,17 @@ import {
   User,
   Warehouse,
   WifiOff,
+  X,
 } from 'lucide-react-native'
 
+import FileImage from '../../FileImage'
 import api from '../../../lib/api/auth.api'
 import { saveBookingCache, loadBookingCache } from '../../../lib/navCache'
 import { bookingRef, fetchBookingBody, memoryBookingBody } from '../../../lib/driverBookings'
 import { navigationGate, formatGateDate } from '../../../lib/deliveryWindow'
 import { syncServerTime } from '../../../lib/serverTime'
 import { FONTS } from '../../../lib/config/fonts'
-import { groupCargoByDestination, itemLine, manifestFor, manifestForTripStop } from '../../../lib/cargoManifest'
+import { groupCargoByDestination, manifestFor, manifestForTripStop } from '../../../lib/cargoManifest'
 import {
   fetchTripsWithCache,
   recordLocalProgress,
@@ -72,10 +77,10 @@ import { useCrewWatch } from '../../../hooks/useCrewWatch'
 import { useLiveSignal } from '../../../hooks/useLiveSignal'
 import { useStopSteps, markStepProof, stepTimes, type StepTarget } from '../../../lib/stopSteps'
 import { StopStepModal } from './StopStepModal'
-import { StopSteps } from './StopSteps'
 import { currentPause, type TripPause } from '../../../lib/tripPause'
 import { PausedBanner } from './PausedBanner'
 import { DelayedBanner } from './DelayedBanner'
+import { appAlert } from '../../../lib/appAlert'
 
 /**
  * Assignment details — the screen a driver lands on from their booking list, and
@@ -208,11 +213,19 @@ const D = {
   amberBg:  '#1a1200',
 }
 
-/** The tag beside the booking ref, one per state of the job. */
+/**
+ * The tag beside the booking ref, one per state of the job.
+ *
+ * Pending and Approved read as Assigned here (user 2026-11-28, Figma
+ * "Assignments Details [pending]"): a booking on this screen is one the driver
+ * is assigned to, whatever stage the office is at. If it isn't released yet,
+ * the lock note under the button says so.
+ */
+const ASSIGNED_TAG = { label: 'ASSIGNED', color: '#a024ff', bg: 'rgba(160,36,255,0.19)' }
 const STATUS_TAG: Record<string, { label: string; color: string; bg: string }> = {
-  pending:    { label: 'PENDING',    color: D.yellow,  bg: D.yellowDim             },
-  approved:   { label: 'APPROVED',   color: D.orange,  bg: D.orangeDim             },
-  assigned:   { label: 'ASSIGNED',   color: '#a024ff', bg: 'rgba(160,36,255,0.19)' },
+  pending:    ASSIGNED_TAG,
+  approved:   ASSIGNED_TAG,
+  assigned:   ASSIGNED_TAG,
   in_transit: { label: 'IN TRANSIT', color: D.cyan,    bg: D.cyanDim               },
   delivered:  { label: 'DELIVERED',  color: '#ffffff', bg: 'rgba(255,255,255,0.19)' },
   completed:  { label: 'COMPLETED',  color: D.green,   bg: D.greenDim              },
@@ -298,6 +311,9 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
   const [loading,   setLoading]   = useState(true)
   const [error,     setError]     = useState<string | null>(null)
   const [booking,   setBooking]   = useState<Booking | null>(null)
+  // The booking as on screen, for callbacks created before it last changed.
+  const bookingNowRef = useRef<Booking | null>(null)
+  bookingNowRef.current = booking
   const [offline,   setOffline]   = useState(false)
   const [fromCache, setFromCache] = useState(false)
 
@@ -351,6 +367,24 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
   const routeTarget   = useCoachTarget('booking.route')
   const actionsTarget = useCoachTarget('booking.actions')
   const [finished, setFinished] = useState(false)
+
+  // Which trip the route and cargo show on a multi-trip booking: a trip_id,
+  // 'all', or null for the default (the trip under way; all once done).
+  const [tripView, setTripView] = useState<string | null>(null)
+  // Drop-off boxes the driver opened past their first two cargo lines.
+  const [openDrops, setOpenDrops] = useState<Set<string>>(new Set())
+  const toggleDrop = useCallback((key: string) => {
+    setOpenDrops((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }, [])
+  // Stop times + vehicle, folded away under "Show more details" once the job is moving.
+  const [moreOpen, setMoreOpen] = useState(false)
+  // The proof photo opened from a drop-off's Documents.
+  const [viewing, setViewing] = useState<string | null>(null)
 
   // What is confirmed on this phone but not on the server yet: drop-offs whose
   // confirmation (with its photo) is still in the offline queue, and the
@@ -479,19 +513,52 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookingId, onStart, load])
 
+  /**
+   * "Not fit to drive": the start is refused and the office told (online), so
+   * they can arrange another driver. Nothing is queued offline: the map must not
+   * open on a "queued" start, so the driver is asked to call instead.
+   */
+  const reportUnfit = async (earlyStart: boolean) => {
+    if (offline) {
+      appAlert('Call the office', 'You said you are not fit to drive. You are offline, so the office was not told. Call the Operations Manager so they can arrange another driver.')
+      return
+    }
+    const outcome = await startDelivery(bookingId, earlyStart, false)
+    if (typeof outcome === 'object') {
+      appAlert('Delivery not started', outcome.refused)
+    } else {
+      // No answer from the server (it was queued, or it started anyway): say what to do.
+      appAlert('Call the office', 'You said you are not fit to drive. Call the Operations Manager so they can arrange another driver.')
+    }
+    void load()
+  }
+
   const beginDeliveryInner = async (earlyStart: boolean, resuming: boolean) => {
-    const outcome: StartOutcome = await startDelivery(bookingId, earlyStart)
+    // BLOWBAGETS Self (user 2026-11-28): the last S is the driver's own fitness,
+    // which the Fleet Manager's vehicle inspection can't answer. Asked when the
+    // driver sets off, not on Resume or once the delivery is already moving.
+    let selfFit: boolean | undefined
+    if (!resuming && bookingNowRef.current?.status === 'assigned') {
+      const answer = await askSelfCheck()
+      if (answer === null) return
+      if (answer === 'unfit') {
+        await reportUnfit(earlyStart)
+        return
+      }
+      selfFit = true
+    }
+    const outcome: StartOutcome = await startDelivery(bookingId, earlyStart, selfFit)
     if (typeof outcome === 'object') {
       if (outcome.reassigned) {
         // Guidance left over from before the hand-over must not resume either.
         if (resuming) { endNavSession(); setResumable(null) }
-        Alert.alert(
+        appAlert(
           'Delivery handed to another driver',
           'The office assigned this booking to another driver or vehicle, so it can’t be started from this phone.',
         )
         void load()
       } else {
-        Alert.alert('Can’t start this delivery', outcome.refused)
+        appAlert('Can’t start this delivery', outcome.refused)
       }
       return
     }
@@ -501,7 +568,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
     // Offline: the map opens anyway; the map screen claims once online.
     const claim = await claimNavigation(bookingId)
     if (claim.kind === 'refused') {
-      Alert.alert('Can’t navigate this delivery', claim.message)
+      appAlert('Can’t navigate this delivery', claim.message)
       return
     }
     if (claim.kind === 'held') {
@@ -509,7 +576,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
       if (!takeOver) return
       const again = await claimNavigation(bookingId, true)
       if (again.kind === 'refused') {
-        Alert.alert('Can’t navigate this delivery', again.message)
+        appAlert('Can’t navigate this delivery', again.message)
         return
       }
     }
@@ -531,7 +598,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
   useCrewWatch(bookingId, useCallback(() => {
     endNavSession()
     setResumable(null)
-    Alert.alert(
+    appAlert(
       'Delivery handed to another driver',
       'The office assigned this booking to another driver or vehicle. It’s no longer on your list.',
       [{ text: 'OK', onPress: onBack }],
@@ -550,7 +617,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
    */
   const startWithOfflineCheck = useCallback((earlyStart: boolean): boolean => {
     if (offline) {
-      Alert.alert(
+      appAlert(
         'You’re offline',
         'A new route can’t be started without a connection — the map provider needs network to build it. ' +
         'If this trip is already in progress, guidance will keep running on the route it already loaded.',
@@ -600,12 +667,12 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
     // Locked because the booking isn't the driver's to run at all — not
     // something an override should be able to talk its way past.
     if (gate.reason === 'cancelled') {
-      Alert.alert('Booking cancelled', 'This booking has been cancelled and can’t be delivered.')
+      appAlert('Booking cancelled', 'This booking has been cancelled and can’t be delivered.')
       return false
     }
 
     if (gate.reason === 'vehicle_out_of_service') {
-      Alert.alert(
+      appAlert(
         'Vehicle out of service',
         'The Fleet Manager took this vehicle out of service. Don’t drive or load it — ' +
         'the Operations Manager will assign another vehicle, and navigation opens once they do.',
@@ -614,7 +681,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
     }
 
     if (gate.reason === 'not_assigned') {
-      Alert.alert(
+      appAlert(
         'Not ready to start',
         'This booking hasn’t been assigned for delivery yet. It will open once the Operations Manager releases it.',
       )
@@ -624,7 +691,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
     // Scheduled for a later day. Startable, but the driver has to mean it, and
     // the choice is recorded against the pickup.
     if (gate.reason === 'not_yet' && gate.scheduledFor) {
-      Alert.alert(
+      appAlert(
         'Not scheduled until ' + formatGateDate(gate.scheduledFor),
         'Starting now puts the delivery in transit ahead of the scheduled day, and that gets flagged on the booking. ' +
         'Only do this if the job really has moved up.',
@@ -658,7 +725,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
    */
   const handleResume = useCallback(() => {
     if (transfer) {
-      Alert.alert(
+      appAlert(
         'Move the load first',
         'Confirm the load transfer onto your vehicle before continuing to the drop-offs. ' +
         'Use “Open hand-over point” to get directions to where the old vehicle stopped.',
@@ -666,7 +733,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
       return
     }
     if (currentGate.reason === 'cancelled') {
-      Alert.alert('Booking cancelled', 'This booking has been cancelled and can’t be delivered.')
+      appAlert('Booking cancelled', 'This booking has been cancelled and can’t be delivered.')
       return
     }
     // Through the server too: Resume is how a start that never reached it (made
@@ -704,7 +771,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
     if (stop.status === 'pending') {
       // Paused by the office: no new progress (the server refuses it too).
       if (pauseRef.current) {
-        Alert.alert('Delivery paused by the office',
+        appAlert('Delivery paused by the office',
           'You can’t confirm a drop-off while the delivery is paused. Ask the Operations Manager or the Company Administrator to end the pause.')
         return
       }
@@ -864,9 +931,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
   const truckModel = truck?.truck_models?.name ?? truck?.truck_models?.vehicle_type ?? booking.truck_type_needed
   const plate      = truck?.plate_number
 
-  const tag       = STATUS_TAG[booking.status] ?? STATUS_TAG.assigned
-  const totalQty  = cargo.reduce((n, c) => n + (c.quantity ?? 0), 0)
-  const itemsMeta = totalQty > 0 ? `${totalQty} ITEM${totalQty === 1 ? '' : 'S'}` : null
+  const tag = STATUS_TAG[booking.status] ?? STATUS_TAG.assigned
 
   /* ── Which face of this screen the driver is looking at ─────────────────── */
 
@@ -908,18 +973,90 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
   // before that was recorded has no destination and is listed under "whole
   // trip" — guessing would be worse than admitting we do not know.
   const grouped = groupCargoByDestination(cargo)
+  const started = inTransit || isDone
 
-  const cargoByStop = dropoffs.map((d, i) => ({
-    destination: d,
-    label:       `DROP-OFF ${i + 1}`,
-    manifest:    manifestFor(grouped, d.destination_id),
-  }))
+  /* ── Sections: one route + cargo pair per trip shown ────────────────────
+   *
+   * Figma "delivery contents [pending] - w/trip": a multi-trip booking shows
+   * one trip at a time (picker "TRIP 1 ▾") or all of them ("TRIPS ▾"), each
+   * as its own route card and cargo card, split by a dashed line. A one-trip
+   * booking is a single pair with no picker.
+   */
+  const liveTrips = trips
+    .filter((t) => t.status !== 'cancelled')
+    .sort((a, b) => a.trip_number - b.trip_number)
+  const currentTrip = liveTrips.find((t) => t.status === 'in_transit')
+    ?? liveTrips.find((t) => t.status === 'pending')
+    ?? null
+  const chosen = tripView ?? (isDone || !currentTrip ? 'all' : currentTrip.trip_id)
+  // A trip the office cancelled since it was picked falls back to all trips.
+  const view = chosen === 'all' || liveTrips.some((t) => t.trip_id === chosen) ? chosen : 'all'
+  const dropNo = (destinationId: string) =>
+    dropoffs.findIndex((d) => d.destination_id === destinationId) + 1
+
+  const sections: Section[] = shuttle
+    ? (view === 'all' ? liveTrips : liveTrips.filter((t) => t.trip_id === view)).map((trip) => {
+        const stops = [...(trip.booking_trip_stops ?? [])].sort((a, b) => a.sequence_order - b.sequence_order)
+        // The bay the truck is heading to now: the first open one on the run under way.
+        const nextId = trip.status === 'in_transit'
+          ? stops.find((st) => st.status === 'pending')?.trip_stop_id
+          : undefined
+        return {
+          key:        trip.trip_id,
+          trip,
+          pickupDone: trip.status !== 'pending',
+          stops: stops.map((st) => ({
+            key:     st.trip_stop_id,
+            label:   `Drop-off ${dropNo(st.destination_id) || '?'}`,
+            address: st.booking_destinations?.address ?? '—',
+            state:   pinState(st.status, st.trip_stop_id === nextId),
+          })),
+          drops: stops.map((st) => ({
+            key:    st.trip_stop_id,
+            label:  `DROP-OFF ${dropNo(st.destination_id) || '?'}`,
+            items:  manifestForTripStop(grouped, st).items as CargoItem[],
+            visits: [{ trip, stop: st }],
+          })),
+        }
+      })
+    : (() => {
+        const doneOf = (d: Destination) => {
+          const vs = visitsByDestination.get(d.destination_id) ?? []
+          return d.status === 'delivered'
+            || (vs.length > 0 && vs.every((v) => v.stop.status === 'delivered'))
+        }
+        const nextId = inTransit ? dropoffs.find((d) => !doneOf(d) && d.status !== 'failed')?.destination_id : undefined
+        return [{
+          key:        'single',
+          trip:       null,
+          pickupDone: started,
+          stops: dropoffs.map((d, i) => ({
+            key:     d.destination_id,
+            label:   `Drop-off ${i + 1}`,
+            address: d.address,
+            state:   pinState(doneOf(d) ? 'delivered' : d.status, d.destination_id === nextId),
+          })),
+          drops: dropoffs.map((d, i) => ({
+            key:    d.destination_id,
+            label:  `DROP-OFF ${i + 1}`,
+            items:  manifestFor(grouped, d.destination_id).items as CargoItem[],
+            visits: visitsByDestination.get(d.destination_id) ?? [],
+          })),
+        }]
+      })()
+
+  // Lines from before cargo was bound to a drop-off ride with the last section.
+  if (grouped.unassigned.items.length > 0 && sections.length > 0) {
+    sections[sections.length - 1].drops.push({
+      key: 'unassigned', label: 'WHOLE TRIP', items: grouped.unassigned.items as CargoItem[], visits: [],
+    })
+  }
 
   return (
     <View style={s.root}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
-      {/* Header — back, then ref, schedule and the status tag below it */}
+      {/* Header — back, ref and schedule, the status tag on the right */}
       <View ref={headerTarget} collapsable={false} style={[s.header, { paddingTop: insets.top + 8 }]}>
         {onBack && (
           <TouchableOpacity
@@ -937,22 +1074,22 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
           <Text style={s.ref} numberOfLines={1}>
             {bookingRef(booking)}
           </Text>
-          <Text style={s.schedule} numberOfLines={1}>
+          <Text style={s.schedule} numberOfLines={2}>
             {fmtDate(booking.schedule_date)}
             {booking.driver_call_time ? ` · Leave ${fmtTime(booking.driver_call_time)}${callDayNote(booking)}` : ''}
             {booking.call_time ? ` · Pick-up ${fmtTime(booking.call_time)}` : ''}
           </Text>
+        </View>
 
-          <View style={[s.tag, { backgroundColor: tag.bg, borderColor: tag.color }]}>
-            <View style={[s.tagDot, { backgroundColor: tag.color }]} />
-            <Text style={[s.tagText, { color: tag.color }]}>{tag.label}</Text>
-          </View>
+        <View style={[s.tag, { backgroundColor: tag.bg, borderColor: tag.color }]}>
+          <View style={[s.tagDot, { backgroundColor: tag.color }]} />
+          <Text style={[s.tagText, { color: tag.color }]}>{tag.label}</Text>
         </View>
       </View>
 
       <ScrollView
         contentContainerStyle={{
-          paddingHorizontal: 24,
+          paddingHorizontal: 19,
           paddingBottom:     (dockH || 140) + 16,
           gap:               15,
         }}
@@ -973,250 +1110,177 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
           </Card>
         )}
 
-        {/* Route.
+        {shuttle && <TripPicker trips={liveTrips} value={view} onChange={setTripView} />}
 
-            On a shuttle this is grouped by RUN, because that is the shape of the
-            driver's day: back to the origin, load, out again. A flat list of
-            bays would read as one continuous drive and hide the reloads, which
-            are most of the work. A single-run booking gets the plain list — it
-            is what it has always been, and labelling it "TRIP 1 OF 1" would be
-            ceremony around a fact the driver already knows. */}
-        <View ref={routeTarget} collapsable={false}>
-        <Card
-          icon={<Road size={16} color={D.cyan} />}
-          title="ROUTE"
-          meta={
-            shuttle
-              ? `${counts.runsTotal} TRIPS · ${dropoffs.length} DROP-OFF${dropoffs.length === 1 ? '' : 'S'}`
-              : `${dropoffs.length} DROP-OFF${dropoffs.length === 1 ? '' : 'S'}`
-          }
-        >
-          {shuttle && (
-            <Text style={s.shuttleNote}>
-              One vehicle, {counts.runsTotal} trips — it returns to the pickup point to reload between each.
-            </Text>
-          )}
+        {sections.map((sec, si) => {
+          // A drop-off box is drawn when it has goods, or proof to supply / show.
+          const drops = sec.drops.filter((d) => d.items.length > 0 || (started && d.visits.length > 0))
+          const qty   = drops.reduce((n, d) => n + d.items.reduce((m, c) => m + (c.quantity ?? 0), 0), 0)
+          return (
+            <React.Fragment key={sec.key}>
+              {si > 0 && <Dashes />}
 
-          {shuttle ? (
-            trips
-              .filter((t) => t.status !== 'cancelled')
-              .map((trip) => {
-                const stops = [...(trip.booking_trip_stops ?? [])]
-                  .sort((a, b) => a.sequence_order - b.sequence_order)
-                const loaded = trip.status !== 'pending'
-
-                return (
-                  <View key={trip.trip_id} style={s.tripGroup}>
-                    <View style={s.tripHead}>
-                      <Text style={s.tripTitle}>TRIP {trip.trip_number}</Text>
-                      <View style={[
-                        s.tripPill,
-                        trip.status === 'completed' && { borderColor: D.green,  backgroundColor: D.greenDim },
-                        trip.status === 'in_transit' && { borderColor: D.cyan,   backgroundColor: D.cyanDim  },
-                      ]}>
-                        <Text style={[
-                          s.tripPillText,
-                          trip.status === 'completed' && { color: D.green },
-                          trip.status === 'in_transit' && { color: D.cyan  },
-                        ]}>
-                          {trip.status === 'completed' ? 'DONE'
-                            : trip.status === 'in_transit' ? 'OUT NOW'
-                            : 'NOT LOADED'}
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View style={s.innerBox}>
-                      {/* The origin is a stop on EVERY run — the truck comes back
-                          for the next load — so it is drawn on each one. */}
+              <View ref={si === 0 ? routeTarget : undefined} collapsable={false}>
+                <Card
+                  icon={<Road size={16} color={D.cyan} />}
+                  title="ROUTE"
+                  meta={`${sec.stops.length} DROP-OFF${sec.stops.length === 1 ? '' : 'S'}`}
+                  right={sec.trip ? `TRIP ${sec.trip.trip_number}` : null}
+                >
+                  <View style={s.innerBox}>
+                    <Stop
+                      state={sec.pickupDone ? 'done' : 'pickup'}
+                      label="Pickup"
+                      address={booking.origin}
+                      last={sec.stops.length === 0}
+                    />
+                    {sec.stops.map((st, i) => (
                       <Stop
-                        tone="pickup"
-                        label={`Load ${trip.trip_number}`}
-                        address={booking.origin}
-                        done={loaded}
-                        last={stops.length === 0}
+                        key={st.key}
+                        state={st.state}
+                        label={st.label}
+                        address={st.address}
+                        last={i === sec.stops.length - 1}
                       />
-                      {stops.map((stop, i) => (
-                        <Stop
-                          key={stop.trip_stop_id}
-                          tone="dropoff"
-                          label={stop.booking_destinations
-                            ? `Drop-off ${stop.booking_destinations.sequence_order}`
-                            : `Drop-off ${i + 1}`}
-                          address={stop.booking_destinations?.address ?? '—'}
-                          done={stop.status === 'delivered'}
-                          failed={stop.status === 'failed'}
-                          last={i === stops.length - 1}
-                        />
-                      ))}
-                    </View>
+                    ))}
                   </View>
-                )
-              })
-          ) : (
-            <View style={s.innerBox}>
-              <Stop
-                tone="pickup"
-                label="Pickup"
-                address={booking.origin}
-                done={inTransit || isDone}
-                last={dropoffs.length === 0}
-              />
-              {dropoffs.map((d, i) => {
-                const m = cargoByStop[i]?.manifest
+                </Card>
+              </View>
+
+              {/* Cargo, boxed by the drop-off it comes off at — and, once the
+                  job is moving, the proof for that stop directly under it: the
+                  driver is answering "did THIS come off HERE", and the answer and
+                  the evidence belong in one place. */}
+              {drops.length > 0 && (
+                <Card
+                  icon={<Boxes size={16} color={D.cyan} />}
+                  title="CARGO"
+                  meta={qty > 0 ? `${qty} ITEM${qty === 1 ? '' : 'S'}` : null}
+                >
+                  <View style={{ gap: 12, marginTop: 12 }}>
+                    {drops.map((d) => (
+                      <DropBox
+                        key={d.key}
+                        label={d.label}
+                        items={d.items}
+                        flat={started}
+                        collapsible={started}
+                        expanded={openDrops.has(d.key)}
+                        onToggle={() => toggleDrop(d.key)}
+                      >
+                        {started && d.visits.length > 0 && (
+                          <StopProofSection
+                            visits={d.visits}
+                            shuttle={shuttle}
+                            label={d.label === 'WHOLE TRIP' ? 'Drop-off' : `Drop-off ${d.label.replace('DROP-OFF ', '')}`}
+                            uploading={uploading}
+                            sending={sendingStops}
+                            onUpload={openProof}
+                            onView={setViewing}
+                          />
+                        )}
+                      </DropBox>
+                    ))}
+                  </View>
+                  {si === sections.length - 1 && uploadError ? <Text style={s.uploadError}>{uploadError}</Text> : null}
+                </Card>
+              )}
+            </React.Fragment>
+          )
+        })}
+
+        {/* The times at the loading and each drop-off, per trip: arrival
+            (recorded by the app), start, finish, proof. Read only: the steps
+            are worked on the navigation map (user 2026-11-28). A pick-up or
+            delivery the office recorded for the driver says so, never
+            "proof sent" — there is no photo. */}
+        {started && moreOpen && liveTrips.length > 0 && (
+          <Card icon={<Clock size={16} color={D.cyan} />} title="TRANSIT STOP TIMES">
+            <View style={{ gap: 14, marginTop: 12 }}>
+              {liveTrips.map((trip) => {
+                const total   = stopSteps.totalFor(trip.trip_id)
+                const pickupT = stopSteps.timesFor({ tripId: trip.trip_id })
+                const visits  = [...(trip.booking_trip_stops ?? [])].sort((a, b) => a.sequence_order - b.sequence_order)
+                const pickupByOffice = byOffice(trip.pickup_proof_photo_url, trip.pickup_proof_override_reason)
                 return (
-                  <Stop
-                    key={d.destination_id}
-                    tone="dropoff"
-                    label={`Drop-off ${i + 1}`}
-                    address={d.address}
-                    done={d.status === 'delivered'}
-                    failed={d.status === 'failed'}
-                    // What actually comes off here, at a glance, on the route list.
-                    note={m && m.totalQty > 0 ? `${m.totalQty} item${m.totalQty === 1 ? '' : 's'} for this stop` : null}
-                    last={i === dropoffs.length - 1}
-                  />
+                  <View key={trip.trip_id} style={{ gap: 10 }}>
+                    {shuttle && <Text style={s.timesTrip}>TRIP {trip.trip_number}</Text>}
+                    <TimesBox
+                      title="LOADING"
+                      rows={[
+                        ['Arrive at Pickup',  pickupT.arrived],
+                        ['Start Loading',     pickupT.started],
+                        ['Loading Finished',  pickupT.finished],
+                        [pickupByOffice ? 'Picked Up (Recorded by the Office)' : 'Proof of Pickup',
+                          trip.pickup_proof_at ?? pickupT.proof],
+                        ...(total
+                          ? [['Total Loaded', null, `${total.pieces.toLocaleString('en-PH')} pcs${total.weight_kg ? ` · ${total.weight_kg.toLocaleString('en-PH')} kg` : ''}`] as TimeRow]
+                          : []),
+                      ]}
+                    />
+                    {visits.map((stop) => {
+                      const n = dropNo(stop.destination_id)
+                      const t = stopSteps.timesFor({ tripId: trip.trip_id, tripStopId: stop.trip_stop_id })
+                      const deliveredAt = stop.delivered_at ?? t.proof
+                      const label = byOffice(stop.proof_photo_url, stop.proof_override_reason)
+                        ? 'Delivered (Recorded by the Office)'
+                        : sendingStops.has(stop.trip_stop_id)
+                          ? 'Delivered (Photo Sending)'
+                          : deliveredAt && !stop.proof_photo_url
+                            ? 'Delivered (Photo Not Sent Yet)'
+                            : 'Delivered (Proof Sent)'
+                      return (
+                        <TimesBox
+                          key={stop.trip_stop_id}
+                          title={`UNLOADING · DROP-OFF ${n || '?'}`}
+                          rows={[
+                            ['Arrive at Drop-off', t.arrived],
+                            ['Start Unloading',    t.started],
+                            ['Unloading Finished', t.finished],
+                            [label,                deliveredAt],
+                          ]}
+                        />
+                      )
+                    })}
+                  </View>
                 )
               })}
             </View>
-          )}
-        </Card>
-        </View>
-
-        {/* Cargo, grouped by the stop it comes off at — and, once the job is
-            moving, the proof for that stop sitting directly under it. Putting
-            the upload beside the manifest rather than in a section of its own is
-            deliberate: the driver is answering "did THIS come off HERE", and
-            the answer and the evidence should not be in two different places. */}
-        {cargo.length > 0 && (
-          <Card icon={<Boxes size={16} color={D.cyan} />} title="CARGO" meta={itemsMeta}>
-            {cargoByStop.map(({ destination, label, manifest }) => (
-              <View key={destination.destination_id}>
-                {manifest.items.map((c, i) => (
-                  <CargoBlock
-                    key={c.item_id}
-                    item={c}
-                    index={i}
-                    dropoffLabel={label}
-                    // Repeat the stop's address on its first line so the driver
-                    // reads WHERE before WHAT.
-                    dropoffAddress={i === 0 ? destination.address : null}
-                  />
-                ))}
-
-                {(inTransit || isDone) && (
-                  <StopProofSection
-                    visits={visitsByDestination.get(destination.destination_id) ?? []}
-                    loadOf={(stop) => {
-                      // This visit's share, when the plan splits the drop-off's goods.
-                      if (!stop.booking_trip_cargo?.length) return null
-                      return manifestForTripStop(grouped, stop).items.map(itemLine).join(', ') || null
-                    }}
-                    shuttle={shuttle}
-                    label={label}
-                    uploading={uploading}
-                    sending={sendingStops}
-                    onUpload={openProof}
-                  />
-                )}
-              </View>
-            ))}
-            {grouped.unassigned.items.map((c, i) => (
-              <CargoBlock
-                key={c.item_id}
-                item={c}
-                index={i}
-                dropoffLabel="WHOLE TRIP"
-                dropoffAddress={null}
-              />
-            ))}
-            {uploadError ? <Text style={s.uploadError}>{uploadError}</Text> : null}
           </Card>
         )}
 
-        {/* The times at the loading and each drop-off, per trip, and what went
-            on the truck: arrival (recorded by the app), start, finish. The same
-            Start button as on the map's panel, for a stop worked from here. A
-            drop-off served over several trips shows each visit. */}
-        {(inTransit || isDone) && trips.length > 0 && (
-          <Card icon={<Clock size={16} color={D.cyan} />} title="STOP TIMES">
-            {trips.map((trip) => {
-              const canTap = inTransit && trip.status !== 'completed'
-              const total  = stopSteps.totalFor(trip.trip_id)
-              const visits = [...(trip.booking_trip_stops ?? [])].sort((a, b) => a.sequence_order - b.sequence_order)
-              return (
-                <View key={trip.trip_id} style={{ gap: 10, marginBottom: 12 }}>
-                  <Text style={s.stepsTrip}>
-                    {shuttle ? `TRIP ${trip.trip_number} · ` : ''}
-                    {total
-                      ? `Total loaded: ${total.pieces.toLocaleString('en-PH')} pcs${total.weight_kg ? ` · ${total.weight_kg.toLocaleString('en-PH')} kg` : ''}`
-                      : 'Not loaded yet'}
-                  </Text>
-                  <View style={{ gap: 4 }}>
-                    <Text style={s.stepsWhere}>Loading · {booking.origin}</Text>
-                    <StopSteps
-                      kind="pickup"
-                      times={stopSteps.timesFor({ tripId: trip.trip_id })}
-                      showButton={canTap}
-                      onNext={() => pause ? Alert.alert('Delivery paused by the office', 'Steps can’t be recorded while the delivery is paused.') : setStepFor({
-                        target: { tripId: trip.trip_id }, kind: 'pickup', label: `Pickup · ${booking.origin}`,
-                        coords: (() => {
-                          // Sent by the booking read (navigation builds the pickup leg from them).
-                          const o = booking as unknown as { origin_latitude?: number | null; origin_longitude?: number | null }
-                          return o.origin_latitude != null && o.origin_longitude != null
-                            ? { latitude: Number(o.origin_latitude), longitude: Number(o.origin_longitude) } : null
-                        })(),
-                      })}
-                    />
-                  </View>
-                  {visits.map((stop) => {
-                    const n = dropoffs.findIndex((d) => d.destination_id === stop.destination_id) + 1
-                    const target = { tripId: trip.trip_id, tripStopId: stop.trip_stop_id }
-                    // Which visit to this drop-off this is, across the trips.
-                    const allVisits = trips
-                      .slice().sort((a, b) => a.trip_number - b.trip_number)
-                      .flatMap((t) => (t.booking_trip_stops ?? []).filter((v) => v.destination_id === stop.destination_id))
-                    const visitNo = allVisits.findIndex((v) => v.trip_stop_id === stop.trip_stop_id) + 1
-                    return (
-                      <View key={stop.trip_stop_id} style={{ gap: 4 }}>
-                        <Text style={s.stepsWhere} numberOfLines={1}>
-                          Unloading · Drop-off {n || '?'}
-                          {allVisits.length > 1 ? ` · visit ${visitNo} of ${allVisits.length}` : ''}
-                          {stop.booking_destinations?.address ? ` · ${stop.booking_destinations.address}` : ''}
-                        </Text>
-                        <StopSteps
-                          kind="dropoff"
-                          times={stopSteps.timesFor(target)}
-                          // Loading first: a drop-off's steps start once the run is loaded.
-                          showButton={canTap && trip.status === 'in_transit'}
-                          onNext={() => pause ? Alert.alert('Delivery paused by the office', 'Steps can’t be recorded while the delivery is paused.') : setStepFor({
-                            target, kind: 'dropoff', stop,
-                            label: `Drop-off ${n || '?'}${stop.booking_destinations?.address ? ` · ${stop.booking_destinations.address}` : ''}`,
-                            coords: dropoffCoords(stop),
-                          })}
-                        />
-                      </View>
-                    )
-                  })}
-                </View>
-              )
-            })}
-          </Card>
-        )}
-
-        {/* Vehicle */}
-        <Card icon={<Truck size={16} color={D.cyan} />} title="VEHICLE">
-          <Text style={s.vehicle} numberOfLines={1}>
-            {plate ? <Text style={{ color: D.cyan }}>{plate} </Text> : null}
-            <Text style={{ color: plate ? D.faint : D.cyan }}>{truckModel}</Text>
-          </Text>
-          {/* Only while still in the yard: on the road it is Operations' call. */}
-          {gate.reason === 'vehicle_out_of_service' && (
-            <Text style={{ color: D.red, fontSize: 12, fontWeight: '700', marginTop: 6 }}>
-              OUT OF SERVICE — do not drive or load this vehicle
+        {/* Vehicle — always before the start; behind "Show more" after it. */}
+        {(!started || moreOpen) && (
+          <Card icon={<Truck size={16} color={D.cyan} />} title="VEHICLE">
+            <Text style={s.vehicle} numberOfLines={1}>
+              {plate ? <Text style={{ color: D.cyan }}>{plate} </Text> : null}
+              <Text style={{ color: plate ? D.faint : D.cyan }}>{truckModel}</Text>
             </Text>
-          )}
-        </Card>
+            {/* Only while still in the yard: on the road it is Operations' call. */}
+            {gate.reason === 'vehicle_out_of_service' && (
+              <Text style={{ color: D.red, fontSize: 12, fontWeight: '700', marginTop: 6 }}>
+                OUT OF SERVICE — do not drive or load this vehicle
+              </Text>
+            )}
+          </Card>
+        )}
+
+        {started && (
+          <TouchableOpacity
+            onPress={() => setMoreOpen((o) => !o)}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: moreOpen }}
+            accessibilityLabel={moreOpen ? 'Show less details' : 'Show more details: stop times and vehicle'}
+            style={s.pageMore}
+            hitSlop={8}
+          >
+            <Text style={s.pageMoreText}>{moreOpen ? 'SHOW LESS DETAILS' : 'SHOW MORE DETAILS'}</Text>
+            {moreOpen
+              ? <ChevronUp size={14} color={D.cyan} strokeWidth={2.5} />
+              : <ChevronDown size={14} color={D.cyan} strokeWidth={2.5} />}
+          </TouchableOpacity>
+        )}
       </ScrollView>
 
       {/* Start navigation */}
@@ -1266,6 +1330,21 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
                   : `Navigation opens ${gate.scheduledFor ? formatGateDate(gate.scheduledFor) : 'on the scheduled day'}.`}
             </Text>
           </View>
+        )}
+
+        {/* Always available before the start, above the start button (Figma
+            pending frame): seeing the run is never gated, only running it. */}
+        {onPreview && !isDone && !inTransit && (
+          <TouchableOpacity
+            activeOpacity={0.75}
+            onPress={onPreview}
+            accessibilityRole="button"
+            accessibilityLabel="Preview the route on a map, view only"
+            style={s.previewRouteBtn}
+          >
+            <Eye size={20} color={D.faint} strokeWidth={2} />
+            <Text style={s.previewRouteText}>Preview Route</Text>
+          </TouchableOpacity>
         )}
 
         {/* The one action this face of the screen is for.
@@ -1409,20 +1488,6 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
         )}
         {/* Running late (the server's delay flag); a pause explains itself instead. */}
         {!pause && !isDone && <DelayedBanner booking={booking} />}
-
-        {/* Always available: seeing the run is never gated, only running it. */}
-        {onPreview && !isDone && !inTransit && (
-          <TouchableOpacity
-            activeOpacity={0.75}
-            onPress={onPreview}
-            accessibilityRole="button"
-            accessibilityLabel="Preview the route on a map, view only"
-            style={s.previewBtn}
-          >
-            <Eye size={16} color={D.white} strokeWidth={2} />
-            <Text style={s.previewText}>Preview route</Text>
-          </TouchableOpacity>
-        )}
       </View>
 
       {/* Confirming a stop from here rather than from the map: same modal, so a
@@ -1440,7 +1505,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
             const f = stepFor
             setStepFor(null)
             if (f.kind === 'dropoff' && f.stop) { setProofFor({ stop: f.stop, label: f.label, mode: 'confirm' }); return }
-            Alert.alert('Proof of pickup', 'Take the proof of pickup from the navigation map (Start or Resume Navigation).')
+            appAlert('Proof of pickup', 'Take the proof of pickup from the navigation map (Start or Resume Navigation).')
           }}
           onClose={() => setStepFor(null)}
         />
@@ -1503,6 +1568,26 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
         onCancel={() => setDialog(null)}
       />
 
+      {/* A proof photo opened from a drop-off's Documents. */}
+      <Modal
+        visible={!!viewing}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setViewing(null)}
+      >
+        <View style={s.viewer}>
+          <TouchableOpacity
+            onPress={() => setViewing(null)}
+            accessibilityRole="button"
+            accessibilityLabel="Close the photo"
+            style={[s.viewerClose, { top: insets.top + 12 }]}
+          >
+            <X size={22} color={D.white} />
+          </TouchableOpacity>
+          {viewing ? <FileImage uri={viewing} style={s.viewerImage} resizeMode="contain" /> : null}
+        </View>
+      </Modal>
+
       <CoachMarkTour tourId="booking-details" steps={DETAILS_TOUR} ready />
     </View>
   )
@@ -1510,12 +1595,42 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
 
 /* ── Pieces ───────────────────────────────────────────────────────────── */
 
+/** How a pin on the route reads (Figma "Assignments Details" frames). */
+type PinState = 'pickup' | 'done' | 'next' | 'ahead' | 'failed'
+
+function pinState(status: string, isNext: boolean): PinState {
+  if (status === 'delivered') return 'done'
+  if (status === 'failed')    return 'failed'
+  return isNext ? 'next' : 'ahead'
+}
+
+/** The office confirmed this stop for the driver, with no photo (backend: "Confirmed by the office: …"). */
+function byOffice(photo: string | null | undefined, reason: string | null | undefined): boolean {
+  return !photo && typeof reason === 'string' && /^Confirmed by the office/i.test(reason)
+}
+
+/** One route + cargo pair: the whole booking, or one trip of a multi-trip one. */
+interface Section {
+  key:        string
+  trip:       Trip | null
+  pickupDone: boolean
+  stops: Array<{ key: string; label: string; address: string; state: PinState }>
+  drops: Array<{
+    key:    string
+    label:  string
+    items:  CargoItem[]
+    visits: Array<{ trip: Trip; stop: TripStop }>
+  }>
+}
+
 function Card({
-  icon, title, meta, children,
+  icon, title, meta, right, children,
 }: {
   icon:      React.ReactNode
   title:     string
   meta?:     string | null
+  /** Cyan tag on the right of the heading, e.g. "TRIP 1". */
+  right?:    string | null
   children:  React.ReactNode
 }) {
   return (
@@ -1529,42 +1644,115 @@ function Card({
             <Text style={s.cardMeta}>{meta}</Text>
           </>
         ) : null}
+        {right ? <Text style={s.cardRight}>{right}</Text> : null}
       </View>
       {children}
     </View>
   )
 }
 
-function Stop({
-  tone, label, address, note, last, done = false, failed = false,
+/** A dashed rule. Drawn as dashes because RN's dashed one-side border is unreliable on Android. */
+function Dashes({ color = D.cardLine, style }: { color?: string; style?: object }) {
+  return (
+    <View style={[s.dashes, style]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+      {Array.from({ length: 60 }, (_, i) => (
+        <View key={i} style={[s.dash, { backgroundColor: color }]} />
+      ))}
+    </View>
+  )
+}
+
+/**
+ * "TRIP 1 ▾" / "TRIPS ▾": which trip of a multi-trip booking the route and
+ * cargo show. Each choice also says where that trip is (Not loaded, On the
+ * road, Done), which the old per-trip pills used to say.
+ */
+function TripPicker({
+  trips, value, onChange,
 }: {
-  tone:    'pickup' | 'dropoff'
+  trips:    Trip[]
+  value:    string
+  onChange: (v: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const current = trips.find((t) => t.trip_id === value)
+  const label   = value === 'all' || !current ? 'TRIPS' : `TRIP ${current.trip_number}`
+  const options = [
+    { id: 'all', text: 'All trips', note: `${trips.length} trips` },
+    ...trips.map((t) => ({
+      id:   t.trip_id,
+      text: `Trip ${t.trip_number}`,
+      note: t.status === 'completed' ? 'Done' : t.status === 'in_transit' ? 'On the road' : 'Not loaded',
+    })),
+  ]
+
+  return (
+    <View>
+      <TouchableOpacity
+        onPress={() => setOpen((o) => !o)}
+        activeOpacity={0.75}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        accessibilityLabel={`Showing ${label.toLowerCase()}. Choose which trip to show`}
+        style={s.pickerBar}
+      >
+        <Text style={s.pickerText}>{label}</Text>
+        {open
+          ? <ChevronUp size={14} color={D.cyan} strokeWidth={2.5} />
+          : <ChevronDown size={14} color={D.cyan} strokeWidth={2.5} />}
+      </TouchableOpacity>
+      {open && (
+        <View style={s.pickerList}>
+          {options.map((o) => {
+            const on = o.id === value
+            return (
+              <TouchableOpacity
+                key={o.id}
+                onPress={() => { onChange(o.id); setOpen(false) }}
+                activeOpacity={0.75}
+                accessibilityRole="button"
+                accessibilityState={{ selected: on }}
+                style={[s.pickerItem, on && { backgroundColor: D.cyanDim }]}
+              >
+                <Text style={[s.pickerItemText, on && { color: D.cyan }]}>{o.text}</Text>
+                <Text style={s.pickerItemNote}>{o.note}</Text>
+              </TouchableOpacity>
+            )
+          })}
+        </View>
+      )}
+    </View>
+  )
+}
+
+function Stop({
+  state, label, address, last,
+}: {
+  state:   PinState
   label:   string
   address: string
-  /** What comes off here, e.g. "3 items for this stop". */
-  note?:   string | null
   last:    boolean
-  /** Confirmed. Turns the pin green with a tick, as in the design. */
-  done?:   boolean
-  failed?: boolean
 }) {
-  // Colour carries the state, not the kind of stop: green once it is behind the
-  // driver, amber while it is still ahead of them. On a shuttle the same pickup
-  // point is drawn several times in different states, so a pin whose colour said
-  // only "this is a pickup" would tell the driver nothing about their day.
-  const color = done   ? D.green
-              : failed ? D.red
-              : tone === 'pickup' ? D.orange : D.orange
-  const fill  = done   ? D.greenDim
-              : failed ? D.redDim
-              : D.orangeDim
+  // Colour carries where the stop is in the driver's day: yellow pickup not
+  // loaded yet, green behind them, orange the one they are heading to, grey
+  // still ahead, red failed.
+  const color = state === 'done'   ? D.green
+              : state === 'failed' ? D.red
+              : state === 'pickup' ? D.yellow
+              : state === 'next'   ? D.orange
+              : D.faint
+  const fill  = state === 'done'   ? D.greenDim
+              : state === 'failed' ? D.redDim
+              : state === 'pickup' ? D.yellowDim
+              : state === 'next'   ? D.orangeDim
+              : 'rgba(129,129,129,0.19)'
 
   return (
     <View style={s.stopRow}>
       <View style={s.stopRail}>
         <View style={[s.pin, { backgroundColor: fill, borderColor: color }]}>
-          {done
-            ? <Check size={14} color={color} strokeWidth={3} />
+          {state === 'done'
+            ? <MapPinCheck size={14} color={color} strokeWidth={2} />
             : <MapPin size={14} color={color} strokeWidth={2} />}
         </View>
         {!last && <View style={s.stopConnector} />}
@@ -1574,8 +1762,55 @@ function Stop({
           <Text style={{ color: D.faint }}>{label}: </Text>
           {address}
         </Text>
-        {note ? <Text style={s.stopNote} numberOfLines={1}>{note}</Text> : null}
       </View>
+    </View>
+  )
+}
+
+/**
+ * One drop-off's goods, boxed. Once the job is moving it folds to its first two
+ * lines ("Show more details"); the proof under it (children) stays visible
+ * either way, so the Upload button is never hidden behind the fold.
+ */
+function DropBox({
+  label, items, flat, collapsible, expanded, onToggle, children,
+}: {
+  label:       string
+  items:       CargoItem[]
+  /** In transit / done: lines split by dashes rather than each in its own card. */
+  flat:        boolean
+  collapsible: boolean
+  expanded:    boolean
+  onToggle:    () => void
+  children?:   React.ReactNode
+}) {
+  const LIMIT  = 2
+  const folds  = collapsible && items.length > LIMIT
+  const shown  = folds && !expanded ? items.slice(0, LIMIT) : items
+
+  return (
+    <View style={s.dropBox}>
+      <Text style={s.dropTitle}>{label}</Text>
+      {shown.map((c, i) => (
+        <CargoBlock key={c.item_id} item={c} index={i} flat={flat} />
+      ))}
+      {children}
+      {folds && (
+        <TouchableOpacity
+          onPress={onToggle}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityState={{ expanded }}
+          accessibilityLabel={expanded ? 'See less details' : `Show more details, ${items.length - LIMIT} more cargo`}
+          style={s.dropMore}
+          hitSlop={8}
+        >
+          <Text style={s.dropMoreText}>{expanded ? 'SEE LESS DETAILS' : 'SHOW MORE DETAILS'}</Text>
+          {expanded
+            ? <ChevronUp size={12} color={D.yellow} strokeWidth={2.5} />
+            : <ChevronDown size={12} color={D.yellow} strokeWidth={2.5} />}
+        </TouchableOpacity>
+      )}
     </View>
   )
 }
@@ -1592,118 +1827,111 @@ function Stop({
  * and each delivery has its own picture; collapsing them into a single "proof"
  * would quietly discard one of them.
  *
- * The button says the same thing in all three of its states, because to the
- * driver it is the same job — the difference is only whether anything is still
- * owed:
- *   green  something is missing (the stop, its photo, or both)
- *   grey   nothing is owed; the row shows the document instead
+ *   owed     the stop, its photo, or both are missing → green Upload button
+ *   sending  confirmed here, still in the offline queue → amber note
+ *   settled  confirmed and evidenced → listed under DOCUMENTS (tap to view)
  */
 function StopProofSection({
-  visits, shuttle, label, uploading, sending, onUpload, readOnly = false, loadOf,
+  visits, shuttle, label, uploading, sending, onUpload, onView,
 }: {
   visits:    Array<{ trip: Trip; stop: TripStop }>
-  /** What this visit carries, e.g. "10 x Cartons" — null when the plan has no quantities. */
-  loadOf?:   (stop: TripStop) => string | null
   shuttle:   boolean
-  /** The second driver: show what is done, never the upload button. */
-  readOnly?: boolean
   label:     string
   /** trip_stop_id currently uploading, if any. */
   uploading: string | null
   /** trip_stop_ids confirmed on this phone whose confirmation + photo are still being sent. */
   sending:   Set<string>
   onUpload:  (stop: TripStop, label: string) => void
+  onView:    (url: string) => void
 }) {
   if (visits.length === 0) return null
 
+  const isSettled = (st: TripStop) =>
+    (st.status === 'delivered' || st.status === 'failed') && !!st.proof_photo_url
+  const inQueue = visits.filter((v) => sending.has(v.stop.trip_stop_id))
+  const owed    = visits.filter((v) => !sending.has(v.stop.trip_stop_id) && !isSettled(v.stop))
+  const docs    = visits.filter((v) => !sending.has(v.stop.trip_stop_id) && isSettled(v.stop))
+
   return (
     <View style={s.proofSection}>
-      <View style={s.proofHead}>
-        <FileText size={13} color={D.faint} />
-        <Text style={s.proofTitle}>DOCUMENTS</Text>
-      </View>
+      {inQueue.map(({ stop }) => (
+        // Offering "upload" now would only be refused by the server.
+        <View key={stop.trip_stop_id} style={s.proofSending}>
+          <ActivityIndicator size="small" color={D.amber} />
+          <Text style={[s.proofSendingText]} numberOfLines={2}>
+            Sending the confirmation and photo — goes out as soon as there is signal
+          </Text>
+        </View>
+      ))}
 
-      {visits.map(({ trip, stop }) => {
-        const busy    = uploading === stop.trip_stop_id
-        const hasPhoto = !!stop.proof_photo_url
-        const done     = stop.status === 'delivered' || stop.status === 'failed'
-        // Nothing owed only when the drop is confirmed AND evidenced.
-        const settled  = done && hasPhoto
-
+      {owed.map(({ trip, stop }) => {
+        const busy = uploading === stop.trip_stop_id
+        const done = stop.status === 'delivered' || stop.status === 'failed'
         return (
-          <View key={stop.trip_stop_id} style={s.proofRow}>
-            {shuttle && (
-              <Text style={s.proofTripTag}>
-                TRIP {trip.trip_number}{loadOf?.(stop) ? ` · ${loadOf(stop)}` : ''}
+          <View key={stop.trip_stop_id} style={{ gap: 5 }}>
+            <TouchableOpacity
+              onPress={() => onUpload(stop, label)}
+              disabled={busy}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel={
+                done
+                  ? 'Upload the proof of delivery photo for this drop-off'
+                  : 'Confirm this drop-off and upload its proof of delivery'
+              }
+              style={[s.proofBtn, busy && { opacity: 0.6 }]}
+            >
+              {busy
+                ? <ActivityIndicator size="small" color={D.green} />
+                : <ImageUp size={16} color={D.green} strokeWidth={2} />}
+              <Text style={s.proofBtnText}>
+                {busy ? 'Uploading…' : `Upload Proof of Delivery${shuttle && visits.length > 1 ? ` · Trip ${trip.trip_number}` : ''}`}
               </Text>
-            )}
-
-            {sending.has(stop.trip_stop_id) ? (
-              // Confirmed here, photo and all, but still in the offline queue.
-              // Offering "upload" now would only be refused by the server.
-              <View style={s.proofDone}>
-                <ActivityIndicator size="small" color={D.amber} />
-                <Text style={[s.proofDoneText, { color: D.amber }]} numberOfLines={2}>
-                  Sending the confirmation and photo — goes out as soon as there is signal
-                </Text>
-              </View>
-            ) : settled ? (
-              <View style={s.proofDone}>
-                <PackageCheck size={15} color={D.green} strokeWidth={2} />
-                <Text style={s.proofDoneText} numberOfLines={1}>
-                  Proof of delivery uploaded
-                </Text>
-              </View>
-            ) : readOnly ? (
+            </TouchableOpacity>
+            {/* The stop is recorded and the client was told it arrived; only
+                the paperwork is outstanding, so the driver needn't drive back. */}
+            {done && !busy ? (
               <Text style={s.proofPending} numberOfLines={2}>
-                {done ? 'Delivered. The main driver uploads the proof photo.' : 'Not delivered yet.'}
-              </Text>
-            ) : (
-              <TouchableOpacity
-                onPress={() => onUpload(stop, label)}
-                disabled={busy}
-                activeOpacity={0.85}
-                accessibilityRole="button"
-                accessibilityLabel={
-                  done
-                    ? 'Upload the proof of delivery photo for this drop-off'
-                    : 'Confirm this drop-off and upload its proof of delivery'
-                }
-                style={[s.proofBtn, busy && { opacity: 0.6 }]}
-              >
-                {busy
-                  ? <ActivityIndicator size="small" color={D.green} />
-                  : <Camera size={16} color={D.green} strokeWidth={2} />}
-                <Text style={s.proofBtnText}>
-                  {busy ? 'Uploading…' : 'Upload Proof of Delivery'}
-                </Text>
-              </TouchableOpacity>
-            )}
-
-            {/* Said plainly rather than left to the button's colour: the stop is
-                recorded and the client has been told it arrived — it is only the
-                paperwork that is outstanding, and a driver should not think they
-                still have to drive back. */}
-            {done && !hasPhoto && !busy && !readOnly && !sending.has(stop.trip_stop_id) ? (
-              <Text style={s.proofPending} numberOfLines={2}>
-                Delivered — the photo never made it out. Upload it whenever you have signal.
+                {byOffice(stop.proof_photo_url, stop.proof_override_reason)
+                  ? 'Recorded by the office, no photo. Add one if you took it.'
+                  : 'Delivered — the photo never made it out. Upload it whenever you have signal.'}
               </Text>
             ) : null}
           </View>
         )
       })}
+
+      {docs.length > 0 && (
+        <View style={{ gap: 6 }}>
+          <Text style={s.docsTitle}>DOCUMENTS</Text>
+          {docs.map(({ trip, stop }) => (
+            <TouchableOpacity
+              key={stop.trip_stop_id}
+              onPress={() => onView(stop.proof_photo_url!)}
+              activeOpacity={0.75}
+              accessibilityRole="button"
+              accessibilityLabel="Open the proof of delivery photo"
+              style={s.docRow}
+            >
+              <Text style={s.docText} numberOfLines={1}>
+                Proof of delivery photo{shuttle ? ` · Trip ${trip.trip_number}` : ''}
+              </Text>
+              <Eye size={14} color={D.faint} strokeWidth={2} />
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
     </View>
   )
 }
 
 function CargoBlock({
-  item, index, dropoffLabel, dropoffAddress,
+  item, index, flat,
 }: {
-  item:            CargoItem
-  index:           number
-  dropoffLabel:    string | null
-  /** Shown once per stop, above its first cargo block. */
-  dropoffAddress?: string | null
+  item:  CargoItem
+  index: number
+  /** In transit / done: dashed split, no card. Before the start: each line its own card. */
+  flat:  boolean
 }) {
   const product   = pick(item.products, item.product_text)
   const commodity = pick(item.commodities, item.commodity_text)
@@ -1711,125 +1939,115 @@ function CargoBlock({
   const ashc      = codeLabel(item.ashc, item.ashc_text)
   const dims      = dimensions(item)
 
-  return (
-    <View style={index > 0 ? { marginTop: 14 } : undefined}>
-      {dropoffAddress ? (
-        <Text style={s.cargoStopAddress} numberOfLines={2}>{dropoffAddress}</Text>
-      ) : null}
-      <Text style={s.cargoHeading}>
-        CARGO {index + 1}
-        {dropoffLabel ? <Text style={{ color: D.faint }}> ({dropoffLabel})</Text> : null}
-      </Text>
+  const rows = (
+    <>
+      <SpecRow flat={flat} label="Commodity"             value={commodity} />
+      <SpecRow flat={flat} label="Special Handling Code" value={shc} />
+      <SpecRow flat={flat} label="Additional SHC"        value={ashc} />
+      <SpecRow flat={flat} label="Weight" value={item.weight_kg  != null ? `${item.weight_kg} kg`   : null} accent />
+      <SpecRow flat={flat} label="Volume" value={item.volume_cbm != null ? `${item.volume_cbm} CBM` : null} accent />
+      <SpecRow flat={flat} label="L × W × H" value={dims} accent />
+    </>
+  )
 
-      <View style={s.innerBox}>
-        <View style={s.cargoTop}>
-          <View style={s.cargoTopLeft}>
-            <Text style={s.cargoLabel}>Product</Text>
-            <Text style={s.cargoProduct} numberOfLines={2}>{product ?? '—'}</Text>
-          </View>
+  if (flat) {
+    return (
+      <View style={{ marginTop: index > 0 ? 4 : 8 }}>
+        {index > 0 && <Dashes style={{ marginBottom: 12 }} />}
+        <Text style={s.cargoHeadingFlat}>CARGO {index + 1}</Text>
+        <View style={s.cargoTopFlat}>
+          <Text style={s.cargoProductFlat} numberOfLines={2}>{product ?? '—'}</Text>
           {item.quantity != null && (
-            <Text style={s.cargoQty}>
-              <Text style={s.cargoQtyLabel}>Quantity: </Text>
+            <Text style={s.cargoQtyFlat}>
+              <Text style={{ color: D.white }}>Quantity: </Text>
               {item.quantity}
             </Text>
           )}
         </View>
-
-        <SpecRow label="Commodity"            value={commodity} />
-        <SpecRow label="Special Handling Code" value={shc} />
-        <SpecRow label="Additional Special Handling Code" value={ashc} />
-        <SpecRow label="Weight" value={item.weight_kg  != null ? `${item.weight_kg} kg`   : null} accent />
-        <SpecRow label="Volume" value={item.volume_cbm != null ? `${item.volume_cbm} CBM` : null} accent />
-        <SpecRow label="L × W × H" value={dims} accent />
+        {rows}
       </View>
+    )
+  }
+
+  return (
+    <View style={s.cargoCard}>
+      <Text style={s.cargoHeading}>CARGO {index + 1}</Text>
+      <Text style={s.cargoLabel}>Product</Text>
+      <View style={s.cargoTop}>
+        <Text style={s.cargoProduct} numberOfLines={2}>{product ?? '—'}</Text>
+        {item.quantity != null && (
+          <Text style={s.cargoQty}>
+            <Text style={s.cargoQtyLabel}>Quantity: </Text>
+            {item.quantity}
+          </Text>
+        )}
+      </View>
+      {rows}
     </View>
   )
 }
 
 /** One label/value line in the cargo table. Skipped entirely when unset. */
 function SpecRow({
-  label, value, accent = false,
+  label, value, accent = false, flat,
 }: {
   label:   string
   value:   string | null
   accent?: boolean
+  flat:    boolean
 }) {
   if (!value) return null
   return (
-    <View style={s.specRow}>
-      <Text style={s.specLabel} numberOfLines={2}>{label}</Text>
-      <Text style={[s.specValue, accent && { color: D.cyan }]} numberOfLines={1}>{value}</Text>
+    <View style={flat ? s.specRowFlat : s.specRow}>
+      <Text style={flat ? s.specLabelFlat : s.specLabel} numberOfLines={2}>{label}</Text>
+      <Text style={[flat ? s.specValueFlat : s.specValue, accent && { color: D.cyan }]} numberOfLines={1}>{value}</Text>
+    </View>
+  )
+}
+
+/** "[label] … [time]" — a step time in Philippine time; "---" when not reached. */
+type TimeRow = [label: string, iso: string | null | undefined, text?: string]
+
+function stamp(iso: string): string {
+  const t = Date.parse(iso)
+  if (Number.isNaN(t)) return '---'
+  const d = new Date(t + 8 * 3600_000)
+  const h = d.getUTCHours()
+  return `${h % 12 || 12}:${String(d.getUTCMinutes()).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`
+}
+
+/** One stop visit in TRANSIT STOP TIMES (Figma): its four times, read only. */
+function TimesBox({ title, rows }: { title: string; rows: TimeRow[] }) {
+  return (
+    <View style={s.timesBox}>
+      <Text style={s.timesTitle}>{title}</Text>
+      <View style={s.timesInner}>
+        {rows.map(([label, iso, text], i) => (
+          <View key={label} style={[s.timesRow, i === rows.length - 1 && { borderBottomWidth: 0 }]}>
+            <Text style={s.timesLabel}>{label}</Text>
+            <Text style={[s.timesValue, !iso && !text && { color: D.faint }]}>
+              {text ?? (iso ? stamp(iso) : '---')}
+            </Text>
+          </View>
+        ))}
+      </View>
     </View>
   )
 }
 
 const s = StyleSheet.create({
-  shuttleNote: {
-    color:        D.faint,
-    fontSize:     12,
-    lineHeight:   17,
-    marginBottom: 10,
-    fontFamily:   FONTS.spartan.medium,
-  },
-  tripGroup: {
-    marginBottom: 12,
-  },
-  tripHead: {
-    flexDirection: 'row',
-    alignItems:    'center',
-    gap:           8,
-    marginBottom:  6,
-  },
-  tripTitle: {
-    color:      D.white,
-    fontSize:   12,
-    letterSpacing: 0.6,
-    fontFamily: FONTS.spartan.bold,
-  },
-  tripPill: {
-    paddingHorizontal: 7,
-    paddingVertical:   2,
-    borderRadius:      16,
-    borderWidth:       0.5,
-    borderColor:       D.cardLine,
-  },
-  tripPillText: {
-    color:      D.faint,
-    fontSize:   9,
-    letterSpacing: 0.5,
-    fontFamily: FONTS.spartan.bold,
-  },
-
+  /* ── Proof / documents under a drop-off ── */
   proofSection: {
-    marginTop: 10,
+    marginTop: 12,
     gap:       8,
-  },
-  proofHead: {
-    flexDirection: 'row',
-    alignItems:    'center',
-    gap:           6,
-  },
-  proofTitle: {
-    color:         D.faint,
-    fontSize:      11,
-    letterSpacing: 0.6,
-    fontFamily:    FONTS.spartan.bold,
-  },
-  proofRow: {
-    gap: 5,
-  },
-  proofTripTag: {
-    color:         D.faint,
-    fontSize:      10,
-    letterSpacing: 0.5,
-    fontFamily:    FONTS.spartan.bold,
   },
   proofBtn: {
     flexDirection:   'row',
     alignItems:      'center',
     justifyContent:  'center',
-    gap:             9,
-    height:          38,
+    gap:             8,
+    minHeight:       38,
+    paddingHorizontal: 10,
     borderRadius:    10,
     borderWidth:     1,
     borderColor:     D.green,
@@ -1839,21 +2057,22 @@ const s = StyleSheet.create({
     color:      D.green,
     fontSize:   14,
     fontFamily: FONTS.spartan.bold,
+    flexShrink: 1,
   },
-  proofDone: {
+  proofSending: {
     flexDirection:   'row',
     alignItems:      'center',
     gap:             8,
-    height:          38,
+    minHeight:       38,
     paddingHorizontal: 12,
     borderRadius:    10,
     borderWidth:     1,
-    borderColor:     D.cardLine,
-    backgroundColor: D.inner,
+    borderColor:     'rgba(255,122,48,0.35)',
+    backgroundColor: D.amberBg,
   },
-  proofDoneText: {
-    color:      D.faint,
-    fontSize:   13,
+  proofSendingText: {
+    color:      D.amber,
+    fontSize:   12,
     flex:       1,
     fontFamily: FONTS.spartan.medium,
   },
@@ -1863,12 +2082,147 @@ const s = StyleSheet.create({
     lineHeight: 16,
     fontFamily: FONTS.spartan.medium,
   },
+  docsTitle: {
+    color:         D.cyan,
+    fontSize:      12,
+    letterSpacing: 0.3,
+    fontFamily:    FONTS.spartan.bold,
+  },
+  docRow: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    gap:             8,
+    minHeight:       34,
+    paddingHorizontal: 10,
+    borderRadius:    8,
+    backgroundColor: '#2b2b2b',
+  },
+  docText: {
+    flex:       1,
+    color:      D.faint,
+    fontSize:   12,
+    fontFamily: FONTS.spartan.medium,
+  },
   uploadError: {
     color:      D.red,
     fontSize:   12,
     lineHeight: 17,
     marginTop:  10,
     fontFamily: FONTS.spartan.medium,
+  },
+
+  /* ── Trip picker ── */
+  pickerBar: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'space-between',
+    minHeight:       32,
+    paddingHorizontal: 8,
+    borderRadius:    6,
+    borderWidth:     0.5,
+    borderColor:     D.cardLine,
+    backgroundColor: D.card,
+  },
+  pickerText: {
+    color:         D.cyan,
+    fontSize:      12,
+    letterSpacing: 0.5,
+    fontFamily:    FONTS.spartan.bold,
+  },
+  pickerList: {
+    marginTop:       4,
+    borderRadius:    8,
+    borderWidth:     0.5,
+    borderColor:     D.cardLine,
+    backgroundColor: D.card,
+    overflow:        'hidden',
+  },
+  pickerItem: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'space-between',
+    minHeight:       42,
+    paddingHorizontal: 12,
+    borderTopWidth:  StyleSheet.hairlineWidth,
+    borderTopColor:  D.divider,
+  },
+  pickerItemText: {
+    color:      D.white,
+    fontSize:   14,
+    fontFamily: FONTS.spartan.medium,
+  },
+  pickerItemNote: {
+    color:    D.faint,
+    fontSize: 12,
+  },
+
+  dashes: {
+    flexDirection: 'row',
+    overflow:      'hidden',
+    gap:           4,
+    height:        1,
+  },
+  dash: {
+    width:  5,
+    height: 1,
+  },
+
+  /* ── Transit stop times ── */
+  timesTrip: {
+    color:         D.white,
+    fontSize:      12,
+    letterSpacing: 0.4,
+    fontFamily:    FONTS.spartan.bold,
+  },
+  timesBox: {
+    backgroundColor: D.inner,
+    borderRadius:    10,
+    padding:         8,
+    gap:             6,
+  },
+  timesTitle: {
+    color:         D.cyan,
+    fontSize:      12,
+    letterSpacing: 0.3,
+    fontFamily:    FONTS.spartan.bold,
+  },
+  timesInner: {
+    backgroundColor:   '#2b2b2b',
+    borderRadius:      8,
+    paddingHorizontal: 10,
+    paddingVertical:   2,
+  },
+  timesRow: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    justifyContent:    'space-between',
+    gap:               10,
+    paddingVertical:   5,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.18)',
+  },
+  timesLabel: {
+    color:      D.faint,
+    fontSize:   12,
+    flexShrink: 1,
+  },
+  timesValue: {
+    color:    D.white,
+    fontSize: 12,
+  },
+
+  pageMore: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    alignSelf:     'flex-start',
+    gap:           6,
+    paddingVertical: 4,
+  },
+  pageMoreText: {
+    color:         D.cyan,
+    fontSize:      12,
+    letterSpacing: 0.3,
+    fontFamily:    FONTS.spartan.bold,
   },
 
   doneNote: {
@@ -1881,15 +2235,6 @@ const s = StyleSheet.create({
     borderWidth:     1,
     borderColor:     D.cardLine,
     backgroundColor: D.card,
-  },
-  stepsTrip: {
-    color:      D.white,
-    fontSize:   13,
-    fontWeight: '700',
-  },
-  stepsWhere: {
-    color:    D.faint,
-    fontSize: 12,
   },
   transferCard: {
     gap:             8,
@@ -1978,14 +2323,13 @@ const s = StyleSheet.create({
   },
   schedule: {
     color:     D.cyan,
-    fontSize:  12,
-    marginTop: 5,
+    fontSize:  11,
+    marginTop: 4,
   },
-  // Sits under the date and time, sized to its label rather than the row.
+  // Top right of the header, sized to its label.
   tag: {
-    alignSelf:         'flex-start',
     height:            18,
-    marginTop:         8,
+    marginTop:         6,
     flexDirection:     'row',
     alignItems:        'center',
     gap:               4,
@@ -1999,7 +2343,7 @@ const s = StyleSheet.create({
     borderRadius: 3,
   },
   tagText: {
-    fontSize:   12,
+    fontSize:   11,
     fontWeight: '600',
   },
 
@@ -2028,8 +2372,16 @@ const s = StyleSheet.create({
     marginHorizontal: 3,
   },
   cardMeta: {
-    color:    D.faint,
-    fontSize: 14,
+    color:      D.faint,
+    fontSize:   14,
+    flexShrink: 1,
+  },
+  cardRight: {
+    marginLeft:    'auto',
+    color:         D.cyan,
+    fontSize:      12,
+    letterSpacing: 0.4,
+    fontFamily:    FONTS.spartan.bold,
   },
 
   company: {
@@ -2079,78 +2431,143 @@ const s = StyleSheet.create({
     lineHeight: 16,
     paddingTop: 4,
   },
-
   stopBody: {
     flex: 1,
   },
-  stopNote: {
-    fontFamily: FONTS.spartan.medium,
-    fontSize:   11,
-    color:      D.cyan,
-    marginTop:  2,
+
+  /* ── Cargo ── */
+  dropBox: {
+    backgroundColor: D.inner,
+    borderRadius:    10,
+    padding:         8,
+    paddingBottom:   10,
   },
-  cargoStopAddress: {
-    fontFamily:   FONTS.spartan.medium,
-    fontSize:     11,
-    color:        D.faint,
-    marginBottom: 4,
+  dropTitle: {
+    color:         D.white,
+    fontSize:      13,
+    letterSpacing: 0.3,
+    fontFamily:    FONTS.spartan.bold,
   },
-  cargoHeading: {
-    color:      D.cyan,
-    fontSize:   14,
-    marginTop:  12,
-    fontFamily: FONTS.spartan.medium,
+  dropMore: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    justifyContent: 'center',
+    gap:            4,
+    marginTop:      12,
+  },
+  dropMoreText: {
+    color:         D.yellow,
+    fontSize:      10,
+    letterSpacing: 0.3,
+    fontFamily:    FONTS.spartan.bold,
   },
 
-  cargoTop: {
-    flexDirection:  'row',
-    alignItems:     'flex-end',
-    justifyContent: 'space-between',
-    gap:            12,
-    paddingBottom:  10,
+  // Before the start: each line in its own card.
+  cargoCard: {
+    backgroundColor: '#2b2b2b',
+    borderRadius:    8,
+    padding:         10,
+    marginTop:       8,
   },
-  cargoTopLeft: {
-    flex: 1,
+  cargoHeading: {
+    color:        D.cyan,
+    fontSize:     12,
+    marginBottom: 10,
+    fontFamily:   FONTS.spartan.medium,
   },
   cargoLabel: {
     color:    D.faint,
-    fontSize: 12,
+    fontSize: 10,
+  },
+  cargoTop: {
+    flexDirection:     'row',
+    alignItems:        'flex-end',
+    justifyContent:    'space-between',
+    gap:               12,
+    paddingBottom:     3,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.35)',
   },
   cargoProduct: {
+    flex:       1,
     color:      D.cyan,
-    fontSize:   14,
+    fontSize:   12,
     fontWeight: '700',
-    marginTop:  3,
   },
   cargoQty: {
     color:      D.cyan,
-    fontSize:   14,
+    fontSize:   12,
     fontWeight: '700',
     textAlign:  'right',
   },
   cargoQtyLabel: {
-    color:      D.white,
+    color:      D.faint,
     fontWeight: '400',
   },
-
   specRow: {
-    flexDirection:  'row',
-    alignItems:     'center',
-    justifyContent: 'space-between',
-    gap:            12,
-    paddingVertical: 5,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: D.divider,
+    flexDirection:     'row',
+    alignItems:        'center',
+    justifyContent:    'space-between',
+    gap:               12,
+    paddingVertical:   4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.35)',
   },
   specLabel: {
     color:      D.faint,
-    fontSize:   14,
+    fontSize:   12,
     flexShrink: 1,
   },
   specValue: {
     color:     D.white,
-    fontSize:  14,
+    fontSize:  12,
     textAlign: 'right',
+  },
+
+  // In transit / done: lines split by dashes, labels bold.
+  cargoHeadingFlat: {
+    color:        D.cyan,
+    fontSize:     12,
+    marginBottom: 10,
+    fontFamily:   FONTS.spartan.bold,
+  },
+  cargoTopFlat: {
+    flexDirection:  'row',
+    alignItems:     'flex-start',
+    justifyContent: 'space-between',
+    gap:            12,
+    paddingBottom:  2,
+  },
+  cargoProductFlat: {
+    flex:       1,
+    color:      D.cyan,
+    fontSize:   12,
+    fontFamily: FONTS.spartan.bold,
+  },
+  cargoQtyFlat: {
+    color:      D.cyan,
+    fontSize:   12,
+    fontFamily: FONTS.spartan.bold,
+    textAlign:  'right',
+  },
+  specRowFlat: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'space-between',
+    gap:             12,
+    paddingVertical: 2,
+  },
+  specLabelFlat: {
+    color:      D.faint,
+    fontSize:   12,
+    flexShrink: 1,
+    fontFamily: FONTS.spartan.bold,
+  },
+  specValueFlat: {
+    color:      D.white,
+    fontSize:   12,
+    textAlign:  'right',
+    fontFamily: FONTS.spartan.bold,
   },
 
   vehicle: {
@@ -2163,7 +2580,7 @@ const s = StyleSheet.create({
     left:              0,
     right:             0,
     bottom:            0,
-    paddingHorizontal: 24,
+    paddingHorizontal: 19,
     paddingTop:        12,
     // One even space between everything in the bar (cards, banners, buttons).
     gap:               10,
@@ -2221,6 +2638,23 @@ const s = StyleSheet.create({
     fontSize: 12,
   },
 
+  // Figma pending frame: outlined, grey, same size as the start button.
+  previewRouteBtn: {
+    height:          46,
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'center',
+    gap:             9,
+    borderRadius:    10,
+    borderWidth:     1,
+    borderColor:     'rgba(255,255,255,0.45)',
+    backgroundColor: 'transparent',
+  },
+  previewRouteText: {
+    color:      D.faint,
+    fontSize:   16,
+    fontFamily: FONTS.spartan.bold,
+  },
   previewBtn: {
     height:         44,
     flexDirection:  'row',
@@ -2237,13 +2671,35 @@ const s = StyleSheet.create({
     fontSize:   14,
     fontWeight: '600',
   },
+
+  viewer: {
+    flex:            1,
+    backgroundColor: 'rgba(0,0,0,0.95)',
+    alignItems:      'center',
+    justifyContent:  'center',
+  },
+  viewerClose: {
+    position:        'absolute',
+    right:           16,
+    zIndex:          2,
+    width:           40,
+    height:          40,
+    borderRadius:    20,
+    alignItems:      'center',
+    justifyContent:  'center',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  viewerImage: {
+    width:  '100%',
+    height: '80%',
+  },
 })
 
 /** "Pedro's phone is navigating. Take over?" Resolves true on Take over. */
 function askTakeOver(state: NavigatorState): Promise<boolean> {
   const who = state.driver_name || 'The other driver'
   return new Promise((resolve) => {
-    Alert.alert(
+    appAlert(
       `${who}’s phone is navigating`,
       `Only one phone navigates at a time. ${who}’s phone was ${heardAgo(state.last_heard_at)}. ` +
       `Take over navigation on this phone? ${who}’s phone will stop guiding.`,
@@ -2252,6 +2708,24 @@ function askTakeOver(state: NavigatorState): Promise<boolean> {
         { text: 'Take over', onPress: () => resolve(true) },
       ],
       { cancelable: true, onDismiss: () => resolve(false) },
+    )
+  })
+}
+
+/**
+ * BLOWBAGETS Self, the driver's own fitness before driving (user 2026-11-28).
+ * Resolves 'fit', 'unfit', or null when the question was closed without an answer.
+ */
+function askSelfCheck(): Promise<'fit' | 'unfit' | null> {
+  return new Promise((resolve) => {
+    appAlert(
+      'Self check (BLOWBAGETS)',
+      'Before you drive: are you rested, not sick, free of alcohol and drugs, and carrying your driver’s license?',
+      [
+        { text: 'Not fit to drive', style: 'destructive', onPress: () => resolve('unfit') },
+        { text: 'I’m fit to drive', onPress: () => resolve('fit') },
+      ],
+      { cancelable: true, onDismiss: () => resolve(null) },
     )
   })
 }

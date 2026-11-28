@@ -131,7 +131,7 @@ const SLIDES: Slide[] = [
     body:  'Messages and notifications live in the top bar, so you never miss an update.',
     tips:  [
       'Chat with the office during a delivery',
-      'Your profile circle holds your account and Sign out',
+      'Your profile circle opens your Profile: details, password, passkey and Sign out',
     ],
   },
 ]

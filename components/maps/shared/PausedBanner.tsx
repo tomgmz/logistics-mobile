@@ -1,13 +1,21 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import {
-  ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Text, TextInput,
-  TouchableOpacity, View, type ViewStyle,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+  type ViewStyle,
 } from 'react-native'
 import { PauseCircle } from 'lucide-react-native'
 
 import { pauseReasonLabel, resumeRequestOpen, type TripPause } from '../../../lib/tripPause'
 import { requestResume, resumeRequestQueued } from '../../../lib/resumeRequest'
 import { C } from '../../../theme/navigation.theme'
+import { appAlert } from '../../../lib/appAlert'
 
 /**
  * "Delivery paused" with the reason and when it started. Only the office
@@ -76,13 +84,13 @@ export function PausedBanner({
       setWriting(false)
       setNote('')
       if (typeof result === 'object') {
-        Alert.alert('Not sent', result.refused)
+        appAlert('Not sent', result.refused)
       } else if (result === 'queued') {
-        Alert.alert('Saved on your phone', 'No signal right now. It is sent to the office as soon as you have signal.')
+        appAlert('Saved on your phone', 'No signal right now. It is sent to the office as soon as you have signal.')
       } else if (result === 'not_paused') {
-        Alert.alert('Already moving', 'The office has already ended the pause.')
+        appAlert('Already moving', 'The office has already ended the pause.')
       } else {
-        Alert.alert('Office told', 'The office has your request. Wait until they resume the delivery or answer you.')
+        appAlert('Office told', 'The office has your request. Wait until they resume the delivery or answer you.')
       }
       await checkQueued()
       onChanged?.()

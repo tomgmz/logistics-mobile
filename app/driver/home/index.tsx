@@ -87,7 +87,7 @@ const HOME_TOUR: CoachStep[] = [
   {
     target: 'topbar.actions',
     title:  'Messages, alerts and your account',
-    body:   'Chat with the office, see your notifications, and open your profile to sign out.',
+    body:   'Chat with the office, see your notifications, and open your Profile for your details, password, passkey and Sign out.',
   },
 ]
 

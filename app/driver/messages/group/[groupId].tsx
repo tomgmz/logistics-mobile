@@ -1,8 +1,14 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import {
-  View, Text, FlatList, TouchableOpacity, TextInput,
-  StyleSheet, ActivityIndicator,
-  Modal, Keyboard, Alert,
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
+  TextInput,
+  StyleSheet,
+  ActivityIndicator,
+  Modal,
+  Keyboard,
 } from 'react-native'
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -27,6 +33,7 @@ import { nameWithRole } from '../../../../lib/roles'
 import { useMessageDraft } from '../../../../lib/messageDraft'
 import { cachedData, storeData } from '../../../../lib/query/useApiQuery'
 import { useCatchUp } from '../../../../hooks/useLiveSignal'
+import { appAlert } from '../../../../lib/appAlert'
 
 const C = {
   bg:       '#0a0a0a',
@@ -323,7 +330,7 @@ export default function GroupChatScreen() {
       if (!found) {
         // Taken out of the group (or it is gone): nothing left to show here.
         if (myStatus === 'accepted') {
-          Alert.alert('Removed from group', 'You are no longer a member of this group.')
+          appAlert('Removed from group', 'You are no longer a member of this group.')
           router.back()
         }
         return

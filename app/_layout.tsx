@@ -2,7 +2,7 @@ import { useFonts } from 'expo-font'
 import { SplashScreen, Stack, router, usePathname } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { useEffect } from 'react'
-import { Alert } from 'react-native'
+
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { KeyboardProvider } from 'react-native-keyboard-controller'
@@ -17,6 +17,8 @@ import { registerForPushNotifications, initPushResponders, ensureNotificationCha
 import { flush } from '../lib/offlineQueue'
 import { configureNetwork } from '../lib/network'
 import { warnIfUnsupportedDevice } from '../lib/deviceSupport'
+import { appAlert } from '../lib/appAlert'
+import { AppAlertHost } from '../components/ui/AppAlertHost'
 
 SplashScreen.preventAutoHideAsync()
 // Online = our server answers, on Wi-Fi or mobile data alike (lib/network).
@@ -41,7 +43,7 @@ export default function RootLayout() {
       // Say why, when the server did (e.g. a vendor driver's last booking closed).
       if (reason) {
         const title = reason.code === 'NO_ACTIVE_ASSIGNMENT' ? 'No delivery assigned' : 'Signed out'
-        Alert.alert(title, reason.message)
+        appAlert(title, reason.message)
       }
     })
   }, [])
@@ -117,6 +119,8 @@ export default function RootLayout() {
               animation:    'none',
             }}
           />
+          {/* Every pop-up in the app (lib/appAlert), in the Figma card style. */}
+          <AppAlertHost />
         </SafeAreaProvider>
       </KeyboardProvider>
     </GestureHandlerRootView>

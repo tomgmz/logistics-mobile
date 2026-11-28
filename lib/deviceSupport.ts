@@ -1,6 +1,7 @@
-import { Alert, Platform } from 'react-native'
+import { Platform } from 'react-native'
 import * as Device from 'expo-device'
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import { appAlert } from './appAlert'
 
 /**
  * Warns once per phone when it probably can't run the driver app properly.
@@ -48,7 +49,7 @@ export async function warnIfUnsupportedDevice(): Promise<void> {
     const problem = deviceSupportProblem()
     if (!problem) return
     if (await AsyncStorage.getItem(SEEN_KEY)) return
-    Alert.alert(problem.title, problem.message, [
+    appAlert(problem.title, problem.message, [
       { text: 'OK', onPress: () => { AsyncStorage.setItem(SEEN_KEY, '1').catch(() => {}) } },
     ])
   } catch {

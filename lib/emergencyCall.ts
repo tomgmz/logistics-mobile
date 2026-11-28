@@ -1,7 +1,8 @@
-import { Alert, Linking } from 'react-native'
+import { Linking } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 
 import { getEmergencyContact, type EmergencyContact } from './api/reports.api'
+import { appAlert } from './appAlert'
 
 /**
  * The phone call that follows a quick alert.
@@ -53,7 +54,7 @@ export async function callEmergencyContact(
     if (!phone) throw new Error('no number')
     await Linking.openURL(`tel:${phone}`)
   } catch {
-    Alert.alert(
+    appAlert(
       'No number to call',
       alertSent
         ? 'Your alert was sent. Operations will contact you.'

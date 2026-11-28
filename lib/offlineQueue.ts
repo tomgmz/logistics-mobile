@@ -1,11 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import NetInfo from '@react-native-community/netinfo'
-import { Alert, AppState, AppStateStatus } from 'react-native'
+import { AppState, AppStateStatus } from 'react-native'
 
 import api from './api/auth.api'
 import { useAuthStore } from './store/auth.store'
 import { isOnline, serverReachable } from './network'
 import { uploadProofPhoto, type ProofStamp } from './proofPhoto'
+import { appAlert } from './appAlert'
 
 /**
  * Durable, offline-tolerant queue for booking/destination status updates.
@@ -260,13 +261,13 @@ export function flush(): Promise<void> {
     await writeQueue(remaining)
 
     if (sentToOffice) {
-      Alert.alert(
+      appAlert(
         'Sent to the office',
         'The office will check your confirmation (photo and location) before it counts: you are no longer ' +
         'on this delivery, or your phone was not with the truck when you confirmed. Nothing else to do.',
       )
     } else if (droppedNotMain) {
-      Alert.alert(
+      appAlert(
         'Some updates were not sent',
         'Some updates from your phone were no longer accepted for this delivery; ' +
         'the other driver or the office records the rest.',
@@ -274,7 +275,7 @@ export function flush(): Promise<void> {
     }
 
     if (droppedReassigned) {
-      Alert.alert(
+      appAlert(
         'Delivery handed to another driver',
         'Some of your updates for a booking were not sent: the office assigned it to another driver or vehicle. ' +
         'Pull down on your bookings to see your current work.',
@@ -283,7 +284,7 @@ export function flush(): Promise<void> {
 
     if (refused.length > 0) {
       const label = { pickup: 'Pickup', delivery: 'Drop-off', complete: 'Delivery completion' } as const
-      Alert.alert(
+      appAlert(
         refused.length === 1 ? `${label[refused[0].kind]} not accepted` : 'Some confirmations were not accepted',
         refused.map((r) => `${label[r.kind]}: ${r.why}`).join('\n\n') +
         '\n\nIt was not recorded. Call the office so they can record it for you.',

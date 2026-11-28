@@ -14,6 +14,8 @@ import { supabase } from '../lib/supabase'
  */
 export type LiveTopic =
   | 'live:driver_reports' | 'live:bookings' | 'live:trucks'
+  // Any users/drivers row (the Profile screen re-reads only when its own id is in the burst).
+  | 'live:users'
   // One booking's route: the server's `route_changed` (a stop confirmed, a run
   // loaded, an office step, the drop-off order changed, a late confirmation).
   | `route:booking:${string}`

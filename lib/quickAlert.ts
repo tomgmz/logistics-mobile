@@ -1,9 +1,9 @@
-import { Alert } from 'react-native'
 import * as Location from 'expo-location'
 
 import { createReport, type EmergencyContact } from './api/reports.api'
 import { cacheEmergencyContact } from './emergencyCall'
 import { readCurrentFix } from './stopGeofence'
+import { appAlert } from './appAlert'
 
 /**
  * The SOS quick alert: raised the moment the driver says Yes.
@@ -96,7 +96,7 @@ export async function sendQuickAlert({ bookingId }: QuickAlertInput = {}): Promi
     void cacheEmergencyContact(report.call_contact)
     return { reportId: report.report_id, callContact: report.call_contact ?? null }
   } catch (e: any) {
-    Alert.alert(
+    appAlert(
       'Alert not sent',
       e?.response?.data?.message ??
         'The emergency alert could not be sent. Call Operations directly, and tap SOS again when you have signal.',

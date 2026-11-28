@@ -12,6 +12,7 @@ export const qk = {
   reports:        () => ['reports'] as const,
   report:         (reportId: string) => ['report', reportId] as const,
   passkeys:       () => ['passkeys'] as const,
+  profile:        () => ['profile'] as const,
   inbox:          () => ['messaging', 'inbox'] as const,
   conversation:   (id: string) => ['messaging', 'conversation', id] as const,
   group:          (id: string) => ['messaging', 'group', id] as const,

@@ -23,8 +23,16 @@ import { startTracking, explainTrackingDenied } from './locationTracking'
  */
 export type StartOutcome = 'started' | 'queued' | { refused: string; reassigned: boolean }
 
-export async function startDelivery(bookingId: string, earlyStart: boolean): Promise<StartOutcome> {
-  const body = earlyStart ? { early_start: true } : {}
+export async function startDelivery(
+  bookingId: string,
+  earlyStart: boolean,
+  /** BLOWBAGETS Self, the driver's answer before setting off (2026-11-28). Undefined on Resume. */
+  selfFit?: boolean,
+): Promise<StartOutcome> {
+  const body = {
+    ...(earlyStart ? { early_start: true } : {}),
+    ...(selfFit !== undefined ? { self_fit: selfFit } : {}),
+  }
   const net  = await NetInfo.fetch().catch(() => null)
 
   if (isOnline(net)) {

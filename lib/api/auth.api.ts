@@ -403,6 +403,28 @@ export async function requestPasswordReset(email: string): Promise<void> {
   await api.post('/auth/forgot-password', { email })
 }
 
+/** The account's own details for the Profile screen (GET /auth/profile, same as the web Profile page). */
+export interface Profile {
+  user_id:       string
+  email:         string
+  phone:         string | null
+  role:          string
+  status:        string
+  first_name:    string | null
+  middle_name:   string | null
+  last_name:     string | null
+  suffix:        string | null
+  created_at:    string
+  last_login_at: string | null
+}
+
+export async function getProfile(): Promise<Profile> {
+  return cachedFetch(qk.profile(), async () => {
+    const { data } = await api.get<{ status: string; data: Profile }>('/auth/profile')
+    return data.data
+  })
+}
+
 let _getMePromise: Promise<AuthUser> | null = null
 
 export async function getMe(): Promise<AuthUser> {

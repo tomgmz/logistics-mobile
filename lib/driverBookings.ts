@@ -102,11 +102,13 @@ export const STATUS_CONFIG: Record<StatusKey, {
   textCn:  string
   dotCn:   string
 }> = {
-  pending:    { label: 'Pending',   badgeCn: 'bg-amber-950',   textCn: 'text-amber-400',   dotCn: 'bg-amber-400'   },
+  // A driver only sees bookings they are assigned to, so a booking the office
+  // still has as Pending reads Assigned in the app (user 2026-11-28).
+  pending:    { label: 'Assigned',  badgeCn: 'bg-[#1a0629]',   textCn: 'text-[#a024ff]',   dotCn: 'bg-[#a024ff]'   },
   // Same status colours as the web (Figma status legend 1122:820): assigned violet #A024FF,
   // in transit cyan (blue is remapped to cyan), delivered white, completed green.
   assigned:   { label: 'Assigned',  badgeCn: 'bg-[#1a0629]',   textCn: 'text-[#a024ff]',   dotCn: 'bg-[#a024ff]'   },
-  in_transit: { label: 'En Route',  badgeCn: 'bg-blue-950',    textCn: 'text-blue-400',    dotCn: 'bg-blue-400'    },
+  in_transit: { label: 'In Transit', badgeCn: 'bg-blue-950',    textCn: 'text-blue-400',    dotCn: 'bg-blue-400'    },
   delivered:  { label: 'Delivered', badgeCn: 'bg-zinc-800',    textCn: 'text-white',       dotCn: 'bg-white'       },
   completed:  { label: 'Completed', badgeCn: 'bg-emerald-950', textCn: 'text-emerald-400', dotCn: 'bg-emerald-400' },
   // No drop-off delivered (stolen truck, accident…), 2026-11-14.
@@ -248,7 +250,7 @@ export function resolveTruckLabel(
   return truckTypeNeeded
 }
 
-export const FILTERS = ['All', 'Active', 'Pending', 'Completed'] as const
+export const FILTERS = ['All', 'Active', 'Assigned', 'Completed'] as const
 export type FilterKey = typeof FILTERS[number]
 
 export function isFilterKey(value: unknown): value is FilterKey {
@@ -258,7 +260,8 @@ export function isFilterKey(value: unknown): value is FilterKey {
 export function filterBookings(bookings: BookingWithRelations[], filter: FilterKey) {
   switch (filter) {
     case 'Active':    return bookings.filter((b) => b.status === 'in_transit' || b.status === 'assigned' || awaitingFleetReturn(b))
-    case 'Pending':   return bookings.filter((b) => b.status === 'pending')
+    // Not started yet. The office's Pending shows as Assigned in the app.
+    case 'Assigned':  return bookings.filter((b) => b.status === 'pending' || b.status === 'assigned')
     case 'Completed': return bookings.filter((b) => ((b.status === 'delivered' || b.status === 'completed' || b.status === 'failed') && !awaitingFleetReturn(b)) || b.status === 'cancelled')
     default:          return bookings
   }
