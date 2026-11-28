@@ -1,6 +1,7 @@
 import api from './auth.api'
 import { cachedFetch } from '../query/useApiQuery'
 import { qk } from '../query/keys'
+import { REPORT_STATUS_COLOR } from '../statusColors'
 
 /**
  * The driver's Reports module — what used to be the (empty) Maintenance tab.
@@ -173,9 +174,9 @@ export const SUB_TYPES: Record<IncidentType, string[]> = {
   ],
 }
 
-/** Tag colours, matching the list screen's status pills. */
-export const STATUS_TONE: Record<ReportStatus, { label: string; color: string; bg: string }> = {
-  reported:     { label: 'REPORTED',     color: '#f62626', bg: 'rgba(246,38,38,0.19)'  },
-  acknowledged: { label: 'ACKNOWLEDGED', color: '#ff7a30', bg: 'rgba(255,122,48,0.19)' },
-  resolved:     { label: 'RESOLVED',     color: '#3af626', bg: 'rgba(58,246,38,0.19)'  },
+/** Status pill label + colour (the web's colours, lib/statusColors.ts). */
+export const STATUS_TONE: Record<ReportStatus, { label: string; color: string }> = {
+  reported:     { label: 'Reported',     color: REPORT_STATUS_COLOR.reported },
+  acknowledged: { label: 'Acknowledged', color: REPORT_STATUS_COLOR.acknowledged },
+  resolved:     { label: 'Resolved',     color: REPORT_STATUS_COLOR.resolved },
 }

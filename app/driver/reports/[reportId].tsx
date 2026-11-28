@@ -24,6 +24,7 @@ import {
 import { ReportForm } from '../../../components/reports/ReportForm'
 import { useLiveSignal } from '../../../hooks/useLiveSignal'
 import FileImage from '../../../components/FileImage'
+import StatusPill from '../../../components/ui/StatusPill'
 
 /**
  * One report.
@@ -139,18 +140,7 @@ export default function ReportDetailScreen() {
           ) : null}
         </View>
 
-        {tone && (
-          <View style={{
-            flexDirection: 'row', alignItems: 'center', gap: 4,
-            paddingHorizontal: 8, paddingVertical: 3, borderRadius: 16,
-            borderWidth: 0.5, borderColor: tone.color, backgroundColor: tone.bg,
-          }}>
-            <View style={{ width: 5, height: 5, borderRadius: 999, backgroundColor: tone.color }} />
-            <Text style={{ color: tone.color, fontSize: 9, fontFamily: FONTS.spartan.bold }}>
-              {tone.label}
-            </Text>
-          </View>
-        )}
+        {tone && <StatusPill label={tone.label} color={tone.color} />}
       </View>
 
       {loading ? (

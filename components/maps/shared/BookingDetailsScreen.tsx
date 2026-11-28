@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import Dropdown from '../../ui/Dropdown'
 import { callDayNote } from '../../../lib/driverCallDay'
 import {
   ActivityIndicator,
@@ -77,6 +78,8 @@ import { useCrewWatch } from '../../../hooks/useCrewWatch'
 import { useLiveSignal } from '../../../hooks/useLiveSignal'
 import { useStopSteps, markStepProof, stepTimes, type StepTarget } from '../../../lib/stopSteps'
 import { StopStepModal } from './StopStepModal'
+import StatusPill from '../../ui/StatusPill'
+import { BOOKING_STATUS_COLOR } from '../../../lib/statusColors'
 import { currentPause, type TripPause } from '../../../lib/tripPause'
 import { PausedBanner } from './PausedBanner'
 import { DelayedBanner } from './DelayedBanner'
@@ -221,16 +224,17 @@ const D = {
  * is assigned to, whatever stage the office is at. If it isn't released yet,
  * the lock note under the button says so.
  */
-const ASSIGNED_TAG = { label: 'ASSIGNED', color: '#a024ff', bg: 'rgba(160,36,255,0.19)' }
-const STATUS_TAG: Record<string, { label: string; color: string; bg: string }> = {
+// Colours are the web's (lib/statusColors.ts); the pill is components/ui/StatusPill.
+const ASSIGNED_TAG = { label: 'Assigned', color: BOOKING_STATUS_COLOR.assigned }
+const STATUS_TAG: Record<string, { label: string; color: string }> = {
   pending:    ASSIGNED_TAG,
   approved:   ASSIGNED_TAG,
   assigned:   ASSIGNED_TAG,
-  in_transit: { label: 'IN TRANSIT', color: D.cyan,    bg: D.cyanDim               },
-  delivered:  { label: 'DELIVERED',  color: '#ffffff', bg: 'rgba(255,255,255,0.19)' },
-  completed:  { label: 'COMPLETED',  color: D.green,   bg: D.greenDim              },
-  failed:     { label: 'FAILED',     color: D.red,     bg: D.redDim                },
-  cancelled:  { label: 'CANCELLED',  color: D.red,     bg: D.redDim                },
+  in_transit: { label: 'In Transit', color: BOOKING_STATUS_COLOR.in_transit },
+  delivered:  { label: 'Delivered',  color: BOOKING_STATUS_COLOR.delivered },
+  completed:  { label: 'Completed',  color: BOOKING_STATUS_COLOR.completed },
+  failed:     { label: 'Failed',     color: BOOKING_STATUS_COLOR.failed },
+  cancelled:  { label: 'Cancelled',  color: BOOKING_STATUS_COLOR.cancelled },
 }
 
 function fmtDate(d: string): string {
@@ -933,6 +937,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
 
   const tag = STATUS_TAG[booking.status] ?? STATUS_TAG.assigned
 
+
   /* ── Which face of this screen the driver is looking at ─────────────────── */
 
   // 'delivered' is done from the driver's side; 'completed' only adds the client's confirmation.
@@ -1081,10 +1086,7 @@ export default function BookingDetailsScreen({ bookingId, onStart, onPreview, on
           </Text>
         </View>
 
-        <View style={[s.tag, { backgroundColor: tag.bg, borderColor: tag.color }]}>
-          <View style={[s.tagDot, { backgroundColor: tag.color }]} />
-          <Text style={[s.tagText, { color: tag.color }]}>{tag.label}</Text>
-        </View>
+        <StatusPill label={tag.label} color={tag.color} />
       </View>
 
       <ScrollView
@@ -1674,54 +1676,24 @@ function TripPicker({
   value:    string
   onChange: (v: string) => void
 }) {
-  const [open, setOpen] = useState(false)
   const current = trips.find((t) => t.trip_id === value)
   const label   = value === 'all' || !current ? 'TRIPS' : `TRIP ${current.trip_number}`
-  const options = [
-    { id: 'all', text: 'All trips', note: `${trips.length} trips` },
-    ...trips.map((t) => ({
-      id:   t.trip_id,
-      text: `Trip ${t.trip_number}`,
-      note: t.status === 'completed' ? 'Done' : t.status === 'in_transit' ? 'On the road' : 'Not loaded',
-    })),
-  ]
-
+  // The shared dropdown (Figma 2488:12478 is this very bar, "TRIP 1").
   return (
-    <View>
-      <TouchableOpacity
-        onPress={() => setOpen((o) => !o)}
-        activeOpacity={0.75}
-        accessibilityRole="button"
-        accessibilityState={{ expanded: open }}
-        accessibilityLabel={`Showing ${label.toLowerCase()}. Choose which trip to show`}
-        style={s.pickerBar}
-      >
-        <Text style={s.pickerText}>{label}</Text>
-        {open
-          ? <ChevronUp size={14} color={D.cyan} strokeWidth={2.5} />
-          : <ChevronDown size={14} color={D.cyan} strokeWidth={2.5} />}
-      </TouchableOpacity>
-      {open && (
-        <View style={s.pickerList}>
-          {options.map((o) => {
-            const on = o.id === value
-            return (
-              <TouchableOpacity
-                key={o.id}
-                onPress={() => { onChange(o.id); setOpen(false) }}
-                activeOpacity={0.75}
-                accessibilityRole="button"
-                accessibilityState={{ selected: on }}
-                style={[s.pickerItem, on && { backgroundColor: D.cyanDim }]}
-              >
-                <Text style={[s.pickerItemText, on && { color: D.cyan }]}>{o.text}</Text>
-                <Text style={s.pickerItemNote}>{o.note}</Text>
-              </TouchableOpacity>
-            )
-          })}
-        </View>
-      )}
-    </View>
+    <Dropdown
+      value={value}
+      onChange={onChange}
+      label={label}
+      accessibilityLabel="Choose which trip to show"
+      options={[
+        { value: 'all', label: 'All trips', note: `${trips.length} trips` },
+        ...trips.map((t) => ({
+          value: t.trip_id,
+          label: `Trip ${t.trip_number}`,
+          note:  t.status === 'completed' ? 'Done' : t.status === 'in_transit' ? 'On the road' : 'Not loaded',
+        })),
+      ]}
+    />
   )
 }
 
@@ -2111,51 +2083,6 @@ const s = StyleSheet.create({
     fontFamily: FONTS.spartan.medium,
   },
 
-  /* ── Trip picker ── */
-  pickerBar: {
-    flexDirection:   'row',
-    alignItems:      'center',
-    justifyContent:  'space-between',
-    minHeight:       32,
-    paddingHorizontal: 8,
-    borderRadius:    6,
-    borderWidth:     0.5,
-    borderColor:     D.cardLine,
-    backgroundColor: D.card,
-  },
-  pickerText: {
-    color:         D.cyan,
-    fontSize:      12,
-    letterSpacing: 0.5,
-    fontFamily:    FONTS.spartan.bold,
-  },
-  pickerList: {
-    marginTop:       4,
-    borderRadius:    8,
-    borderWidth:     0.5,
-    borderColor:     D.cardLine,
-    backgroundColor: D.card,
-    overflow:        'hidden',
-  },
-  pickerItem: {
-    flexDirection:   'row',
-    alignItems:      'center',
-    justifyContent:  'space-between',
-    minHeight:       42,
-    paddingHorizontal: 12,
-    borderTopWidth:  StyleSheet.hairlineWidth,
-    borderTopColor:  D.divider,
-  },
-  pickerItemText: {
-    color:      D.white,
-    fontSize:   14,
-    fontFamily: FONTS.spartan.medium,
-  },
-  pickerItemNote: {
-    color:    D.faint,
-    fontSize: 12,
-  },
-
   dashes: {
     flexDirection: 'row',
     overflow:      'hidden',
@@ -2327,25 +2254,6 @@ const s = StyleSheet.create({
     marginTop: 4,
   },
   // Top right of the header, sized to its label.
-  tag: {
-    height:            18,
-    marginTop:         6,
-    flexDirection:     'row',
-    alignItems:        'center',
-    gap:               4,
-    paddingHorizontal: 8,
-    borderRadius:      16,
-    borderWidth:       0.4,
-  },
-  tagDot: {
-    width:        6,
-    height:       6,
-    borderRadius: 3,
-  },
-  tagText: {
-    fontSize:   11,
-    fontWeight: '600',
-  },
 
   card: {
     backgroundColor: D.card,

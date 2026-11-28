@@ -42,6 +42,7 @@ import {
   readCache,
   writeCache,
 } from '../../../lib/driverBookings'
+import StatusPill from '../../../components/ui/StatusPill'
 
 const routeMapImg   = require('../../../assets/home/route-map.png')
 const truckIconImg  = require('../../../assets/home/icon-vehicle.png')
@@ -405,15 +406,8 @@ function ActiveOrderCard({
           </Text>
         </View>
 
-        <View
-          className="h-[18px] flex-row items-center gap-1 rounded-2xl px-2"
-          style={{ backgroundColor: '#003632', borderWidth: 0.4, borderColor: CYAN }}
-        >
-          <View className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: CYAN }} />
-          <Text className="text-xs font-medium" style={{ color: CYAN }}>
-            {cfg.label.toUpperCase()}
-          </Text>
-        </View>
+        {/* White card: the tint is drawn solid so it reads as on the dark screens. */}
+        <StatusPill label={cfg.label} color={cfg.color} onLight />
       </View>
 
       {/* Client · call time */}

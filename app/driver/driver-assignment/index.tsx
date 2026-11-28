@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { callChip } from '../../../lib/driverCallDay'
+import Dropdown from '../../../components/ui/Dropdown'
 import {
   View,
   Text,
@@ -38,6 +39,7 @@ import {
   resolveTruckLabel,
   writeCache,
 } from '../../../lib/driverBookings'
+import StatusPill from '../../../components/ui/StatusPill'
 
 interface BookingCardProps {
   booking: BookingWithRelations
@@ -46,6 +48,7 @@ interface BookingCardProps {
 }
 
 function BookingCard({ booking, onPress, index }: BookingCardProps) {
+  const cfg            = statusConfigFor(booking, 'pending')
   const fadeAnim  = useRef(new Animated.Value(0)).current
   const slideAnim = useRef(new Animated.Value(20)).current
   const scaleAnim = useRef(new Animated.Value(1)).current
@@ -66,7 +69,6 @@ function BookingCard({ booking, onPress, index }: BookingCardProps) {
   const onPressOut = () =>
     Animated.spring(scaleAnim, { toValue: 1, tension: 220, friction: 14, useNativeDriver: true }).start()
 
-  const cfg            = statusConfigFor(booking, 'pending')
   const { done, total, pct } = getProgress(booking.booking_destinations)
 
   const firstAssignment = booking.truck_assignments?.[0]
@@ -116,12 +118,7 @@ function BookingCard({ booking, onPress, index }: BookingCardProps) {
             </Text>
           </View>
 
-          <View className={`pill ${cfg.badgeCn}`}>
-            <View className={`w-1.5 h-1.5 rounded-full ${cfg.dotCn}`} />
-            <Text className={`text-2xs font-bold tracking-wide ${cfg.textCn}`}>
-              {cfg.label}
-            </Text>
-          </View>
+          <StatusPill label={cfg.label} color={cfg.color} />
         </View>
 
         {/* Row 2 — Client avatar + name + time */}
@@ -427,35 +424,14 @@ export default function DriverBookingList() {
         </View>
       </View>
 
-      <View className="flex-row gap-1.5 px-4 pb-3">
-        {FILTERS.map((f) => {
-          const isActive = activeFilter === f
-          const count    = countFor(f)
-          return (
-            <TouchableOpacity
-              key={f}
-              onPress={() => setActiveFilter(f)}
-              activeOpacity={0.75}
-              className={`flex-row items-center gap-1.5 ${isActive ? 'filter-tab-active' : 'filter-tab'}`}
-            >
-              <Text className={`text-[13px] font-semibold ${isActive ? 'text-surface-bg' : 'text-ink-faint'}`}>
-                {f}
-              </Text>
-              {count > 0 && (
-                <View
-                  className={`rounded-full min-w-[18px] h-[18px] items-center justify-center px-1 ${
-                    isActive ? 'bg-black/10' : 'bg-surface-border'
-                  }`}
-                >
-                  <Text className={`text-2xs font-bold ${isActive ? 'text-surface-bg' : 'text-ink-muted'}`}>
-                    {count}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          )
-        })}
-      </View>
+      {/* Status filter: the shared dropdown (Figma 2488:12478), replacing the chip row. */}
+      <Dropdown
+        value={activeFilter}
+        onChange={setActiveFilter}
+        accessibilityLabel="Filter bookings"
+        options={FILTERS.map((f) => ({ value: f, label: f, count: countFor(f) }))}
+        style={{ marginHorizontal: 19, marginBottom: 12 }}
+      />
 
       {loading ? (
         <View className="flex-1 items-center justify-center gap-3">

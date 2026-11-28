@@ -14,8 +14,8 @@ import { FileText, Plus, TriangleAlert } from 'lucide-react-native'
 import { FONTS } from '../../../lib/config/fonts'
 import {
   listMyReports,
-  INCIDENT_LABEL,
   STATUS_TONE,
+  INCIDENT_LABEL,
   type DriverReport,
   type ReportStatus,
 } from '../../../lib/api/reports.api'
@@ -24,6 +24,8 @@ import { QuickAlertConfirm } from '../../../components/reports/QuickAlertConfirm
 import { useLiveSignal } from '../../../hooks/useLiveSignal'
 import { cachedData } from '../../../lib/query/useApiQuery'
 import { qk } from '../../../lib/query/keys'
+import Dropdown from '../../../components/ui/Dropdown'
+import StatusPill from '../../../components/ui/StatusPill'
 
 /**
  * REPORTS — everything this driver has raised from the road.
@@ -135,46 +137,14 @@ export default function ReportsScreen() {
         </View>
       </View>
 
-      <View style={{ flexDirection: 'row', gap: 6, paddingHorizontal: 16, paddingBottom: 12 }}>
-        {FILTERS.map((f) => {
-          const active = filter === f
-          const count  = countFor(f)
-          return (
-            <TouchableOpacity
-              key={f}
-              onPress={() => setFilter(f)}
-              activeOpacity={0.75}
-              style={{
-                flexDirection: 'row', alignItems: 'center', gap: 6,
-                paddingHorizontal: 11, paddingVertical: 7, borderRadius: 999,
-                borderWidth: active ? 0 : 0.5, borderColor: D.line,
-                backgroundColor: active ? D.white : 'transparent',
-              }}
-            >
-              <Text style={{
-                color: active ? '#000' : D.faint, fontSize: 12,
-                fontFamily: FONTS.spartan.semiBold,
-              }}>
-                {f}
-              </Text>
-              {count > 0 && (
-                <View style={{
-                  minWidth: 17, height: 17, borderRadius: 999, paddingHorizontal: 4,
-                  alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: active ? 'rgba(0,0,0,0.12)' : D.inner,
-                }}>
-                  <Text style={{
-                    color: active ? '#000' : D.faint, fontSize: 10,
-                    fontFamily: FONTS.spartan.bold,
-                  }}>
-                    {count}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          )
-        })}
-      </View>
+      {/* Status filter: the shared dropdown (Figma 2488:12478), replacing the chip row. */}
+      <Dropdown
+        value={filter}
+        onChange={setFilter}
+        accessibilityLabel="Filter reports"
+        options={FILTERS.map((f) => ({ value: f, label: f, count: countFor(f) }))}
+        style={{ marginHorizontal: 19, marginBottom: 12 }}
+      />
 
       {loading ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }}>
@@ -306,16 +276,7 @@ function ReportCard({ report, onPress }: { report: DriverReport; onPress: () => 
         <Text style={{ color: D.faint, fontSize: 12, flex: 1, fontFamily: FONTS.spartan.medium }} numberOfLines={1}>
           {fmtDate(report.created_at)}
         </Text>
-        <View style={{
-          flexDirection: 'row', alignItems: 'center', gap: 4,
-          paddingHorizontal: 8, paddingVertical: 3, borderRadius: 16,
-          borderWidth: 0.5, borderColor: tone.color, backgroundColor: tone.bg,
-        }}>
-          <View style={{ width: 5, height: 5, borderRadius: 999, backgroundColor: tone.color }} />
-          <Text style={{ color: tone.color, fontSize: 9, fontFamily: FONTS.spartan.bold }}>
-            {tone.label}
-          </Text>
-        </View>
+        <StatusPill label={tone.label} color={tone.color} />
       </View>
 
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>

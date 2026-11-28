@@ -11,6 +11,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import api from './api/auth.api'
 import { cachedData, cachedFetch } from './query/useApiQuery'
 import { qk } from './query/keys'
+import { BOOKING_STATUS_COLOR, RETURN_COLOR } from './statusColors'
 
 export interface BookingDestination {
   destination_id:  string
@@ -96,24 +97,23 @@ export interface CachePayload {
 
 export type StatusKey = BookingWithRelations['status']
 
-export const STATUS_CONFIG: Record<StatusKey, {
-  label:   string
-  badgeCn: string
-  textCn:  string
-  dotCn:   string
-}> = {
+/**
+ * Label + colour of the status pill (components/ui/StatusPill). Colours are the
+ * web's (lib/statusColors.ts). Plain colours, not NativeWind classes: Tailwind
+ * does not scan lib/, so arbitrary classes written here were never generated
+ * (Assigned showed no colour at all, 2026-11-29).
+ */
+export const STATUS_CONFIG: Record<StatusKey, { label: string; color: string }> = {
   // A driver only sees bookings they are assigned to, so a booking the office
   // still has as Pending reads Assigned in the app (user 2026-11-28).
-  pending:    { label: 'Assigned',  badgeCn: 'bg-[#1a0629]',   textCn: 'text-[#a024ff]',   dotCn: 'bg-[#a024ff]'   },
-  // Same status colours as the web (Figma status legend 1122:820): assigned violet #A024FF,
-  // in transit cyan (blue is remapped to cyan), delivered white, completed green.
-  assigned:   { label: 'Assigned',  badgeCn: 'bg-[#1a0629]',   textCn: 'text-[#a024ff]',   dotCn: 'bg-[#a024ff]'   },
-  in_transit: { label: 'In Transit', badgeCn: 'bg-blue-950',    textCn: 'text-blue-400',    dotCn: 'bg-blue-400'    },
-  delivered:  { label: 'Delivered', badgeCn: 'bg-zinc-800',    textCn: 'text-white',       dotCn: 'bg-white'       },
-  completed:  { label: 'Completed', badgeCn: 'bg-emerald-950', textCn: 'text-emerald-400', dotCn: 'bg-emerald-400' },
+  pending:    { label: 'Assigned',   color: BOOKING_STATUS_COLOR.assigned },
+  assigned:   { label: 'Assigned',   color: BOOKING_STATUS_COLOR.assigned },
+  in_transit: { label: 'In Transit', color: BOOKING_STATUS_COLOR.in_transit },
+  delivered:  { label: 'Delivered',  color: BOOKING_STATUS_COLOR.delivered },
+  completed:  { label: 'Completed',  color: BOOKING_STATUS_COLOR.completed },
   // No drop-off delivered (stolen truck, accident…), 2026-11-14.
-  failed:     { label: 'Failed',    badgeCn: 'bg-red-950',     textCn: 'text-red-400',     dotCn: 'bg-red-500'     },
-  cancelled:  { label: 'Cancelled', badgeCn: 'bg-red-950',     textCn: 'text-red-400',     dotCn: 'bg-red-500'     },
+  failed:     { label: 'Failed',     color: BOOKING_STATUS_COLOR.failed },
+  cancelled:  { label: 'Cancelled',  color: BOOKING_STATUS_COLOR.cancelled },
 }
 
 /**
@@ -126,7 +126,7 @@ export function awaitingFleetReturn(b: BookingWithRelations): boolean {
 }
 
 const RETURNING_CONFIG = {
-  label: 'Return', badgeCn: 'bg-violet-950', textCn: 'text-violet-400', dotCn: 'bg-violet-400',
+  label: 'Return', color: RETURN_COLOR,
 }
 
 /** Badge for a booking, telling a delivered-but-not-returned job apart from a finished one. */
