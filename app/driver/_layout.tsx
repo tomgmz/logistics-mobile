@@ -77,6 +77,7 @@ export default function DriverLayout() {
     pathname.startsWith('/driver/maps') ||
     pathname.startsWith('/driver/messages') ||
     pathname.startsWith('/driver/notifications') ||
+    pathname.startsWith('/driver/profile') ||
     // The reports LIST keeps the bar (it is a tab like any other); the form and
     // a single report bring their own header with a back arrow, because they
     // are entered from a modal and need a way out that is not the tab bar.

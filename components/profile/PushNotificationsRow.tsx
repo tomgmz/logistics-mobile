@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { AppState, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native'
+import { AppState, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 
 import { getPushPermission, openNotificationSettings, registerForPushNotifications } from '../../lib/push'
 import { FONTS } from '../../lib/config/fonts'
@@ -17,7 +17,6 @@ import { FONTS } from '../../lib/config/fonts'
 const C = {
   white: '#ffffff',
   faint: '#818181',
-  line:  '#424242',
   cyan:  '#4df9ed',
 }
 
@@ -75,28 +74,32 @@ export default function PushNotificationsRow() {
       style={styles.row}
     >
       <View style={styles.text}>
-        <Text style={styles.title}>Phone notifications</Text>
+        <Text style={styles.title}>PHONE NOTIFICATION</Text>
         <Text style={styles.hint}>
           {on
             ? 'On. New assignments, messages and office notices pop up on this phone.'
             : 'Off. Tap to turn on, or you will only see notices inside the app.'}
         </Text>
       </View>
-      {/* Shows the phone's setting; the row's tap changes it. */}
-      <View pointerEvents="none">
-        <Switch
-          value={on}
-          trackColor={{ false: C.line, true: 'rgba(77,249,237,0.35)' }}
-          thumbColor={on ? C.cyan : C.faint}
-        />
+      {/* Shows the phone's setting; the row's tap changes it. Figma toggle: 28×16 track, 12 px dot. */}
+      <View pointerEvents="none" style={[styles.track, on ? styles.trackOn : styles.trackOff]}>
+        <View style={[styles.thumb, on ? styles.thumbOn : styles.thumbOff]} />
       </View>
     </TouchableOpacity>
   )
 }
 
 const styles = StyleSheet.create({
-  row:   { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  text:  { flex: 1, minWidth: 0 },
-  title: { color: C.white, fontSize: 16, fontFamily: FONTS.darker.medium },
-  hint:  { color: C.faint, fontSize: 14, lineHeight: 19, marginTop: 3, fontFamily: FONTS.darker.regular },
+  // Figma 2026-11-29: 12 px bold title + hint, the hint 216 px wide, toggle on the right.
+  row:   { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 },
+  text:  { flexShrink: 1, maxWidth: 216, minWidth: 0 },
+  title: { color: C.white, fontSize: 12, lineHeight: 15, fontFamily: FONTS.darker.bold },
+  hint:  { color: C.faint, fontSize: 12, lineHeight: 13, marginTop: 4, textAlign: 'justify', fontFamily: FONTS.darker.bold },
+
+  track:    { width: 28, height: 16, borderRadius: 10, borderWidth: 1, padding: 1, justifyContent: 'center', marginBottom: 6 },
+  trackOn:  { borderColor: C.cyan, backgroundColor: 'rgba(77,249,237,0.11)', alignItems: 'flex-end' },
+  trackOff: { borderColor: C.faint, backgroundColor: 'rgba(129,129,129,0.11)', alignItems: 'flex-start' },
+  thumb:    { width: 12, height: 12, borderRadius: 6, borderWidth: 1 },
+  thumbOn:  { backgroundColor: C.cyan, borderColor: C.cyan },
+  thumbOff: { backgroundColor: C.faint, borderColor: C.faint },
 })
